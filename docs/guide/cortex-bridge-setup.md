@@ -419,6 +419,8 @@ names the first thing to fix.
 | Loads stall, or the buffer reports arrival before the filament reaches the toolhead | Too much friction in the filament path | Check that every tube up to the coupler is 3 mm ID / 4 mm OD (not 2 mm ID), any 2 mm ID tube starts at the coupler's 2 end, the bends are gentle, the coupler and splitter joints are smooth, and the stronger buffer spring is fitted. |
 | A load stops just short of the toolhead | The buffer reading did not reach `arrival_threshold` | Lower it as the message suggests ([details](configure.md#host-confirmed-arrival-from-a-relayed-fps)). |
 | An unload ends in a unit fault | The filament tip stayed in the extruder gears | Use `toolhead_unload_macro: _OAMS_TOOLHEAD_EJECT`. |
+| No OpenAMS panel in Mainsail after step 8 | The browser shows its cached Mainsail, or the panel is at the bottom of the dashboard | Reload with **Ctrl+Shift+R** and scroll down; more in [troubleshooting](troubleshooting.md#the-mainsail-panel-and-spoolman). |
+| `[WARNING] Spoolman is installed but does not answer` | Spoolman's own install failed part-way | Run `./install.sh` again; `sudo journalctl -u Spoolman -n 50 --no-pager` shows why. |
 
 The relay keeps a short support log, `cortex-bridge.jsonl`, under Mainsail's
 **Machine → Log files**. To send everything support needs in one file:

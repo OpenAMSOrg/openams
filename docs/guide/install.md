@@ -209,7 +209,26 @@ removes stale symlinks in `klippy/extras` and `scripts` with no matching file in
 
 Your `oams.cfg` is never overwritten. The macro files become links to the checkout (see [update](#update)). The old `klipper_openams` checkout stays;
 delete it once the new installation works. Every `klipper_openams` G-code command
-still exists with the same arguments.
+still exists with the same arguments. The OpenAMS display and Mainsail panel
+([openams-ui](https://github.com/OpenAMSOrg/openams-ui)) need this OpenAMS:
+with `klipper_openams` they connect but show no units.
+
+To remove `klipper_openams` once everything works, first check that nothing
+still points at it (both print nothing):
+
+```bash
+grep -rn klipper_openams ~/printer_data/config/
+ls -la ~/klipper/klippy/extras ~/klipper/scripts | grep klipper_openams
+```
+
+A match is usually an `[include ...]` line of your own; point it at the
+OpenAMS checkout. Then move the old checkout aside, run **FIRMWARE RESTART**,
+and delete it after a print or two:
+
+```bash
+mv ~/klipper_openams ~/klipper_openams.old
+rm -rf ~/klipper_openams.old    # later, when all is well
+```
 
 On the STM32F072 mainboard (OpenAMS 1), two settings may need attention. Both
 are optional, and most printers need neither.

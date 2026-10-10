@@ -196,6 +196,16 @@ Prints one `KEY=value` per line, then any `STOP_REASON=` and `ASK=` lines, then
 | `[WARNING] the openams_spoolman component is not linked into Moonraker (no checkout at "…")` | No Moonraker checkout found | Spool editing stays off; run the installer again with `-c` set |
 | `[WARNING] …` about a gco-routines directory | A non-Git or diverged checkout | Left alone on purpose; migrate it yourself |
 | `[skipped: OPENAMS_NO_SERVICE=1] systemctl …` | The test switch is set | Unset `OPENAMS_NO_SERVICE` |
+| `[WARNING] Spoolman is installed but does not answer at …` | Spoolman's own installer failed part-way (it still prints "installed successfully") | `sudo journalctl -u Spoolman -n 50 --no-pager` shows why; run `./install.sh` again, which installs this host's Spoolman again when it does not answer |
+| `Installing the OpenAMS Mainsail … [SKIPPED] … is a link or a git checkout` | Your Mainsail is your own build | Build the panel into it ([openams-ui web panel guide](https://github.com/OpenAMSOrg/openams-ui/blob/main/docs/guide/web-panel.md)), or replace it with a plain Mainsail and run `--mainsail-panel` again |
+
+## The Mainsail panel and Spoolman
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| No OpenAMS panel after `./install.sh --mainsail-panel` | The browser still shows the cached old Mainsail, or the panel sits at the end of the dashboard's first column | Reload with **Ctrl+Shift+R** (Cmd+Shift+R on a Mac) and scroll down; move it under **Settings → Dashboard**. `cat ~/mainsail/release_info.json` must name `OpenAMSOrg`; if it names `mainsail-crew`, run `--mainsail-panel` again |
+| The panel says "No OpenAMS units are connected" | The printer runs `klipper_openams`, or OpenAMS did not load | Install this OpenAMS ([moving from klipper_openams](install.md#moving-from-klipper_openams)), then **FIRMWARE RESTART** |
+| No spool colors or materials; Spoolman shows as offline | Spoolman is not running, or Moonraker does not know it | `curl -s localhost:7912/api/v1/info` must print a line; if not, see the Spoolman installer row above. Then restart Moonraker from Mainsail |
 
 ## Update and uninstall
 
