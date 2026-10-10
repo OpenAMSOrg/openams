@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Your MCU and your pins · klipper-mmu</title>
+<meta name="description" content="Configure klipper-mmu in make menuconfig: choose the chip, the unit and every pin, polarity and pull.">
+<link rel="stylesheet" href="assets/site.css">
+<script>
+  try { var t = localStorage.getItem('kmmu-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</head>
+<body data-page="pins">
+
+<header class="bar" id="bar">
+  <a class="brand" href="./" aria-label="klipper-mmu home">
+    <svg class="brand-mark" viewBox="0 0 26 26" aria-hidden="true" fill="none" stroke-width="2.4" stroke-linecap="round">
+      <path d="M2 4 C 10 4, 12 13, 17 13" stroke="var(--lane-1)"/>
+      <path d="M2 10 C 9 10, 11 13, 17 13" stroke="var(--lane-2)"/>
+      <path d="M2 16 C 9 16, 11 13, 17 13" stroke="var(--lane-3)"/>
+      <path d="M2 22 C 10 22, 12 13, 17 13" stroke="var(--lane-4)"/>
+      <path d="M17 13 H 24" stroke="var(--ink)"/>
+    </svg>
+    klipper-mmu <small>docs</small>
+  </a>
+  <div class="bar-tools">
+    <button class="toc-toggle" id="toc-toggle" type="button" aria-expanded="false" aria-controls="toc">Contents</button>
+    <button class="theme-toggle" id="theme-toggle" type="button">Dark</button>
+  </div>
+  <div class="bar-progress" id="bar-progress" aria-hidden="true"><span id="bar-progress-fill"></span></div>
+</header>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<div class="page" id="page">
+  <nav class="toc" id="toc" aria-label="Manual"></nav>
+
+  <main class="content">
+<section class="hero" id="start" data-lane="1" data-station="overview">
+      <p class="eyebrow"><b>Your MCU and your pins</b> &nbsp;/&nbsp; configuration, chip first</p>
+      <h1>Your board, <em>your pins.</em></h1>
+      <p class="lede">You configure klipper-mmu in Klipper&#39;s own <code>make menuconfig</code>. Choose the chip first, then the unit, then the pins. A board preset fills in default pins; you can change every one of them.</p>
+    </section>
+
+    <section id="chip" data-lane="2" data-station="the chip">
+      <h2>1. The chip</h2>
+      <p>Open the menu in your build checkout (see the <a href="quick-start.html#build">quick start</a>):</p>
+      <pre><code class="language-sh">make KCONFIG_CONFIG="$PWD/boxturtle.config" OUT=out-boxturtle/ menuconfig</code></pre>
+      <p>The first screens are Klipper&#39;s: architecture (STM32), processor model, bootloader offset, clock and USB or CAN. On an AFC Lite that is an STM32H723. If a chip lacks something an option needs, such as ADC inputs for an analog buffer, the menu hides the option or the build refuses it with a message.</p>
+    </section>
+
+    <section id="unit" data-lane="3" data-station="the unit">
+      <h2>2. The unit</h2>
+      <p>Enable <strong>klipper-mmu</strong>, then open <strong>Device, board and lanes</strong>:</p>
+      <ul>
+        <li><strong>MMU Device Composition</strong>: your unit (<a href="devices.html">Supported units</a>), or <em>Custom</em>.</li>
+        <li><strong>Wiring preset (all pins editable)</strong>: <em>AFC Lite</em> (H723 only), or <em>Manual pin configuration</em> to start empty.</li>
+        <li><strong>Lane count override</strong>: for units that come in more than one size, such as a 4- or 8-lane BoxTurtle.</li>
+      </ul>
+      <p>The device sets the selector kind, sensors and motion defaults. <strong>Mechanism and optional feedback</strong> lets you change them: separate LOAD and BAY sensors, powered rewind, a filament encoder, an analog buffer, and how a load detects arrival.</p>
+    </section>
+
+    <section id="pins" data-lane="4" data-station="the pins">
+      <h2>3. The pins</h2>
+      <p>Open <strong>Configure and reserve MMU pins</strong>. Pins use their datasheet names (<code>PA1</code>, <code>PC12</code>). Per-lane signals take a comma list in lane order:</p>
+      <pre><code class="language-text">PD4,PC12,PE2,PD15</code></pre>
+      <div class="note" style="--note: var(--lane-3)">
+  <span class="note-label">Reserved pins</span>
+  <p>These pins now belong to the unit. Do not use them again in <code>printer.cfg</code>.</p>
+</div>
+
+      <h3 id="p-feeders" data-station="feeders">Feeders</h3>
+      <p>Under <strong>Feeder pins and electrical settings</strong>:</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Menu entry</th><th>What to enter</th></tr></thead>
+<tbody>
+<tr><td data-label="Menu entry">Feeder STEP / DIR / ENABLE pins, in lane order</td><td data-label="What to enter">One pin per lane each.</td></tr>
+<tr><td data-label="Menu entry">Single-wire feeder TMC UART pins, in lane order</td><td data-label="What to enter">For TMC2209 drivers on UART. The unit sets them up itself; leave them out of <code>printer.cfg</code>. Leave empty for plain STEP/DIR drivers.</td></tr>
+<tr><td data-label="Menu entry">DIR level for forward travel by lane</td><td data-label="What to enter">If a lane feeds backwards, flip its value (0 &harr; 1).</td></tr>
+</tbody>
+</table></div>
+
+      <h3 id="p-selector" data-station="selector">Selector</h3>
+      <p>Under <strong>Selector and servo pins and electrical settings</strong>. Only the entries your selector kind uses appear:</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Menu entry</th><th>Used by</th></tr></thead>
+<tbody>
+<tr><td data-label="Menu entry">Selector axis STEP / DIR / ENABLE pin</td><td data-label="Used by">Linear, rotary and indexed selectors</td></tr>
+<tr><td data-label="Menu entry">Selector axis single-wire TMC UART pin</td><td data-label="Used by">Selector drivers on TMC UART</td></tr>
+<tr><td data-label="Menu entry">Selector home endstop pin</td><td data-label="Used by">Linear and rotary selectors</td></tr>
+<tr><td data-label="Menu entry">Per-gate index switch pins, in gate order (INDEXED only)</td><td data-label="Used by">BTT ViViD, Claymore: one switch per gate</td></tr>
+<tr><td data-label="Menu entry">Selector servo pin</td><td data-label="Used by">Servo selectors, and linear selectors with a grip servo</td></tr>
+</tbody>
+</table></div>
+
+      <h3 id="p-sensors" data-station="sensors and buffer">Sensors, buffer, encoder and respoolers</h3>
+      <p>Under <strong>Presence, buffer pins and electrical settings</strong> and <strong>Rewind pins and bridge settings</strong>:</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Menu entry</th><th>What it is</th></tr></thead>
+<tbody>
+<tr><td data-label="Menu entry">Bay/preparation sensor pins, in lane order</td><td data-label="What it is">The switch at each lane&#39;s entrance. Clicks when you insert filament.</td></tr>
+<tr><td data-label="Menu entry">Physical LOAD sensor pins, in lane order</td><td data-label="What it is">The switch past the feeder. The feeder has gripped the filament.</td></tr>
+<tr><td data-label="Menu entry">Local hub sensor pin</td><td data-label="What it is">The switch where all lanes meet. Not used on EMU and KMS, where each LOAD switch is the hub.</td></tr>
+<tr><td data-label="Menu entry">Local filament-arrival sensor pin (required)</td><td data-label="What it is">A toolhead switch wired to this board. Needed when the buffer cannot detect arrival.</td></tr>
+<tr><td data-label="Menu entry">Buffer advance switch or DiffA pin</td><td data-label="What it is">First buffer input: a switch, or an analog signal.</td></tr>
+<tr><td data-label="Menu entry">Buffer trailing switch or DiffB pin</td><td data-label="What it is">Second buffer input. Unused on a tension-only (single-switch) buffer.</td></tr>
+<tr><td data-label="Menu entry">Shared-path encoder A pin (and B)</td><td data-label="What it is">The filament encoder, when <strong>Filament encoder feedback</strong> is on.</td></tr>
+<tr><td data-label="Menu entry">Rewind forward-drive / reverse-drive / ENABLE pins, in lane order</td><td data-label="What it is">DC respooler motors, when <strong>Powered DC rewind</strong> is on.</td></tr>
+</tbody>
+</table></div>
+      <p>Each switch has an active level and a pull, under <strong>Local switch electrical settings</strong>:</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Setting</th><th>Values</th><th>Same as in <code>printer.cfg</code></th></tr></thead>
+<tbody>
+<tr><td data-label="Setting">Active level</td><td data-label="Values">0 = low, 1 = high means &ldquo;filament here&rdquo;</td><td data-label="Same as in printer.cfg"><code>!</code> in front of a pin</td></tr>
+<tr><td data-label="Setting">Pull</td><td data-label="Values">-1 = down, 0 = none, 1 = up</td><td data-label="Same as in printer.cfg"><code>^</code> for a pull-up</td></tr>
+</tbody>
+</table></div>
+      <p>You do not need to get these right first time. The <a href="quick-start.html#c-switches">switch check</a> names any switch that is reversed or floating.</p>
+      <p><strong>An analog buffer</strong> (the OpenAMS FPS) needs <strong>Paired analog DiffA/DiffB buffer</strong> on and two ADC-capable pins; then <a href="calibration.html#buffer">calibrate it</a>. <strong>A switched buffer</strong> needs <strong>Buffer input that requests forward feeding</strong> set to the switch reached when the buffer wants more filament.</p>
+      <p>If a spool unwinds when it should wind, swap that lane&#39;s two rewind drive pins.</p>
+    </section>
+
+    <section id="mechanics" data-lane="1" data-station="mechanics">
+      <h2>4. Mechanics</h2>
+      <p>Under <strong>Motion and driver defaults</strong>, describe the feeder as Klipper describes a stepper. The build turns it into steps.</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Menu entry</th><th>Meaning</th><th>BoxTurtle default</th></tr></thead>
+<tbody>
+<tr><td data-label="Menu entry">Feeder rotation distance (micrometres per output rotation)</td><td data-label="Meaning">Filament moved by one turn of the drive gear</td><td data-label="BoxTurtle default">22000 (22 mm)</td></tr>
+<tr><td data-label="Menu entry">Feeder motor full steps per rotation</td><td data-label="Meaning">200 for a 1.8&deg; motor, 400 for 0.9&deg;</td><td data-label="BoxTurtle default">200</td></tr>
+<tr><td data-label="Menu entry">Feeder gear ratio: motor turns (A) / output turns (B)</td><td data-label="Meaning">A 50:10 gearbox is A = 50, B = 10</td><td data-label="BoxTurtle default">50 : 10</td></tr>
+<tr><td data-label="Menu entry">Driver run-current default (mA)</td><td data-label="Meaning">From your motor&#39;s datasheet</td><td data-label="BoxTurtle default">Device default</td></tr>
+<tr><td data-label="Menu entry">Driver hold-current default (mA)</td><td data-label="Meaning">Current at rest</td><td data-label="BoxTurtle default">Device default</td></tr>
+</tbody>
+</table></div>
+      <p>Each device fills in its own values from Happy Hare&#39;s or AFC&#39;s configuration for that unit. To measure rotation distance yourself, mark the filament, turn the drive gear exactly one turn by hand, and measure what went in.</p>
+      <p>Selector units have the same entries for the selector axis under <strong>Selector stepper axis mechanics</strong>, and their gate geometry under the selector menus. The same menus hold speeds, acceleration and deadlines; change them one at a time, after the unit loads reliably.</p>
+    </section>
+
+    <section id="finish" data-lane="2" data-station="build and check">
+      <h2>5. Build, flash, check</h2>
+      <p>Save, then build and flash as in the quick start (<a href="quick-start.html#build">step 2</a>, <a href="quick-start.html#flash">step 3</a>). Your settings stay in your config file for the next build.</p>
+      <div class="note" style="--note: var(--lane-3)">
+  <span class="note-label">Before motors get power</span>
+  <p>A wrong pin can drive the wrong motor. After any pin change, check switches and the buffer with the safe image before flashing the motion image. Then run <a href="quick-start.html#commission">commissioning</a> again.</p>
+</div>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <p>klipper-mmu is an optional add-on to Klipper, a separate project with its own authors and license (GPL-3.0). It builds on the work of the Happy Hare, AFC, BoxTurtle and OpenAMS projects.</p>
+  <p>Set in Bricolage Grotesque, Source Serif 4 and JetBrains Mono (SIL Open Font License), served from this site.</p>
+</footer>
+
+<script src="assets/site.js" defer></script>
+</body>
+</html>

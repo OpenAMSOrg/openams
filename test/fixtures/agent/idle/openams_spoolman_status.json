@@ -1,0 +1,66 @@
+{
+ "result": {
+  "bays": {
+   "oams1-0": {
+    "error": null,
+    "pending_confirmation": false,
+    "source": "none",
+    "spool": null,
+    "spool_id": null,
+    "state": "unlinked"
+   },
+   "oams1-1": {
+    "error": null,
+    "pending_confirmation": false,
+    "source": "manual",
+    "spool": {
+     "color_hex": "000000",
+     "flow_k": 0.025,
+     "initial_g": 1000.0,
+     "material": "ABS",
+     "remaining_g": 1000.0,
+     "remaining_pct": 100,
+     "vendor": "Generic"
+    },
+    "spool_id": 1,
+    "state": "linked"
+   },
+   "oams1-2": {
+    "error": null,
+    "pending_confirmation": false,
+    "source": "manual",
+    "spool": {
+     "color_hex": "FF6A13",
+     "flow_k": null,
+     "initial_g": 1000.0,
+     "material": "ABS",
+     "remaining_g": 1000.0,
+     "remaining_pct": 100,
+     "vendor": "Generic"
+    },
+    "spool_id": 2,
+    "state": "linked"
+   },
+   "oams1-3": {
+    "error": null,
+    "pending_confirmation": false,
+    "source": "manual",
+    "spool": {
+     "color_hex": "000000",
+     "flow_k": null,
+     "initial_g": 1000.0,
+     "material": "PA",
+     "remaining_g": 1000.0,
+     "remaining_pct": 100,
+     "vendor": "Generic"
+    },
+    "spool_id": 3,
+    "state": "linked"
+   }
+  },
+  "edit": true,
+  "queued_writes": 0,
+  "schema_version": 1,
+  "spoolman_online": true
+ }
+}

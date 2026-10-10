@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 12:26:53 -0700
+Subject: [PATCH] lpc176x: Recover the CAN controller from bus-off
+
+The LPC CAN controller sets both Bus Status and Reset Mode when its transmit error counter reaches bus-off.  Reset Mode removes the controller from bus activity and remains asserted until software clears it.
+
+The interrupt handler recorded the resulting error state but never released Reset Mode.  A transient wiring, termination, or acknowledgement failure could therefore leave the node permanently disconnected after the physical bus became healthy.
+
+When an interrupt observes both the bus-off status and the hardware-entered reset state, clear Reset Mode to begin the controller recovery sequence.  Hardware still waits for the protocol-required 128 bus-free occurrences before returning bus-on, so this restores service without forcing the error counters clear or bypassing recovery timing.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/lpc176x/can.c b/src/lpc176x/can.c
+index 0701a962..089da849 100644
+--- a/src/lpc176x/can.c
++++ b/src/lpc176x/can.c
+@@ -270,6 +270,19 @@ CAN_IRQHandler(void)
+             >= CAN_ERROR_WARNING_LIMIT)
+             CAN_Errors.tx_error += 1;
+     }
++
++    /*
++     * LPC CAN hardware sets both Bus Status and Reset Mode when the transmit
++     * error counter reaches bus-off.  Reset Mode disconnects the controller
++     * from the bus and remains set until the CPU explicitly clears it, so only
++     * recording the error leaves the node permanently silent after a transient
++     * wiring fault.  Clear the hardware-entered reset state to begin recovery.
++     * The controller still observes the protocol-required 128 bus-free
++     * sequences before becoming bus-on; this does not force the error counters
++     * clear or permit an early return to active traffic.
++     */
++    if ((LPC_CANx->GSR & CAN_GSR_BS) && (LPC_CANx->MOD & CAN_MOD_RM))
++        LPC_CANx->MOD &= ~CAN_MOD_RM;
+ }
+ 
+ void

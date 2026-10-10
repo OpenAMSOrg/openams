@@ -1,0 +1,79 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 12:14:10 -0700
+Subject: [PATCH] canserial: Space discovery slots by CAN frame time
+
+Unassigned nodes answer with the same arbitration identifier.  The existing 23 microsecond backoff slots were shorter than an eight-byte classic CAN frame, which takes about 120 microseconds even at 1Mbit/s and proportionally longer at lower bitrates.
+
+When several response timers expired while an earlier frame occupied the bus, those controllers all became pending.  They then entered arbitration together after the bus became idle, tied on the common identifier, and collided when their UUID payloads differed.  Merely choosing distinct timer slots did not prevent that failure.
+
+Reserve a conservative 160 CAN bit times for each discovery slot and derive its duration from CONFIG_CANBUS_FREQUENCY.  Continue bounding the response window to approximately 1.5 seconds, with the number of available slots adjusted to the configured bus speed.  Document the timing guarantee in the protocol description.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/docs/CANBUS_protocol.md b/docs/CANBUS_protocol.md
+index 648aae3e..04f41852 100644
+--- a/docs/CANBUS_protocol.md
++++ b/docs/CANBUS_protocol.md
+@@ -36,7 +36,9 @@ assigned a `canbus_nodeid`. Unassigned micro-controllers will respond
+ with a RESP_NEED_NODEID response message. Klipper micro-controllers
+ delay that response by an interval derived from their `canbus_uuid` so
+ that multiple unassigned nodes do not normally transmit the response
+-with the same CAN bus id at the same time.
++with the same CAN bus id at the same time. Response slots are separated
++by enough time to transmit the complete response at the configured CAN
++bus frequency.
+ 
+ The CMD_QUERY_UNASSIGNED message format is:
+ `<1-byte message_id = 0x00>`
+diff --git a/src/generic/canserial.c b/src/generic/canserial.c
+index 600a4be3..9a60d1e0 100644
+--- a/src/generic/canserial.c
++++ b/src/generic/canserial.c
+@@ -19,6 +19,9 @@
+ 
+ #define CANBUS_UUID_LEN 6
+ 
++#define CAN_QUERY_RESPONSE_BITS 160
++#define CAN_QUERY_RESPONSE_WINDOW_US 1500000
++
+ enum {
+     CQS_IDLE, CQS_WAITING, CQS_READY
+ };
+@@ -210,11 +213,32 @@ can_process_query_unassigned(struct canbus_msg *msg)
+ {
+     if (CanData.assigned_id || CanData.query_state != CQS_IDLE)
+         return;
+-    // Spread responses over 1.5 seconds to avoid same-id collisions
+-    uint32_t slot = CanData.uuid[0] | CanData.uuid[1] << 8;
++    /*
++     * Every discovery response uses CANBUS_ID_ADMIN_RESP.  CAN arbitration can
++     * therefore not select a winner when multiple responses become ready at
++     * the same bus-idle boundary; the controllers continue into the different
++     * UUID payloads and produce a data-bit collision instead.  A timer spacing
++     * shorter than one complete response does not prevent that condition,
++     * because every timer which expires while an earlier frame owns the bus
++     * becomes a simultaneous contender as soon as that frame finishes.
++     *
++     * Reserve 160 bit times per slot.  An eight-byte standard CAN data frame,
++     * including worst-case bit stuffing, acknowledgement, end-of-frame, and
++     * inter-frame spacing, fits within that conservative bound.  Scaling the
++     * slot duration by the configured bitrate makes the protection valid below
++     * the usual 1Mbit/s setting as well.  The fixed response window bounds
++     * discovery latency; at least one slot is retained for unusually low
++     * build-time bitrate settings.
++     */
++    uint32_t slot_us = DIV_ROUND_UP(CAN_QUERY_RESPONSE_BITS * 1000000u,
++                                    CONFIG_CANBUS_FREQUENCY);
++    uint32_t slot_count = CAN_QUERY_RESPONSE_WINDOW_US / slot_us;
++    if (!slot_count)
++        slot_count = 1;
++    uint32_t uuid_slot = CanData.uuid[0] | CanData.uuid[1] << 8;
++    uint32_t delay = 100 + uuid_slot % slot_count * slot_us;
+     CanData.query_state = CQS_WAITING;
+-    CanData.query_timer.waketime = (timer_read_time()
+-                                    + timer_from_us(100 + slot * 23));
++    CanData.query_timer.waketime = timer_read_time() + timer_from_us(delay);
+     sched_add_timer(&CanData.query_timer);
+ }
+ 

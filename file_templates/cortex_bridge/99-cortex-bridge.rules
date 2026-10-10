@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: MIT
+# Installed by OpenAMS. The Cortex Bridge's USB serial port belongs to the
+# OpenAMS relay alone: keep ModemManager from probing it, in normal operation
+# (1a86:fe11, serial CB + 12 hex digits) and while its boot receives a
+# firmware update (1a86:fe10, "Cortex Updater").
+SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="fe11", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="fe11", ATTRS{serial}=="CB*", MODE="0660", GROUP="dialout", ENV{ID_MM_DEVICE_IGNORE}="1", ENV{ID_MM_PORT_IGNORE}="1"
+SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="fe10", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="fe10", MODE="0660", GROUP="dialout", ENV{ID_MM_DEVICE_IGNORE}="1", ENV{ID_MM_PORT_IGNORE}="1"

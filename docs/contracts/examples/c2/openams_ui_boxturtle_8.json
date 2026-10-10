@@ -1,0 +1,131 @@
+{
+  "v": 1,
+  "unit": "box",
+  "idx": 0,
+  "family": "boxturtle",
+  "serial": "000000000000000000000005",
+  "online": true,
+  "ready": true,
+  "cal": "p",
+  "lane": {
+    "id": "fps",
+    "ext": "extruder",
+    "op": "UNLOADED",
+    "group": null,
+    "bay": null,
+    "stage": null,
+    "runout": "idle",
+    "from": null,
+    "to": null,
+    "ms": true
+  },
+  "bays": [
+    {
+      "id": 0,
+      "s": "r",
+      "cal": "u",
+      "a": "adpqe",
+      "sp": {
+        "id": 12,
+        "src": "t"
+      }
+    },
+    {
+      "id": 1,
+      "s": "r",
+      "cal": "u",
+      "a": "adpqe",
+      "sp": {
+        "id": 15,
+        "src": "m"
+      }
+    },
+    {
+      "id": 2,
+      "s": "r",
+      "cal": "p",
+      "a": "adpqe",
+      "sp": {
+        "id": 41,
+        "src": "m"
+      }
+    },
+    {
+      "id": 3,
+      "s": "r",
+      "cal": "u",
+      "a": "adpqe",
+      "sp": {
+        "id": 40,
+        "src": "m"
+      }
+    },
+    {
+      "id": 4,
+      "s": "r",
+      "cal": "u",
+      "a": "adpqe",
+      "sp": {
+        "id": 44,
+        "src": "m"
+      }
+    },
+    {
+      "id": 5,
+      "s": "r",
+      "cal": "u",
+      "a": "adpqe",
+      "sp": {
+        "id": 30,
+        "src": "m"
+      }
+    },
+    {
+      "id": 6,
+      "s": "r",
+      "cal": "u",
+      "a": "apqe",
+      "sp": null
+    },
+    {
+      "id": 7,
+      "s": "e",
+      "cal": "u",
+      "a": "pqe",
+      "sp": null
+    }
+  ],
+  "groups": [
+    {
+      "n": "T0",
+      "b": [
+        "box-0",
+        "box-1"
+      ],
+      "s": "rr"
+    },
+    {
+      "n": "T1",
+      "b": [
+        "box-2"
+      ],
+      "s": "r"
+    },
+    {
+      "n": "T2",
+      "b": [
+        "box-3",
+        "box-4",
+        "box-5",
+        "box-6",
+        "box-7"
+      ],
+      "s": "rrrre"
+    }
+  ],
+  "env": null,
+  "dryer": null,
+  "fault": null,
+  "nf": 0,
+  "act": []
+}

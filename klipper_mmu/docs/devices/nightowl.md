@@ -1,0 +1,282 @@
+# nightowl
+
+Vendor: **NightOwl**, 2 gates, selector `VirtualSelector`. Traced against Happy Hare `c54c736`, harness profile `nightowl`.
+
+## Decisions
+
+- **long_speed**: NightOwl's speed numbers here are NightOwl's own, and klipper-mmu's NightOwl preset takes them from this dossier. EMU once borrowed them before its own trace existed; it now has its own (250 mm/s, 120 mm/s^2, from the EMU dossier).
+- **entry_sensor**: Pins are board wiring, not device behaviour. Happy Hare's harness has no NightOwl board profile, so its PB1 is a harness placeholder; AFC's ERB 2.0 template (ERB_2.0.cfg alias LANE1_EXT -> gpio4) is the real reference for an ERB build. klipper-mmu takes pins from the selected MCU board preset, so this row is informational.
+- **exit_sensor**: Same as entry_sensor: HH's PB11 is a harness placeholder; AFC's ERB 2.0 wiring (alias LANE1_TRIG -> gpio3) is the real reference. Pins come from the board preset; informational.
+- **unload_park**: AFC's NightOwl hub section sets no hub_clear_move_dis, so the fact falls back to the per-lane park_dist of 10mm (itself flagged 'Currently unused' in extras/AFC_lane.py); Happy Hare parks UNLOAD 100mm behind mmu_exit_0. klipper-mmu adopts HH's number: NightOwl's UNLOAD retracts 100 mm past the switch (`KLIPPER_MMU_UNLOAD_HUB_CLEAR_MM`).
+- **short_speed**: AFC.cfg's global short_moves_speed/accel is 50/300 (NightOwl's template sets no override); Happy Hare's gear_short_move_speed/accel is 80/400. klipper-mmu adopts HH's numbers (80/400).
+
+## Hardware (rendered)
+
+### `[mmu_toolhead default]`
+
+| Key | Value |
+|---|---|
+| `extruder_switch_pin` | `` |
+| `toolhead_switch_pin` | `` |
+| `register_toolhead_sensors` | `1` |
+| `toolhead_extruder_to_nozzle` | `72` |
+| `toolhead_sensor_to_nozzle` | `62` |
+| `toolhead_entry_to_extruder` | `8` |
+| `toolhead_residual_filament` | `2` |
+| `toolhead_ooze_reduction` | `0` |
+
+### `[mmu_unit unit0]`
+
+| Key | Value |
+|---|---|
+| `vendor` | `NightOwl` |
+| `version` | `1.0` |
+| `num_gates` | `2` |
+| `display_name` | `NightOwl-0` |
+| `buffer` | `unit0` |
+| `toolhead` | `default` |
+| `extruder_name` | `extruder` |
+| `gear_steppers` | `unit0_gear, unit0_gear_1` |
+| `selector_type` | `VirtualSelector` |
+| `variable_bowden_lengths` | `0` |
+| `variable_rotation_distances` | `1` |
+| `require_bowden_move` | `1` |
+| `filament_always_gripped` | `1` |
+| `show_bypass` | `0` |
+
+### `[mmu_stepper unit0_gear]`
+
+| Key | Value |
+|---|---|
+| `step_pin` | `unit0:PB15` |
+| `dir_pin` | `unit0:PB14` |
+| `enable_pin` | `!unit0:PA8` |
+| `rotation_distance` | `22.7316868` |
+| `gear_ratio` | `50:10` |
+| `microsteps` | `16` |
+| `full_steps_per_rotation` | `200` |
+
+### `[mmu_sensors unit0]`
+
+| Key | Value |
+|---|---|
+| `mmu_entry_switch_pin_0` | `^unit0:PB1` |
+| `mmu_entry_switch_pin_1` | `^unit0:PB12` |
+| `mmu_exit_switch_pin_0` | `^unit0:PB11` |
+| `mmu_exit_switch_pin_1` | `^unit0:PB4` |
+| `register_mmu_sensors` | `1` |
+
+### `[mmu_buffer unit0]`
+
+| Key | Value |
+|---|---|
+| `buffer_range` | `8` |
+| `buffer_maxrange` | `12` |
+| `tension_pin` | `^unit0:PA3` |
+| `compression_pin` | `^unit0:PA2` |
+| `buffer_spring_state` | `tension` |
+| `register_buffer_sensors` | `1` |
+
+## Parameters
+
+| Key | Value |
+|---|---|
+| `log_level` | `1` |
+| `log_file_level` | `2` |
+| `log_statistics` | `1` |
+| `log_visual` | `1` |
+| `log_startup_status` | `1` |
+| `log_m117_messages` | `1` |
+| `suppress_klipper_warnings` | `0` |
+| `extruder_load_speed` | `16` |
+| `extruder_unload_speed` | `16` |
+| `extruder_sync_load_speed` | `18` |
+| `extruder_sync_unload_speed` | `18` |
+| `extruder_homing_speed` | `16` |
+| `extruder_accel` | `1500` |
+| `macro_toolhead_max_accel` | `0` |
+| `macro_toolhead_min_cruise_ratio` | `0.5` |
+| `force_form_tip_standalone` | `1` |
+| `form_tip_macro` | `_MMU_FORM_TIP` |
+| `extruder_form_tip_current` | `100` |
+| `slicer_tip_park_pos` | `0` |
+| `force_purge_standalone` | `1` |
+| `purge_macro` | `_MMU_PURGE` |
+| `extruder_purge_current` | `100` |
+| `endless_spool_enabled` | `0` |
+| `endless_spool_on_load` | `0` |
+| `endless_spool_eject_gate` | `-1` |
+| `endless_spool_groups` | `` |
+| `spoolman_support` | `off` |
+| `spoolman_pending_id_timeout` | `20` |
+| `spoolman_led_segment` | `gate_status` |
+| `spoolman_nfc_auto_create` | `0` |
+| `t_macro_color` | `slicer` |
+| `console_stat_columns` | `unload, load, post_load, total` |
+| `console_stat_rows` | `total, total_average, job, job_average, last` |
+| `console_gate_stat` | `emoticon` |
+| `console_always_output_full` | `1` |
+| `console_show_colored_text` | `1` |
+| `console_show_filament_color` | `1` |
+| `timeout_pause` | `72000` |
+| `disable_heater` | `600` |
+| `default_extruder_temp` | `200` |
+| `extruder_temp_variance` | `2` |
+| `startup_reset_ttg_map` | `0` |
+| `show_error_dialog` | `1` |
+| `strict_filament_recovery` | `0` |
+| `filament_recovery_on_pause` | `1` |
+| `retry_tool_change_on_error` | `0` |
+| `bypass_autoload` | `0` |
+| `print_start_detection` | `1` |
+| `gcode_load_sequence` | `0` |
+| `gcode_unload_sequence` | `0` |
+| `drying_data` | `{` |
+| `'pla'` | `(45, 300),` |
+| `'pla+'` | `(55, 300),` |
+| `'petg'` | `(60, 300),` |
+| `'tpu'` | `(55, 300),` |
+| `'abs'` | `(70, 300),` |
+| `'abs+'` | `(75, 300),` |
+| `'asa'` | `(65, 300),` |
+| `'nylon'` | `(75, 600),` |
+| `'pc'` | `(75, 600),` |
+| `'pva'` | `(75, 600),` |
+| `'hips'` | `(75, 600)` |
+| `update_trsync` | `0` |
+| `update_bit_max_time` | `1` |
+| `update_aht10_commands` | `0` |
+| `pause_macro` | `PAUSE` |
+| `action_changed_macro` | `_MMU_ACTION_CHANGED` |
+| `print_state_changed_macro` | `_MMU_PRINT_STATE_CHANGED` |
+| `mmu_event_macro` | `_MMU_EVENT` |
+| `post_preload_macro` | `_MMU_POST_PRELOAD` |
+| `pre_unload_macro` | `_MMU_PRE_UNLOAD` |
+| `post_form_tip_macro` | `_MMU_POST_FORM_TIP` |
+| `post_unload_macro` | `_MMU_POST_UNLOAD` |
+| `pre_load_macro` | `_MMU_PRE_LOAD` |
+| `post_load_macro` | `_MMU_POST_LOAD` |
+| `unload_sequence_macro` | `_MMU_UNLOAD_SEQUENCE` |
+| `load_sequence_macro` | `_MMU_LOAD_SEQUENCE` |
+| `gear_load_speed` | `100` |
+| `gear_load_accel` | `100` |
+| `gear_unload_speed` | `80` |
+| `gear_unload_accel` | `100` |
+| `gear_homing_speed` | `50` |
+| `virtual_sensor_homing_speed` | `15` |
+| `gear_short_move_speed` | `80` |
+| `gear_short_move_accel` | `400` |
+| `gear_short_move_threshold` | `70` |
+| `gate_homing_endstop` | `mmu_exit` |
+| `gate_homing_max` | `300` |
+| `gate_parking_distance` | `-100` |
+| `gate_preload_endstop` | `mmu_exit` |
+| `gate_preload_homing_max` | `200` |
+| `gate_preload_parking_distance` | `10` |
+| `gate_preload_attempts` | `2` |
+| `gate_autoload` | `1` |
+| `gate_final_eject_distance` | `300` |
+| `bowden_homing_max` | `2000` |
+| `bowden_load_homing_buffer` | `20` |
+| `bowden_unload_homing_buffer` | `40` |
+| `extruder_homing_endstop` | `filament_compression` |
+| `extruder_homing_max` | `100` |
+| `extruder_collision_homing_current` | `30` |
+| `toolhead_unload_safety_margin` | `10` |
+| `toolhead_post_load_tighten` | `60` |
+| `toolhead_post_load_tension_adjust` | `1` |
+| `toolhead_entry_tension_test` | `1` |
+| `sync_to_extruder` | `1` |
+| `sync_gear_current` | `70` |
+| `sync_form_tip` | `1` |
+| `sync_purge` | `1` |
+| `sync_feedback_enabled` | `1` |
+| `sync_feedback_speed_multiplier` | `5` |
+| `sync_feedback_boost_multiplier` | `3` |
+| `sync_feedback_extrude_threshold` | `5` |
+| `sync_feedback_debug_log` | `0` |
+| `flowguard_enabled` | `1` |
+| `flowguard_max_relief` | `40` |
+| `tangle_prevention_enabled` | `1` |
+| `tangle_prevention_threshold` | `0.3` |
+| `tangle_prevention_release` | `0.2` |
+| `autocal_bowden_length` | `1` |
+| `autotune_bowden_length` | `0` |
+| `skip_cal_rotation_distance` | `1` |
+| `autotune_rotation_distance` | `0` |
+
+Steps/mm (gear): `703.8632962336961`
+
+## Operations
+
+### PRELOAD
+
+| Phase | Motor | Homing | Endstop | Dist | Speed | Accel | Actual | Homed |
+|---|---|---|---|---:|---:|---:|---:|---|
+| Initial homing to mmu_exit_0 sensor | gear | 1 | mmu_exit_0 | 200.00 | 50.0 | 100.0 | 40.00 | True |
+| Final parking | gear | 0 |  | 10.00 | 80.0 | 400.0 | 10.00 | False |
+
+Ends at tip `10.00` = `mmu_exit_0` + `10.00` mm (filament_pos=0, gate_status=1).
+
+### SELECT
+
+_No motion (already in the requested state)._
+
+### LOAD
+
+| Phase | Motor | Homing | Endstop | Dist | Speed | Accel | Actual | Homed |
+|---|---|---|---|---:|---:|---:|---:|---|
+| Initial homing to mmu_exit_0 sensor | gear | -1 | mmu_exit_0 | -300.00 | 50.0 | 100.0 | -10.00 | True |
+| Fast loading move through bowden | gear | 0 |  | 680.00 | 100.0 | 100.0 | 680.00 | False |
+| Homing filament to extruder endstop | gear | 1 | filament_compression | 120.00 | 50.0 | 100.0 | 28.40 | True |
+| Reverse homing off compression sensor | extruder | -1 | filament_compression | 24.00 | 16.0 | 1500.0 | 0.00 | True |
+| Loading filament to nozzle | gear+extruder | 0 |  | 68.00 | 18.0 | 400.0 | 68.00 | False |
+
+Ends at tip `776.40` = `mmu_exit_0` + `776.40` mm (filament_pos=10, gate_status=1).
+
+### UNLOAD
+
+| Phase | Motor | Homing | Endstop | Dist | Speed | Accel | Actual | Homed |
+|---|---|---|---|---:|---:|---:|---:|---|
+| Unloading extruder | gear+extruder | 0 |  | -33.01 | 18.0 | 400.0 | -33.01 | False |
+| Fast unloading move through bowden | gear | 0 |  | -650.00 | 80.0 | 100.0 | -650.00 | False |
+| Reverse homing off mmu_exit_0 sensor | gear | -1 | mmu_exit_0 | -340.00 | 50.0 | 100.0 | -48.39 | True |
+| Final parking | gear | 0 |  | -100.00 | 80.0 | 100.0 | -100.00 | False |
+
+Ends at tip `-100.00` = `mmu_exit_0` - `100.00` mm (filament_pos=0, gate_status=2).
+
+### EJECT
+
+| Phase | Motor | Homing | Endstop | Dist | Speed | Accel | Actual | Homed |
+|---|---|---|---|---:|---:|---:|---:|---|
+| Ejecting filament out of gate | gear | -1 | mmu_entry | -300.00 | 50.0 | 100.0 | -50.00 | True |
+
+Ends at tip `-150.00` = `mmu_entry` - `0.00` mm (filament_pos=0, gate_status=0).
+
+## Concept mapping
+
+| Upstream concept | AFC | Happy Hare | klipper-mmu today | Status |
+|---|---|---|---|---|
+| Lane / gate | [AFC_stepper laneN], unit: X:N | gate index, unit0_gear_<i> | lane_count, per-lane feeder driver | mapped |
+| Prep / entry switch | prep: (TRG) | mmu_entry_<i> | has_bay_sensors, KLIPPER_MMU_PINS_BAY | mapped |
+| Load / exit switch | load: (LOAD) | mmu_exit_<i> | has_load_sensors, KLIPPER_MMU_PINS_LOAD | mapped |
+| Hub / shared exit | [AFC_hub] switch_pin | mmu_shared_exit | has_hub_sensor, PINS_HUB | mapped |
+| Virtual hub | switch_pin: virtual + use_dist_hub | no shared exit + gate_homing_endstop: mmu_exit | load_is_virtual_hub | mapped |
+| Bowden length | afc_bowden_length / dist_hub per lane | mmu_calibration_bowden_lengths (per gate if variable) | fps_calibrated_steps (one per unit) | gap: per-lane |
+| Toolhead switch | pin_tool_start / pin_tool_end, tool_stn | [mmu_toolhead] toolhead_switch_pin, toolhead_sensor_to_nozzle | has_toolhead_sensor, PINS_TOOLHEAD; nozzle distances host-owned | mapped (boundary), host (distances) |
+| Switched buffer | [AFC_buffer] advance_pin/trailing_pin + multipliers | [mmu_buffer] compression_pin/tension_pin | has_proportional_buffer=false, PINS_BUFFER_A/B switched | mapped for follow; gap: ramming arrival |
+| Proportional buffer (PSF) | AFCFPSBuffer adc_pin, neutral/low/high, P+I | analog_pin, max_compression/tension, threshold; EKF/two-level | DiffA/DiffB pair only (km_diff_adc_config_t) | gap: single-ended ADC frontend |
+| FPS (OpenAMS) | AFC_FPS.cfg | n/a | DiffA/DiffB + fps_arrival | mapped |
+| Espooler / assist | AFC_assist.py, espooler.assist(pwm) | [mmu_espooler] burst/rewind | has_powered_rewind (KLIPPER_MMU_POWERED_REWIND), PWM duty, current regulator | mapped (on by default for BoxTurtle and Claymore); EMU none |
+| Encoder | n/a in EMU | [mmu_encoder], encoder homing | has_encoder (KLIPPER_MMU_ENCODER), PINS_ENCODER_A, optional B: clog/stall and progress checks, CALIBRATE to a toolhead switch | mapped (on by default for ERCF); encoder homing not a mode |
+| Selector | HTLF lobes, ViViD/Claymore selector switches | SELECTOR_REGISTRY classes | has_selector, KLIPPER_MMU_SELECTOR_KIND_LINEAR/ROTARY/SERVO/INDEXED; homes before first use; KLIPPER_MMU_CALIBRATE_SELECTOR | mapped |
+| Grip / servo | n/a EMU | servo_* | KLIPPER_MMU_PINS_SERVO (Klipper software PWM, any GPIO): LINEAR grip angles, SERVO per-gate angles | mapped |
+| Speeds | long/short/hub/calibration modes | load/unload/short/homing/virtual-sensor speeds | feed/rewind velocity, accel/decel, cruise/crawl | mapped in shape; per-device numbers vary |
+| Currents | run_current, print_current (follow) | run/hold, sync_gear_current % | run/hold only | gap: follow current |
+| Homing budget / attempts | homing_overshoot, homing_delta, attempt loops | gate_homing_max, *_attempts, bowden_homing_max | timeouts in ms, KM_LOAD_ATTEMPTS 3, arrival min/max steps | mapped as deadlines; distance vs time is a translation choice |
+| Parking / clearance | hub_clear_move_dis, extruder_clear_dis, park_dist | gate_parking_distance, gate_final_eject_distance | unload_hub_clear_steps; EJECT to BAY-clear | partly mapped; decision |
+| Tip forming, cut, purge, park | AFC macros, AFC_form_tip.py | _MMU_FORM_TIP, _MMU_PARK, purge | host/OpenAMS macros | host-only |
+| Runout / endless spool | handle_prep_runout, _perform_infinite_runout | mmu_endless_spool.py | host reducer + firmware runout evidence | host-only (with firmware evidence) |
+| LEDs, buttons, fans, environment, heater, NFC, Spoolman | many | many | out of scope for firmware | not-applicable |
+
+_Not modelled by this dossier: motion timing/step generation, macro bodies, espooler and FlowGuard behaviour, real sensor electrics, and calibration (seeded, not measured)._

@@ -1,0 +1,76 @@
+{
+ "result": {
+  "gcode_store": [
+   {
+    "message": "OAMSM_ASSIGN_BAY GROUP=T1 OAMS=oams1 BAY=2",
+    "time": 1790865390.9208996,
+    "type": "command"
+   },
+   {
+    "message": "// Assigned oams1-2 to 'T1' (saved to /home/pi/printer_data/config/oams.cfg).",
+    "time": 1790865390.9332047,
+    "type": "response"
+   },
+   {
+    "message": "OAMSM_ASSIGN_BAY GROUP=T2 OAMS=oams1 BAY=2",
+    "time": 1790865434.6423492,
+    "type": "command"
+   },
+   {
+    "message": "// Assigned oams1-2 to 'T2' (saved to /home/pi/printer_data/config/oams.cfg).",
+    "time": 1790865434.6545022,
+    "type": "response"
+   },
+   {
+    "message": "OAMSM_ASSIGN_BAY GROUP=T1 OAMS=oams1 BAY=2",
+    "time": 1790865491.78805,
+    "type": "command"
+   },
+   {
+    "message": "// Assigned oams1-2 to 'T1' (saved to /home/pi/printer_data/config/oams.cfg).",
+    "time": 1790865492.354729,
+    "type": "response"
+   },
+   {
+    "message": "OAMSM_ASSIGN_BAY GROUP=T2 OAMS=oams1 BAY=2",
+    "time": 1790865496.8001335,
+    "type": "command"
+   },
+   {
+    "message": "// Assigned oams1-2 to 'T2' (saved to /home/pi/printer_data/config/oams.cfg).",
+    "time": 1790865496.8079221,
+    "type": "response"
+   },
+   {
+    "message": "OAMSM_ASSIGN_BAY GROUP=T1 OAMS=oams1 BAY=2",
+    "time": 1790865508.4331002,
+    "type": "command"
+   },
+   {
+    "message": "// Assigned oams1-2 to 'T1' (saved to /home/pi/printer_data/config/oams.cfg).",
+    "time": 1790865508.4414504,
+    "type": "response"
+   },
+   {
+    "message": "OAMSM_ASSIGN_BAY GROUP=T2 OAMS=oams1 BAY=2",
+    "time": 1790865511.9335508,
+    "type": "command"
+   },
+   {
+    "message": "// Assigned oams1-2 to 'T2' (saved to /home/pi/printer_data/config/oams.cfg).",
+    "time": 1790865511.939964,
+    "type": "response"
+   },
+   {
+    "message": "OAMSM_SELFTEST",
+    "time": 1790868268.1355054,
+    "type": "command"
+   },
+   {
+    "message": "// OpenAMS self-test:\n// FPS fps: value=0.203 extruder=extruder\n// OAMS oams1 (idx 1) lane fps: connected, protocol=legacy\n// bays ready=[1, 2, 3] loaded=-\n// group T0: lane=fps bays=oams1-0\n// group T1: lane=fps bays=oams1-1\n// group T2: lane=fps bays=oams1-2\n// group T3: lane=fps bays=oams1-3\n// lane fps: op=UNLOADED group=None unit=None following=False\n// RESULT: PASS",
+    "time": 1790868268.1378753,
+    "type": "response"
+   }
+  ]
+ }
+}

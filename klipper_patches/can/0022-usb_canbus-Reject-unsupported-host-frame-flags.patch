@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 12:11:57 -0700
+Subject: [PATCH] usb_canbus: Reject unsupported host frame flags
+
+The bridge advertises no optional gs_usb features and transfers only the fixed 20-byte classic-CAN frame layout.  It nevertheless accepted arbitrary host frame flags and echoed them unchanged.
+
+An echoed GS_CAN_FLAG_FD makes the Linux receive path parse that echo as the larger CAN-FD layout.  Linux rejects the 20-byte transfer as truncated and does not complete the matching transmit context, which can eventually stop the SocketCAN transmit queue.  Other unsupported flags can similarly report capabilities or conditions the bridge did not produce.
+
+Discard host frames with any gs_usb flag before echo or physical transmission.  This keeps every bulk transfer consistent with the feature bitmap and frame format reported during device setup.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/generic/usb_canbus.c b/src/generic/usb_canbus.c
+index ef707b6b..2f97c761 100644
+--- a/src/generic/usb_canbus.c
++++ b/src/generic/usb_canbus.c
+@@ -223,6 +223,19 @@ drain_usb_host_messages(void)
+          */
+         if (gs->channel)
+             continue;
++        /*
++         * bt_const.feature is zero and this endpoint implements only the
++         * fixed-size classic CAN frame.  Consequently no gs_usb frame flag is
++         * valid on host output.  Echoing an unsupported flag is not harmless:
++         * for example, GS_CAN_FLAG_FD tells Linux to parse the echo using the
++         * much larger CAN-FD layout.  Linux then rejects this 20-byte classic
++         * frame as truncated and never completes the corresponding transmit
++         * context, eventually stopping the SocketCAN queue.  Reject the frame
++         * before echoing it so the format advertised during probe remains the
++         * format used for every bulk transfer.
++         */
++        if (gs->flags)
++            continue;
+         UsbCan.host_push_pos = push_pos = push_pos + 1;
+     }
+ }

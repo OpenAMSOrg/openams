@@ -1,0 +1,407 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 13:59:44 -0700
+Subject: [PATCH] canbus: Reject unrepresentable bitrates
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The hardware timing calculations divided the peripheral clock by CANBUS_FREQUENCY before checking candidate quanta.  A non-divisible request silently discarded that remainder, and several backends encoded fall-through or default fields when no legal timing tuple existed.  The firmware still exported the requested frequency, hiding that the node sampled a different physical bit period from clients which trusted it.
+
+Require exact peripheral-clock division and controller-specific prescaler limits in bxCAN, M_CAN/FDCAN, and LPC timing searches.  Validate can2040’s 16.8 PIO divider in the same way, including its range.  Return an explicit invalid sentinel instead of ever programming an approximate result.
+
+Board initialization runs before sched_main establishes shutdown’s longjmp recovery point, so calling shutdown directly from can_init would itself be unsafe.  Publish an invalid timing result to the existing canserial receive task and wake it; the driver returns before programming or starting CAN, and that first normal task pass reports a controlled Invalid CAN bitrate shutdown.
+
+All previously representable settings retain identical timing fields and wire behavior.  Only configurations which could not produce their advertised bitrate are refused.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/atsam/fdcan.c b/src/atsam/fdcan.c
+index 9580e221..fbd4770a 100644
+--- a/src/atsam/fdcan.c
++++ b/src/atsam/fdcan.c
+@@ -331,6 +331,17 @@ compute_btr(uint32_t pclock, uint32_t bitrate)
+         Use the lowest brp where ts1 and ts2 are in valid range
+      */
+ 
++    /*
++     * Integer division here used to discard any pclock remainder.  The NBTP
++     * value then described the nearest lower number of peripheral clocks while
++     * CANBUS_FREQUENCY still advertised the requested rate to the host.  CAN
++     * nodes need the same nominal bit period to arbitrate reliably, so silently
++     * selecting a nearby rate is worse than refusing an invalid build-time
++     * choice.  Require an exact peripheral-clock division and a legal 1..512
++     * prescaler before programming the controller.
++     */
++    if (!bitrate || pclock % bitrate)
++        return CAN_INVALID_BTR;
+     uint32_t bit_clocks = pclock / bitrate; // clock ticks per bit
+ 
+     uint32_t sjw = 2;
+@@ -338,15 +349,16 @@ compute_btr(uint32_t pclock, uint32_t bitrate)
+     // Find number of time quantas that gives us the exact wanted bit time
+     for (qs = 18; qs > 9; qs--) {
+         // check that bit_clocks / quantas is an integer
+-        uint32_t brp_rem = bit_clocks % qs;
+-        if (brp_rem == 0)
+-            break;
++        if (bit_clocks % qs)
++            continue;
++        uint32_t brp = bit_clocks / qs;
++        if (!brp || brp > 512)
++            continue;
++        uint32_t time_seg2 = qs / 8; // sample at ~87.5%
++        uint32_t time_seg1 = qs - (1 + time_seg2);
++        return make_btr(sjw, time_seg1, time_seg2, brp);
+     }
+-    uint32_t brp       = bit_clocks / qs;
+-    uint32_t time_seg2 = qs / 8; // sample at ~87.5%
+-    uint32_t time_seg1 = qs - (1 + time_seg2);
+-
+-    return make_btr(sjw, time_seg1, time_seg2, brp);
++    return CAN_INVALID_BTR;
+ }
+ 
+ void
+@@ -373,6 +385,10 @@ can_init(void)
+     uint32_t pclock = get_pclock_frequency(CANx_GCLK_ID);
+ 
+     uint32_t btr = compute_btr(pclock, CONFIG_CANBUS_FREQUENCY);
++    if (btr == CAN_INVALID_BTR) {
++        canserial_set_invalid_bitrate();
++        return;
++    }
+ 
+     /*##-1- Configure the CAN #######################################*/
+ 
+diff --git a/src/atsamd/fdcan.c b/src/atsamd/fdcan.c
+index f55b805b..2abf2b40 100644
+--- a/src/atsamd/fdcan.c
++++ b/src/atsamd/fdcan.c
+@@ -347,6 +347,17 @@ compute_btr(uint32_t pclock, uint32_t bitrate)
+         Use the lowest brp where ts1 and ts2 are in valid range
+      */
+ 
++    /*
++     * Integer division here used to discard any pclock remainder.  The NBTP
++     * value then described the nearest lower number of peripheral clocks while
++     * CANBUS_FREQUENCY still advertised the requested rate to the host.  CAN
++     * nodes need the same nominal bit period to arbitrate reliably, so silently
++     * selecting a nearby rate is worse than refusing an invalid build-time
++     * choice.  Require an exact peripheral-clock division and a legal 1..512
++     * prescaler before programming the controller.
++     */
++    if (!bitrate || pclock % bitrate)
++        return CAN_INVALID_BTR;
+     uint32_t bit_clocks = pclock / bitrate; // clock ticks per bit
+ 
+     uint32_t sjw = 2;
+@@ -354,15 +365,16 @@ compute_btr(uint32_t pclock, uint32_t bitrate)
+     // Find number of time quantas that gives us the exact wanted bit time
+     for (qs = 18; qs > 9; qs--) {
+         // check that bit_clocks / quantas is an integer
+-        uint32_t brp_rem = bit_clocks % qs;
+-        if (brp_rem == 0)
+-            break;
++        if (bit_clocks % qs)
++            continue;
++        uint32_t brp = bit_clocks / qs;
++        if (!brp || brp > 512)
++            continue;
++        uint32_t time_seg2 = qs / 8; // sample at ~87.5%
++        uint32_t time_seg1 = qs - (1 + time_seg2);
++        return make_btr(sjw, time_seg1, time_seg2, brp);
+     }
+-    uint32_t brp       = bit_clocks / qs;
+-    uint32_t time_seg2 = qs / 8; // sample at ~87.5%
+-    uint32_t time_seg1 = qs - (1 + time_seg2);
+-
+-    return make_btr(sjw, time_seg1, time_seg2, brp);
++    return CAN_INVALID_BTR;
+ }
+ 
+ void
+@@ -388,6 +400,10 @@ can_init(void)
+     uint32_t pclock = get_pclock_frequency(CANx_GCLK_ID);
+ 
+     uint32_t btr = compute_btr(pclock, CONFIG_CANBUS_FREQUENCY);
++    if (btr == CAN_INVALID_BTR) {
++        canserial_set_invalid_bitrate();
++        return;
++    }
+ 
+     /*##-1- Configure the CAN #######################################*/
+ 
+diff --git a/src/generic/canbus.h b/src/generic/canbus.h
+index 584ae72c..a90c374d 100644
+--- a/src/generic/canbus.h
++++ b/src/generic/canbus.h
+@@ -22,6 +22,8 @@ struct canbus_msg {
+ #define CANMSG_ID_RTR (1u<<30)
+ #define CANMSG_ID_EFF (1u<<31)
+ 
++#define CAN_INVALID_BTR (~0u)
++
+ #define CANMSG_DATA_LEN(msg) ((msg)->dlc > 8 ? 8 : (msg)->dlc)
+ 
+ static inline void
+diff --git a/src/generic/canserial.c b/src/generic/canserial.c
+index 9565cb75..104cb0ae 100644
+--- a/src/generic/canserial.c
++++ b/src/generic/canserial.c
+@@ -58,7 +58,7 @@ static struct canbus_data {
+ 
+     // Rx data
+     struct task_wake rx_wake;
+-    uint8_t receive_pos;
++    uint8_t receive_pos, invalid_bitrate;
+     // Single-producer IRQ ring; publish indexes only after slot data is stable
+     uint32_t admin_pull_pos, admin_push_pos;
+ 
+@@ -316,6 +316,23 @@ canserial_notify_rx(void)
+     sched_wake_task(&CanData.rx_wake);
+ }
+ 
++void
++canserial_set_invalid_bitrate(void)
++{
++    /*
++     * Board initialization runs before sched_main() establishes the recovery
++     * point used by shutdown().  A CAN driver therefore can not safely call
++     * shutdown directly when its runtime peripheral clock can not represent
++     * the configured bitrate.  Publish the failure and wake this existing task;
++     * its first scheduler invocation occurs after shutdown handling is live.
++     * The driver returns before it programs or starts the CAN controller, so an
++     * invalid configuration can never place approximately timed frames on the
++     * bus even if its peripheral clock and pin mux were already prepared.
++     */
++    writeb(&CanData.invalid_bitrate, 1);
++    canserial_notify_rx();
++}
++
+ DECL_CONSTANT("RECEIVE_WINDOW", ARRAY_SIZE(CanData.receive_buf));
+ 
+ // Handle incoming data (called from IRQ handler)
+@@ -421,6 +438,8 @@ canserial_rx_task(void)
+ {
+     if (!sched_check_wake(&CanData.rx_wake))
+         return;
++    if (readb(&CanData.invalid_bitrate))
++        shutdown("Invalid CAN bitrate");
+ 
+     // Process pending admin messages
+     for (;;) {
+diff --git a/src/generic/canserial.h b/src/generic/canserial.h
+index 3dd5cd9d..d4b4db6a 100644
+--- a/src/generic/canserial.h
++++ b/src/generic/canserial.h
+@@ -8,6 +8,7 @@
+ 
+ // canserial.c
+ void canserial_notify_tx(void);
++void canserial_set_invalid_bitrate(void);
+ struct canbus_msg;
+ void canserial_process_data(struct canbus_msg *msg);
+ void canserial_set_uuid(uint8_t *raw_uuid, uint32_t raw_uuid_len);
+diff --git a/src/lpc176x/can.c b/src/lpc176x/can.c
+index 089da849..6920473d 100644
+--- a/src/lpc176x/can.c
++++ b/src/lpc176x/can.c
+@@ -10,6 +10,7 @@
+ #include "command.h" // DECL_CONSTANT_STR
+ #include "compiler.h" // DIV_ROUND_CLOSEST
+ #include "generic/canbus.h" // canbus_notify_tx
++#include "generic/canserial.h" // canserial_set_invalid_bitrate
+ #include "internal.h" // enable_pclock
+ #include "sched.h" // DECL_INIT
+ 
+@@ -112,8 +113,18 @@ make_btr(uint32_t sjw, uint32_t time_seg1, uint32_t time_seg2, uint32_t brp)
+ static uint32_t
+ compute_btr(uint32_t pclock, uint32_t bitrate)
+ {
++    /*
++     * A truncated pclock / bitrate result silently programs a nearby bus rate,
++     * and the previous fallback encoded arbitrary default timing when no legal
++     * quanta count was found.  The host still sees CANBUS_FREQUENCY as the
++     * requested value, hiding that mismatch until arbitration or sampling
++     * becomes unreliable.  Accept only an exactly divisible clock and a timing
++     * tuple which fits every LPC CAN field.
++     */
++    if (!bitrate || pclock % bitrate)
++        return CAN_INVALID_BTR;
+     uint32_t bit_clocks = pclock / bitrate;
+-    uint32_t best_sample_error = ~0, best_brp = bit_clocks / 10;
++    uint32_t best_sample_error = ~0, best_brp = 0;
+     uint32_t time_seg1 = 7, time_seg2 = 2;
+     int qs;
+     for (qs = 25; qs >= 8; qs--) {
+@@ -149,6 +160,8 @@ compute_btr(uint32_t pclock, uint32_t bitrate)
+         }
+     }
+ 
++    if (best_sample_error == (uint32_t)~0)
++        return CAN_INVALID_BTR;
+     return make_btr(2, time_seg1, time_seg2, best_brp);
+ }
+ 
+@@ -297,8 +310,13 @@ can_init(void)
+     gpio_peripheral(GPIO_Tx, CAN_FUNCTION_Tx, 0);
+ 
+     LPC_CANAF->AFMR = CANAF_AFMR_ACCBP;
+-    LPC_CANx->BTR = compute_btr(get_pclock_frequency(PCLK_CANx)
+-                                , CONFIG_CANBUS_FREQUENCY);
++    uint32_t btr = compute_btr(get_pclock_frequency(PCLK_CANx)
++                               , CONFIG_CANBUS_FREQUENCY);
++    if (btr == CAN_INVALID_BTR) {
++        canserial_set_invalid_bitrate();
++        return;
++    }
++    LPC_CANx->BTR = btr;
+     LPC_CANx->EWL = CAN_ERROR_WARNING_LIMIT;
+ 
+     // Clear any stale interrupt state and enter normal operating mode.
+diff --git a/src/rp2040/can.c b/src/rp2040/can.c
+index 5540c9a1..e61c73ff 100644
+--- a/src/rp2040/can.c
++++ b/src/rp2040/can.c
+@@ -115,7 +115,26 @@ can_init(void)
+ 
+     // Start canbus
+     uint32_t pclk = get_pclock_frequency(RESETS_RESET_PIO0_RESET);
++    /*
++     * can2040 represents its PIO clock divider in 16.8 fixed point.  Its setup
++     * calculation previously truncated any fractional remainder, so the host
++     * could be told CANBUS_FREQUENCY while the PIO sampled a nearby physical
++     * rate.  Validate the exact encoded divider, including the hardware's
++     * minimum divide-by-one and 16-bit integer limit, before starting the state
++     * machines.  This rejects only rates this clock can not represent exactly.
++     */
++    uint64_t divider_numerator = (256 / 32) * (uint64_t)pclk;
++    if (!CONFIG_CANBUS_FREQUENCY
++        || divider_numerator % CONFIG_CANBUS_FREQUENCY)
++        goto invalid_bitrate;
++    uint64_t divider = divider_numerator / CONFIG_CANBUS_FREQUENCY;
++    if (divider < 256 || divider > 0xffffff)
++        goto invalid_bitrate;
+     can2040_start(&cbus, pclk, CONFIG_CANBUS_FREQUENCY
+                   , CONFIG_RPXXXX_CANBUS_GPIO_RX, CONFIG_RPXXXX_CANBUS_GPIO_TX);
++    return;
++
++invalid_bitrate:
++    canserial_set_invalid_bitrate();
+ }
+ DECL_INIT(can_init);
+diff --git a/src/stm32/can.c b/src/stm32/can.c
+index 223260b3..7237d485 100644
+--- a/src/stm32/can.c
++++ b/src/stm32/can.c
+@@ -271,6 +271,15 @@ compute_btr(uint32_t pclock, uint32_t bitrate)
+         Use the lowest brp where ts1 and ts2 are in valid range
+      */
+ 
++    /*
++     * Do not round a requested bus rate through integer division.  The value
++     * exported as CANBUS_FREQUENCY must describe the bit period programmed into
++     * bxCAN exactly; otherwise this node can sample at a different rate from
++     * clients which trusted that constant.  Require both exact clock division
++     * and the controller's legal 1..1024 prescaler range.
++     */
++    if (!bitrate || pclock % bitrate)
++        return CAN_INVALID_BTR;
+     uint32_t bit_clocks = pclock / bitrate; // clock ticks per bit
+ 
+     uint32_t sjw = 2;
+@@ -278,15 +287,16 @@ compute_btr(uint32_t pclock, uint32_t bitrate)
+     // Find number of time quantas that gives us the exact wanted bit time
+     for (qs = 18; qs > 9; qs--) {
+         // check that bit_clocks / quantas is an integer
+-        uint32_t brp_rem = bit_clocks % qs;
+-        if (brp_rem == 0)
+-            break;
++        if (bit_clocks % qs)
++            continue;
++        uint32_t brp = bit_clocks / qs;
++        if (!brp || brp > 1024)
++            continue;
++        uint32_t time_seg2 = qs / 8; // sample at ~87.5%
++        uint32_t time_seg1 = qs - (1 + time_seg2);
++        return make_btr(sjw, time_seg1, time_seg2, brp);
+     }
+-    uint32_t brp       = bit_clocks / qs;
+-    uint32_t time_seg2 = qs / 8; // sample at ~87.5%
+-    uint32_t time_seg1 = qs - (1 + time_seg2);
+-
+-    return make_btr(sjw, time_seg1, time_seg2, brp);
++    return CAN_INVALID_BTR;
+ }
+ 
+ void
+@@ -304,6 +314,10 @@ can_init(void)
+     uint32_t pclock = get_pclock_frequency((uint32_t)SOC_CAN);
+ 
+     uint32_t btr = compute_btr(pclock, CONFIG_CANBUS_FREQUENCY);
++    if (btr == CAN_INVALID_BTR) {
++        canserial_set_invalid_bitrate();
++        return;
++    }
+ 
+     /*##-1- Configure the CAN #######################################*/
+ 
+diff --git a/src/stm32/fdcan.c b/src/stm32/fdcan.c
+index e6704a31..70ed02d0 100644
+--- a/src/stm32/fdcan.c
++++ b/src/stm32/fdcan.c
+@@ -387,6 +387,17 @@ compute_btr(uint32_t pclock, uint32_t bitrate)
+         Use the lowest brp where ts1 and ts2 are in valid range
+      */
+ 
++    /*
++     * Integer division here used to discard any pclock remainder.  The NBTP
++     * value then described the nearest lower number of peripheral clocks while
++     * CANBUS_FREQUENCY still advertised the requested rate to the host.  CAN
++     * nodes need the same nominal bit period to arbitrate reliably, so silently
++     * selecting a nearby rate is worse than refusing an invalid build-time
++     * choice.  Require an exact peripheral-clock division and a legal 1..512
++     * prescaler before programming the controller.
++     */
++    if (!bitrate || pclock % bitrate)
++        return CAN_INVALID_BTR;
+     uint32_t bit_clocks = pclock / bitrate; // clock ticks per bit
+ 
+     uint32_t sjw = 2;
+@@ -394,15 +405,16 @@ compute_btr(uint32_t pclock, uint32_t bitrate)
+     // Find number of time quantas that gives us the exact wanted bit time
+     for (qs = 18; qs > 9; qs--) {
+         // check that bit_clocks / quantas is an integer
+-        uint32_t brp_rem = bit_clocks % qs;
+-        if (brp_rem == 0)
+-            break;
++        if (bit_clocks % qs)
++            continue;
++        uint32_t brp = bit_clocks / qs;
++        if (!brp || brp > 512)
++            continue;
++        uint32_t time_seg2 = qs / 8; // sample at ~87.5%
++        uint32_t time_seg1 = qs - (1 + time_seg2);
++        return make_btr(sjw, time_seg1, time_seg2, brp);
+     }
+-    uint32_t brp       = bit_clocks / qs;
+-    uint32_t time_seg2 = qs / 8; // sample at ~87.5%
+-    uint32_t time_seg1 = qs - (1 + time_seg2);
+-
+-    return make_btr(sjw, time_seg1, time_seg2, brp);
++    return CAN_INVALID_BTR;
+ }
+ 
+ void
+@@ -416,6 +428,10 @@ can_init(void)
+     uint32_t pclock = get_pclock_frequency((uint32_t)SOC_CAN);
+ 
+     uint32_t btr = compute_btr(pclock, CONFIG_CANBUS_FREQUENCY);
++    if (btr == CAN_INVALID_BTR) {
++        canserial_set_invalid_bitrate();
++        return;
++    }
+ 
+     /*##-1- Configure the CAN #######################################*/
+ 

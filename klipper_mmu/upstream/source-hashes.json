@@ -1,0 +1,54 @@
+{
+  "src/tmcuart.c": {
+    "before": "13c526d122e6a37e37e98ec9dfa27e59d75ec8befa8dd80a1e9a1d15f1f07886",
+    "after": "4307258878a9790deef237f185d55ae640fec545dfd238e5400da32f5496e784"
+  },
+  "src/tmcuart.h": {
+    "before": null,
+    "after": "41ff4449edab6cedf18e6003b1b325a68d740049c2ef521367f545db2a89e787"
+  },
+  "src/stm32/hard_pwm.c": {
+    "before": "1d45aeaa3ce5b0f37a3e03dc35c9303923dfdabf2abfe31bd7bf17bca7e2f9c8",
+    "after": "a3fc5e06f07c5a56f592fb659c918684527236217904358f6191558c49f0c6f8"
+  },
+  "src/stm32/pwm.h": {
+    "before": null,
+    "after": "9404483e2c23be99536b0eb177efcf2f331038f61ca260142cd21d893771733e"
+  },
+  "src/stm32/stm32h7_adc.c": {
+    "before": "78657022ca667522c260c001c9be9fab210c08e410299a6a4405033316002a75",
+    "after": "7bf6abffdd4c365e67bba7428dda4f6f0e28559e9b3c8d9b0f758db88af61b55"
+  },
+  "src/stm32/adc_local.h": {
+    "before": null,
+    "after": "12be436ee3480651c41afda83deaea8a85fe8e09cab2712b18c17f00c104f3b2"
+  },
+  "src/stm32/stm32h7_gpio.c": {
+    "before": "b29a6023bea17da4230e1bf9ee206358e9bd1d25b0f8e35b8cbf38f16d5eb79d",
+    "after": "2047851c1c3823f515207845a58e76718eec42366ca72d28f500d2090686a0f6"
+  },
+  "src/stm32/gpioperiph.c": {
+    "before": "a99ebe03c89c3d6435d3a0931c5cac2b3c8d18fee09b913a3a1c517928ddd893",
+    "after": "1645037e9412e59616bdc587447ff704019796ebb5ef43f05bd9df590a444e83"
+  },
+  "src/stm32/internal.h": {
+    "before": "becadad718e3eecbcb8492f458c08464d5d3dcb41dfb2bae13cb3dcc2828121b",
+    "after": "59fa2174c90f9d70611033662ae78224769524c6432486c41798112647b836b2"
+  },
+  "src/stm32/gpio_local.h": {
+    "before": null,
+    "after": "0a3936486b7ddfc8ad8b605f8fd3b92e7c0482e83796df517370569186c6f41f"
+  },
+  "src/stm32/gpio.c": {
+    "before": "a795200fcff149df6adba4bff8075ed2d79d4bb45a388d0d423fa9534db7cc3d",
+    "after": "b48c3b5f9e3e5a26aabf2c6d044875b8c614c702e00fd686d721e7a1e5e8c3b2"
+  },
+  "src/stepper.c": {
+    "before": "09326367a812d02b4499a75351abcdd412075330b6c282c340a2c5003ca840c5",
+    "after": "72a07587324dad40d008e2d768647c1a15ea7f2cf62daae1d7c9894d50a6cba4"
+  },
+  "src/stepper.h": {
+    "before": "d2b64d8ff20479f1039a5a03fdca711408e6be76329dc5c92d446a420fd23a0e",
+    "after": "1f9314bc77c390af751254e5138189b9ce46c144248f59ea7e6e6dc1021ae573"
+  }
+}

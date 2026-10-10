@@ -1,0 +1,70 @@
+{
+  "v": 1,
+  "unit": "oams1",
+  "idx": 0,
+  "family": "ams1",
+  "serial": "000000000000000000000001",
+  "online": true,
+  "ready": true,
+  "cal": "u",
+  "lane": {
+    "id": "left",
+    "ext": "extruder",
+    "op": "UNLOADED",
+    "group": null,
+    "bay": null,
+    "stage": null,
+    "runout": "idle",
+    "from": null,
+    "to": null,
+    "ms": true
+  },
+  "bays": [
+    {
+      "id": 0,
+      "s": "r",
+      "cal": "c",
+      "a": "lca",
+      "sp": null
+    },
+    {
+      "id": 1,
+      "s": "r",
+      "cal": "u",
+      "a": "ca",
+      "sp": null
+    },
+    {
+      "id": 2,
+      "s": "r",
+      "cal": "u",
+      "a": "ca",
+      "sp": null
+    },
+    {
+      "id": 3,
+      "s": "e",
+      "cal": "u",
+      "a": "",
+      "sp": null
+    }
+  ],
+  "groups": [
+    {
+      "n": "T0",
+      "b": [
+        "oams1-0",
+        "oams1-1"
+      ],
+      "s": "rr"
+    }
+  ],
+  "env": {
+    "t": 24,
+    "rh": 38
+  },
+  "dryer": null,
+  "fault": null,
+  "nf": 0,
+  "act": []
+}

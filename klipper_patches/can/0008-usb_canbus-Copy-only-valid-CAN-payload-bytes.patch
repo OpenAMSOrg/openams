@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 11:53:30 -0700
+Subject: [PATCH] usb_canbus: Copy only valid CAN payload bytes
+
+The gs_usb receive record is wider than a short CAN payload.  send_frame() cleared the record and then overwrote all eight data bytes from the internal message, including bytes beyond its DLC.  Locally generated short responses could therefore return uninitialized canserial stack data to the USB host, while remote frames could expose stale controller data registers.
+
+Copy only the bytes carried by a data frame and leave the remainder of the zero-initialized gs_usb record clear.  Remote transmission requests carry no payload regardless of their requested DLC, so do not copy data for them.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/generic/usb_canbus.c b/src/generic/usb_canbus.c
+index 3505717c..4beb7660 100644
+--- a/src/generic/usb_canbus.c
++++ b/src/generic/usb_canbus.c
+@@ -4,7 +4,7 @@
+ //
+ // This file may be distributed under the terms of the GNU GPLv3 license.
+ 
+-#include <string.h> // memmove
++#include <string.h> // memcpy
+ #include "autoconf.h" // CONFIG_USB_VENDOR_ID
+ #include "board/canbus.h" // canbus_notify_tx
+ #include "board/canserial.h" // canserial_notify_tx
+@@ -142,8 +142,21 @@ send_frame(struct canbus_msg *msg)
+     gs.echo_id = 0xffffffff;
+     gs.can_id = msg->id;
+     gs.can_dlc = msg->dlc;
+-    gs.data32[0] = msg->data32[0];
+-    gs.data32[1] = msg->data32[1];
++    /*
++     * A canbus_msg always reserves eight data bytes, but bytes beyond its DLC
++     * are not part of the CAN frame and are not guaranteed to have been
++     * initialized.  Hardware receive mailboxes may retain old register data,
++     * and short locally generated messages may leave the unused stack bytes
++     * untouched.  The gs_usb record always exposes all eight byte positions to
++     * the host, so copying the complete storage would cross that stale data
++     * over the USB trust boundary.  Copy only bytes that the CAN DLC makes
++     * visible;
++     * the zero-initialized destination supplies deterministic padding.  Remote
++     * transmission requests have a DLC but no data field, hence their copy
++     * length is deliberately zero.
++     */
++    uint32_t len = msg->id & CANMSG_ID_RTR ? 0 : CANMSG_DATA_LEN(msg);
++    memcpy(gs.data, msg->data, len);
+     return usb_send_bulk_in(&gs, sizeof(gs));
+ }
+ 

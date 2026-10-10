@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>klipper-mmu</title>
+<meta name="description" content="klipper-mmu: an optional Klipper add-on that runs a multi-material unit&#39;s motion, sensing and safety on the microcontroller wired to it.">
+<link rel="stylesheet" href="assets/site.css">
+<script>
+  try { var t = localStorage.getItem('kmmu-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</head>
+<body data-page="index">
+
+<header class="bar" id="bar">
+  <a class="brand" href="./" aria-label="klipper-mmu home">
+    <svg class="brand-mark" viewBox="0 0 26 26" aria-hidden="true" fill="none" stroke-width="2.4" stroke-linecap="round">
+      <path d="M2 4 C 10 4, 12 13, 17 13" stroke="var(--lane-1)"/>
+      <path d="M2 10 C 9 10, 11 13, 17 13" stroke="var(--lane-2)"/>
+      <path d="M2 16 C 9 16, 11 13, 17 13" stroke="var(--lane-3)"/>
+      <path d="M2 22 C 10 22, 12 13, 17 13" stroke="var(--lane-4)"/>
+      <path d="M17 13 H 24" stroke="var(--ink)"/>
+    </svg>
+    klipper-mmu <small>docs</small>
+  </a>
+  <div class="bar-tools">
+    <button class="toc-toggle" id="toc-toggle" type="button" aria-expanded="false" aria-controls="toc">Contents</button>
+    <button class="theme-toggle" id="theme-toggle" type="button">Dark</button>
+  </div>
+  <div class="bar-progress" id="bar-progress" aria-hidden="true"><span id="bar-progress-fill"></span></div>
+</header>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<div class="page" id="page">
+  <nav class="toc" id="toc" aria-label="Manual"></nav>
+
+  <main class="content">
+<section class="hero" id="start" data-lane="1" data-station="start">
+      <p class="eyebrow"><b>Start here</b></p>
+      <h1>Your MMU, run by <em>its own microcontroller.</em></h1>
+      <p class="lede">klipper-mmu is an optional add-on for Klipper. It moves the motion, sensing and safety of a multi-material unit onto the microcontroller wired to it. The host decides <em>what</em> to do (&ldquo;load lane 2&rdquo;). The unit decides <em>when</em>, every millisecond, from its own sensors.</p>
+      <ul class="specs" aria-label="Key numbers">
+        <li><b>1 ms</b><span>control tick on the unit</span></li>
+        <li><b>2 s</b><span>of host silence before the unit stops everything</span></li>
+        <li><b>22</b><span>units and variants supported in software</span></li>
+        <li><b>12</b><span>STM32 chips in the release builds</span></li>
+      </ul>
+    </section>
+
+    <section id="safety" data-lane="2" data-station="safety">
+      <h2>Read this first</h2>
+      <p><strong>Nothing here has been qualified on real MMU hardware yet.</strong> Every unit is a software candidate: it builds, boots, and passes the simulators. The default firmware will not move a motor. The motion-enabled firmware is an explicit opt-in. Check your pins, polarities, currents and emergency stop on your own bench before you trust it with a print.</p>
+    </section>
+
+    <section id="what" data-lane="3" data-station="what it is">
+      <h2>What it is</h2>
+      <p>In stock Klipper, the host plans every move ahead of time and the microcontroller plays the plan back. That is the right design for a toolhead. It is a poor fit for a filament feeder, which has to react to what its sensors see: a switch that trips, a buffer that fills, an encoder that stops clicking.</p>
+      <p>klipper-mmu adds a small control core to Klipper's own firmware. It uses Klipper's scheduler, drivers and communication. The core starts the motor drivers, generates steps through Klipper's stepper code, ramps speed up and down, follows the buffer, watches every switch, and stops everything when something is wrong.</p>
+      <ul class="claims">
+        <li style="--mark: var(--lane-1)"><strong>Not a Klipper fork.</strong> You switch it on in <code>make menuconfig</code>. Switched off, Klipper builds exactly as before; this is checked on every merge.</li>
+        <li style="--mark: var(--lane-2)"><strong>One small driver patch.</strong> Klipper's drivers lacked a few functions the core needs, so klipper-mmu adds them as one explicit patch, pinned to one Klipper version. With klipper-mmu off, it changes nothing.</li>
+        <li style="--mark: var(--lane-3)"><strong>Works with OpenAMS.</strong> On the host, a klipper-mmu module connects the unit to OpenAMS, which picks lanes and spools and pauses the printer when needed.</li>
+      </ul>
+    </section>
+
+    <section id="why" data-lane="4" data-station="why the MCU">
+      <h2>Why the microcontroller</h2>
+      <p>One number explains it. During a load, the filament tip reaches the extruder and the buffer starts to compress. The unit calls the filament &ldquo;arrived&rdquo; at 70% compression. On the OpenAMS buffer (15 mm of travel) that leaves 4.5 mm before it is fully compressed and the feeder starts grinding filament.</p>
+      <div class="sum" role="img" aria-label="4.5 millimetres lasts 22.5 milliseconds at 200 millimetres per second, and 225 milliseconds at 20 millimetres per second">
+        4.5 mm &divide; 200 mm/s full speed &nbsp;= <span class="hl">22.5 ms</span> to notice and stop<br>
+        4.5 mm &divide; &nbsp;20 mm/s crawl &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= <b>225 ms</b>
+      </div>
+      <p>The host would have to receive the reading over USB, notice it, and send a stop back, usually within 22 ms. The microcontroller reads the sensor every millisecond and stops the motor itself. So the unit loads fast, slows to a crawl before the toolhead, and stops on the reading, without waiting on anyone.</p>
+      <p>The same local loop makes other feedback useful. An encoder that stops clicking while the motor turns means slip or a jam, and the unit can react during the move instead of reporting it afterwards.</p>
+    </section>
+
+    <section id="who" data-lane="1" data-station="who does what">
+      <h2>Who does what</h2>
+      <p><strong>The host</strong> (Klipper, OpenAMS and the klipper-mmu host module on your Raspberry Pi):</p>
+      <ul>
+        <li>chooses the lane, the spool and the tool;</li>
+        <li>keeps your calibration and restores it at every restart;</li>
+        <li>turns firmware events into messages you can act on.</li>
+      </ul>
+      <p><strong>The unit</strong> (klipper-mmu on the MMU's board):</p>
+      <ul>
+        <li>owns the feeder and selector drivers and every step they take;</li>
+        <li>speeds up, slows down, follows the buffer and detects arrival, every 1 ms;</li>
+        <li>stops on any fault, and stops if the host is silent for 2 s.</li>
+      </ul>
+      <p>The host can ask for an operation. It cannot move a motor directly.</p>
+    </section>
+
+    <section id="status" data-lane="2" data-station="status">
+      <h2>Where things stand</h2>
+      <div class="status">
+        <div><span class="pill done">Done</span><p>22 units and variants on one shared control core: independent feeders, and linear, rotary, servo and indexed selectors. <a href="devices.html">Supported units</a> lists them.</p></div>
+        <div><span class="pill done">Done</span><p>Release builds for 12 STM32 chips, and whole-system simulation of 21 units: the real firmware, Klipper and OpenAMS loading, following and unloading against a simulated MMU.</p></div>
+        <div><span class="pill later">Next</span><p>Real hardware: torque at speed, braking without lost steps, and qualification unit by unit.</p></div>
+      </div>
+      <p class="asof">As of September 2026.</p>
+    </section>
+
+    <section id="next" data-lane="3" data-station="next">
+      <h2>Where to go next</h2>
+      <ul class="next">
+        <li><b><a href="devices.html">Supported units</a></b><span>Which units work, how each one picks a lane, and on which chips.</span></li>
+        <li><b><a href="quick-start.html">Quick start: BoxTurtle</a></b><span>From <code>make menuconfig</code> to a first load.</span></li>
+        <li><b><a href="pins.html">Your MCU and your pins</a></b><span>Every signal, every polarity, no board lock-in.</span></li>
+        <li><b><a href="calibration.html">Calibration</a></b><span>The buffer, the Bowden tube and selector gates.</span></li>
+        <li><b><a href="commands.html">Commands</a></b><span>Every <code>KLIPPER_MMU_*</code> command.</span></li>
+        <li><b><a href="troubleshooting.html">When things go wrong</a></b><span>Faults, diagnosis and recovery.</span></li>
+        <li><b><a href="inside.html">How it works inside</a></b><span>The control loop, the lease and the fault rules.</span></li>
+      </ul>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <p>klipper-mmu is an optional add-on to Klipper, a separate project with its own authors and license (GPL-3.0). It builds on the work of the Happy Hare, AFC, BoxTurtle and OpenAMS projects.</p>
+  <p>Set in Bricolage Grotesque, Source Serif 4 and JetBrains Mono (SIL Open Font License), served from this site.</p>
+</footer>
+
+<script src="assets/site.js" defer></script>
+</body>
+</html>

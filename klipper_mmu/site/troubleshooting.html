@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>When things go wrong · klipper-mmu</title>
+<meta name="description" content="What klipper-mmu does on a fault, how to read its findings and load reports, and the recovery order.">
+<link rel="stylesheet" href="assets/site.css">
+<script>
+  try { var t = localStorage.getItem('kmmu-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</head>
+<body data-page="troubleshooting">
+
+<header class="bar" id="bar">
+  <a class="brand" href="./" aria-label="klipper-mmu home">
+    <svg class="brand-mark" viewBox="0 0 26 26" aria-hidden="true" fill="none" stroke-width="2.4" stroke-linecap="round">
+      <path d="M2 4 C 10 4, 12 13, 17 13" stroke="var(--lane-1)"/>
+      <path d="M2 10 C 9 10, 11 13, 17 13" stroke="var(--lane-2)"/>
+      <path d="M2 16 C 9 16, 11 13, 17 13" stroke="var(--lane-3)"/>
+      <path d="M2 22 C 10 22, 12 13, 17 13" stroke="var(--lane-4)"/>
+      <path d="M17 13 H 24" stroke="var(--ink)"/>
+    </svg>
+    klipper-mmu <small>docs</small>
+  </a>
+  <div class="bar-tools">
+    <button class="toc-toggle" id="toc-toggle" type="button" aria-expanded="false" aria-controls="toc">Contents</button>
+    <button class="theme-toggle" id="theme-toggle" type="button">Dark</button>
+  </div>
+  <div class="bar-progress" id="bar-progress" aria-hidden="true"><span id="bar-progress-fill"></span></div>
+</header>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<div class="page" id="page">
+  <nav class="toc" id="toc" aria-label="Manual"></nav>
+
+  <main class="content">
+<section class="hero" id="start" data-lane="1" data-station="overview">
+      <p class="eyebrow"><b>When things go wrong</b> &nbsp;/&nbsp; faults, findings and recovery</p>
+      <h1>It stopped. <em>Here is why.</em></h1>
+      <p class="lede">When the unit finds a problem it cannot handle safely, it stops every motor, keeps the fault until you acknowledge it, and waits. It does the same if it hears nothing from Klipper for 2 seconds. It does not guess, and it does not retry with a jam in the tube.</p>
+    </section>
+
+    <section id="diagnose" data-lane="2" data-station="ask first">
+      <h2>Ask first</h2>
+      <pre><code class="language-gcode">KLIPPER_MMU_DIAGNOSE MMU=box</code></pre>
+      <p>It reads every switch, the buffer and the drivers, and prints one finding per problem: what it concerns, what it probably means, and what to do. It never moves anything. With nothing wrong:</p>
+      <pre><code class="language-log">klipper_mmu box: no problems found; state=idle path_occupied=False hub=open</code></pre>
+      <p>The same checks also run after every load, unload and calibration, and print anything new.</p>
+    </section>
+
+    <section id="recovery" data-lane="3" data-station="recovery order">
+      <h2>The recovery order</h2>
+      <p>After a fault, go through these in order. Skipping ahead gets a refusal.</p>
+      <ol>
+        <li><strong>Diagnose.</strong> Read the cause.</li>
+        <li><strong>Acknowledge.</strong> <code>ACK_FAULT</code>.</li>
+        <li><strong>Fix the cause.</strong> If a driver failed, <code>RESTART_DRIVER LANE=n</code> (or <code>SELECTOR=1</code>) until it reports ready.</li>
+        <li><strong>Say where the filament is.</strong> <code>RECONCILE_PATH ACTION=CLEAR</code> if the tube is empty, <code>ACTION=ADOPT LANE=n</code> if lane <code>n</code> is in it.</li>
+        <li><strong>Start fresh.</strong> <code>RECOVER_SESSION</code>.</li>
+      </ol>
+      <pre><code class="language-gcode">KLIPPER_MMU_DIAGNOSE MMU=box
+KLIPPER_MMU_ACK_FAULT MMU=box
+KLIPPER_MMU_RESTART_DRIVER MMU=box LANE=n
+KLIPPER_MMU_RECONCILE_PATH MMU=box ACTION=CLEAR
+KLIPPER_MMU_RECOVER_SESSION MMU=box</code></pre>
+      <p>Step 4 also clears OpenAMS&#39;s record of the fault and prints <code>OpenAMS lane cleared</code>. An older OpenAMS asks you to run <code>RESTART</code> (not <code>FIRMWARE_RESTART</code>) instead. The recovery commands need <code>path_reconciliation: True</code> and <code>driver_restart: True</code> in <code>[klipper_mmu box]</code>.</p>
+    </section>
+
+    <section id="load" data-lane="4" data-station="load fails">
+      <h2>A load fails</h2>
+      <p>A load gets up to three attempts within 240 s, backing off and changing tactic between them. The log gets one line per attempt: which segment, what went wrong, how far the filament got, and what it tried next.</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Report says</th><th>Meaning</th><th>Check</th></tr></thead>
+<tbody>
+<tr><td data-label="Report says"><code>lane to HUB: no HUB after &hellip;</code></td><td data-label="Meaning">Filament left the lane but never reached the hub.</td><td data-label="Check">Tip catching at the hub entry (cut it at an angle), a stuck or tangled spool, or the drive not gripping.</td></tr>
+<tr><td data-label="Report says"><code>compressed &hellip; before the calibrated minimum</code></td><td data-label="Meaning">Arrived too early.</td><td data-label="Check">A kink, broken filament or unseated fitting. If you shortened the tube, measure it again.</td></tr>
+<tr><td data-label="Report says"><code>no resistance within &hellip; past HUB</code></td><td data-label="Meaning">Never arrived.</td><td data-label="Check">Tube connections first, then a slipping drive, then the buffer.</td></tr>
+<tr><td data-label="Report says">One lane needs more distance than the others</td><td data-label="Meaning">That lane&#39;s drive is slipping.</td><td data-label="Check">Tension, clean gear teeth, a heavy or binding spool. Do not recalibrate the tube to hide it.</td></tr>
+<tr><td data-label="Report says">Every lane longer or shorter</td><td data-label="Meaning">The tube changed.</td><td data-label="Check">Measure it again.</td></tr>
+</tbody>
+</table></div>
+    </section>
+
+    <section id="switches" data-lane="1" data-station="switches">
+      <h2>Switches</h2>
+      <div class="table-wrap"><table>
+<thead><tr><th>Symptom</th><th>Likely cause and fix</th></tr></thead>
+<tbody>
+<tr><td data-label="Symptom">Reports filament when there is none</td><td data-label="Likely cause and fix">Reversed polarity, or leftover filament. Flip the switch&#39;s active level in the pin menu (like <code>!</code>).</td></tr>
+<tr><td data-label="Symptom">Reads <code>unknown</code> or changes by itself</td><td data-label="Likely cause and fix">Floating input. Turn on its pull-up (like <code>^</code>) and check the connector.</td></tr>
+<tr><td data-label="Symptom">Bounces</td><td data-label="Likely cause and fix">Many flickers while nothing moves: loose connector, bad crimp or worn lever. Or someone is pushing filament by hand.</td></tr>
+<tr><td data-label="Symptom">Hub occupied, but no lane loaded</td><td data-label="Likely cause and fix">Something is stuck in the hub (filament, a string, a lever that did not return). Look inside; do not eject every lane.</td></tr>
+<tr><td data-label="Symptom">LOAD switch made, BAY switch open</td><td data-label="Likely cause and fix">The BAY lever, its wiring or polarity, or filament fed in without passing the BAY switch.</td></tr>
+</tbody>
+</table></div>
+      <p>After a pin-menu change, build, flash and run the <a href="quick-start.html#c-switches">switch check</a> again.</p>
+    </section>
+
+    <section id="buffer" data-lane="2" data-station="buffer">
+      <h2>Buffer</h2>
+      <p>0 at rest is normal. The <a href="quick-start.html#c-fps">buffer check</a> tests all of these in about 10 seconds.</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Symptom</th><th>Likely cause and fix</th></tr></thead>
+<tbody>
+<tr><td data-label="Symptom">High with nothing loaded</td><td data-label="Likely cause and fix">Moved magnet, or a wrong or reversed calibration. Calibrate again.</td></tr>
+<tr><td data-label="Symptom">Invalid or stale reading</td><td data-label="Likely cause and fix">Buffer cable or its two signal wires.</td></tr>
+<tr><td data-label="Symptom">Does not return after compression</td><td data-label="Likely cause and fix">Sticking slide. Clean it.</td></tr>
+</tbody>
+</table></div>
+    </section>
+
+    <section id="drivers" data-lane="3" data-station="motor drivers">
+      <h2>Motor drivers</h2>
+      <div class="table-wrap"><table>
+<thead><tr><th>Message</th><th>Likely cause and fix</th></tr></thead>
+<tbody>
+<tr><td data-label="Message">&ldquo;Board-startup driver fault&rdquo;</td><td data-label="Likely cause and fix">Motor power was off when the board started (the board runs on USB; the drivers do not), or a loose cable. Power on, then <code>FIRMWARE_RESTART</code>.</td></tr>
+<tr><td data-label="Message">Driver reset itself</td><td data-label="Likely cause and fix">Usually static from filament in PTFE. Ground the motor screws or frame.</td></tr>
+<tr><td data-label="Message">Undervoltage</td><td data-label="Likely cause and fix">Motor supply off or sagging. Check the 24&nbsp;V.</td></tr>
+<tr><td data-label="Message">Shorted phase</td><td data-label="Likely cause and fix">Damaged or pinched motor cable.</td></tr>
+<tr><td data-label="Message">Overheated</td><td data-label="Likely cause and fix">Improve cooling or lower the motor current.</td></tr>
+<tr><td data-label="Message">&ldquo;Possible open load&rdquo;</td><td data-label="Likely cause and fix">A hint only; the chip reports it unreliably at standstill and at speed. Check the cable.</td></tr>
+</tbody>
+</table></div>
+      <p>Fix the cause, then <code>KLIPPER_MMU_RESTART_DRIVER MMU=box LANE=n</code>. It never switches a motor on; the stopped operation still needs the rest of the <a href="#recovery">recovery order</a>.</p>
+    </section>
+
+    <section id="connection" data-lane="4" data-station="connection">
+      <h2>Lost connection</h2>
+      <p>After 2 seconds without Klipper the unit stops. Usual causes: a host too busy (webcam, timelapse, a slicer on the same Pi), or an unreliable USB cable or CAN bus. Fix the cause, then run <code>KLIPPER_MMU_RECOVER_SESSION MMU=box</code>. If <code>DIAGNOSE</code> reports a stranded preload, unpreload or eject, it names <code>RECOVER_LOCAL</code> or <code>RECOVER_WAITER</code> first.</p>
+    </section>
+
+    <section id="which-lane" data-lane="1" data-station="which lane">
+      <h2>Which lane is in the tube?</h2>
+      <pre><code class="language-log">More than one lane's LOAD made with HUB made</code></pre>
+      <p>Two lanes have filament at their LOAD switch and the hub is occupied. Switches cannot tell which one went through, so the unit asks. Look, then run <code>RECONCILE_PATH ACTION=ADOPT LANE=n</code>, or <code>ACTION=CLEAR</code> if you emptied the tube. Neither moves anything.</p>
+      <p>The opposite case, a lane the unit believes loaded whose switches now read empty, is usually a runout, broken filament or a failed switch.</p>
+    </section>
+
+    <section id="other" data-lane="2" data-station="everything else">
+      <h2>Everything else</h2>
+      <div class="table-wrap"><table>
+<thead><tr><th>Symptom</th><th>Likely cause and fix</th></tr></thead>
+<tbody>
+<tr><td data-label="Symptom">Follow fault on an encoder unit while printing</td><td data-label="Likely cause and fix">The gear moved 10&nbsp;mm (the default detection length) with no encoder click: a clog, a slipping gear, or an encoder fault. Clear the path and check the encoder wheel.</td></tr>
+<tr><td data-label="Symptom">&ldquo;gate N is not calibrated&rdquo;</td><td data-label="Likely cause and fix">That selector gate has no saved position or angle. See <a href="calibration.html#selectors">Calibration</a>.</td></tr>
+<tr><td data-label="Symptom">Selector home failed</td><td data-label="Likely cause and fix">Check the endstop (or, on indexed selectors, the gate&#39;s switch) and that nothing blocks the selector.</td></tr>
+<tr><td data-label="Symptom">Spool does not wind back</td><td data-label="Likely cause and fix">Respooler turns the wrong way (swap its drive pins), slips, or is dead or disconnected.</td></tr>
+<tr><td data-label="Symptom">The unit &ldquo;missed its own timing&rdquo;</td><td data-label="Likely cause and fix">Not a wiring problem: the board could not keep up. Note what you were doing and report it.</td></tr>
+</tbody>
+</table></div>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <p>klipper-mmu is an optional add-on to Klipper, a separate project with its own authors and license (GPL-3.0). It builds on the work of the Happy Hare, AFC, BoxTurtle and OpenAMS projects.</p>
+  <p>Set in Bricolage Grotesque, Source Serif 4 and JetBrains Mono (SIL Open Font License), served from this site.</p>
+</footer>
+
+<script src="assets/site.js" defer></script>
+</body>
+</html>

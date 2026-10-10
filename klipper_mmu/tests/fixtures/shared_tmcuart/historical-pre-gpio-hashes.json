@@ -1,0 +1,30 @@
+{
+  "src/tmcuart.c": {
+    "before": "13c526d122e6a37e37e98ec9dfa27e59d75ec8befa8dd80a1e9a1d15f1f07886",
+    "after": "b68862b5a71f2412e656960bc355ddb08b10b404630a89cdcbc88f3e0ab02aba"
+  },
+  "src/tmcuart.h": {
+    "before": null,
+    "after": "ef997f80b042c44d7328e7a1a6c2e5f73751e914b28d529fae94e19e11f5f571"
+  },
+  "src/stm32/hard_pwm.c": {
+    "before": "1d45aeaa3ce5b0f37a3e03dc35c9303923dfdabf2abfe31bd7bf17bca7e2f9c8",
+    "after": "2fd6420622e854a958ac77a4cce0b2c2bea32121ca0a3e0a27332d2efcab1b2f"
+  },
+  "src/stm32/pwm.h": {
+    "before": null,
+    "after": "a37b8812da4726e764d14901df3d58d2f2c6ec430dd11421a95609ffd771ee71"
+  },
+  "src/Kconfig": {
+    "before": "b085a73a30c492ff0185b57b17e0ca9e7e52a45d4ab5d853fde8030486e6a072",
+    "after": "0275a35bf1a70fa82e4789a708c1d9e1fd76edbef64f726f598e928a66c75390"
+  },
+  "src/stm32/stm32h7_adc.c": {
+    "before": "78657022ca667522c260c001c9be9fab210c08e410299a6a4405033316002a75",
+    "after": "1988bc4492817eba30268180198b2caa65c2f17dc4167d8325d95c079e1e7355"
+  },
+  "src/stm32/adc_local.h": {
+    "before": null,
+    "after": "b3c1d034d6750bf3ee09d39da1c554941549f1ccb4ed5444b208c9343087df37"
+  }
+}

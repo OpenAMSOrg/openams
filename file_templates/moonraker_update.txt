@@ -1,0 +1,6 @@
+[update_manager openams]
+type: git_repo
+path: ~/openams
+origin: https://github.com/OpenAMSOrg/openams.git
+primary_branch: main
+managed_services: klipper

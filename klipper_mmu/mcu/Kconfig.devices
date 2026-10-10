@@ -1,0 +1,442 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Device catalogue for klipper-mmu. Selecting an entry records composition
+# identity only. It does not enable actuation, claim a driver, or qualify hardware.
+# Implemented compositions today: BoxTurtle, NightOwl, Custom, EMU
+# (H723/simulator), KMS, Angry Beaver, 3MS, QuattroBox 1.0/1.1/2, QIDI Box
+# (H723 software candidates; QIDI Box has no gear TMC UART -- plain
+# STEP/DIR -- and a tension-only buffer switch), ERCF 1.1/2.0/3.0,
+# Tradrack, MMX, MMX6, 3D Chameleon, HTLF, BTT ViViD
+# (selector software candidates: LINEAR, ROTARY, SERVO and INDEXED
+# Kconfig/profile support, see mcu/Kconfig.selector; no hardware
+# qualification), Claymore (INDEXED, forward-only selection -- no gate order,
+# no Happy Hare dossier, sourced from AFC's own templates instead).
+# Prusa: upstream-mentioned; implementation not planned/qualified
+
+choice
+    prompt "MMU Device Composition"
+    default KLIPPER_MMU_DEVICE_BOXTURTLE
+    help
+        Catalogue entry for the common control profile. Saved user overrides
+        take precedence. Selection does not establish connected hardware,
+        enable actuation, or add driver support.
+        Entries marked planned have no implemented local composition yet.
+
+config KLIPPER_MMU_DEVICE_BOXTURTLE
+    bool "BoxTurtle"
+    help
+        BoxTurtle multi-material composition (motorized DC rewind, switched buffer).
+        Defaults to powered rewind. Hardware integration remains required.
+        4-lane and 8-lane installs use the existing lane count override.
+
+config KLIPPER_MMU_DEVICE_NIGHTOWL
+    bool "NightOwl"
+    help
+        NightOwl multi-material composition (passive rewind, switched buffer).
+        Defaults to passive rewind. Hardware integration remains required.
+
+config KLIPPER_MMU_DEVICE_CUSTOM
+    bool "Custom"
+    help
+        Custom multi-material composition.
+        Configure the supported common mechanisms explicitly for this device.
+
+config KLIPPER_MMU_DEVICE_CHAMELEON_3D
+    bool "3D Chameleon"
+    help
+        3D Chameleon ROTARY selector composition (one gear stepper drives
+        all four gates; two gates reverse the gear direction; released by
+        selecting the opposing gate's position). Hardware integration
+        remains required.
+
+config KLIPPER_MMU_DEVICE_THREE_MS
+    bool "3MS"
+    help
+        3MS independent-feeder composition (passive rewind, no shared buffer
+        or per-lane LOAD sensor in its traced Happy Hare profile; homes to a
+        single shared sensor near the extruder entrance). Encoder and
+        espooler are not implemented. Hardware integration remains required.
+
+config KLIPPER_MMU_DEVICE_ANGRY_BEAVER
+    bool "Angry Beaver"
+    help
+        Angry Beaver independent-feeder composition (passive rewind, single
+        shared exit/hub sensor, no per-lane BAY/LOAD sensor or buffer in its
+        traced Happy Hare profile). Hardware integration remains required.
+
+config KLIPPER_MMU_DEVICE_EMU
+    bool "EMU"
+    select KLIPPER_MMU_VIRTUAL_HUB
+    help
+        EMU independent-feeder composition (virtual hub: its single physical
+        LOAD input per lane is this device's virtual hub boundary; there is
+        no separate HUB pin). Hosted-runtime-tested and a whole-stack-sim
+        candidate: the H723 EMU software candidate passes profile, resource,
+        native startup, saved-image hosted cycle and release-matrix checks
+        (docs/plan/device-and-stm32-rollout.md EMU row; tests/linux_mcu
+        devices.py). Hardware integration remains required, the same as
+        every other catalogue entry.
+
+config KLIPPER_MMU_DEVICE_ERCF_1_1
+    bool "ERCF 1.1"
+    help
+        ERCF 1.1 LINEAR selector composition (stepper axis + grip servo,
+        9 gates, TCRT5000 encoder default). Hardware integration remains
+        required.
+
+config KLIPPER_MMU_DEVICE_ERCF_2_0
+    bool "ERCF 2.0"
+    help
+        ERCF 2.0 LINEAR selector composition (stepper axis + grip servo,
+        8 gates, Binky-8 encoder default). Hardware integration remains
+        required.
+
+config KLIPPER_MMU_DEVICE_ERCF_3_0
+    bool "ERCF 3.0"
+    help
+        ERCF 3.0 LINEAR selector composition (stepper axis + grip servo,
+        8 gates, direct-drive 1:1 gear, Binky-12 encoder default). Hardware
+        integration remains required.
+
+config KLIPPER_MMU_DEVICE_HTLF
+    bool "HTLF"
+    help
+        HTLF ROTARY selector composition (cam-lobe stepper axis, 4 gates,
+        filament always gripped, no servo). Hardware integration remains
+        required.
+
+config KLIPPER_MMU_DEVICE_KMS
+    bool "KMS"
+    select KLIPPER_MMU_VIRTUAL_HUB
+    help
+        KMS independent-feeder composition (passive rewind, switched buffer,
+        per-lane BAY entry and per-lane LOAD/exit sensors; its traced Happy
+        Hare profile has no separate shared HUB sensor -- it homes each lane
+        to its own exit switch, so the owning lane's LOAD switch is the
+        virtual hub boundary, the same shape as EMU). Its encoder and
+        espooler entries have no wiring evidence and are not implemented.
+        Hardware integration remains required.
+
+config KLIPPER_MMU_DEVICE_LOW_RIDER
+    bool "Low Rider"
+    help
+        Low Rider SERVO selector composition (no selector stepper; one servo
+        angle per gate selects it, 6 gates, filament always gripped).
+        Hardware integration remains required.
+
+config KLIPPER_MMU_DEVICE_MMX
+    bool "MMX"
+    help
+        MMX SERVO selector composition (no selector stepper; one servo
+        angle per gate selects it, 4 gates, filament always gripped).
+        Hardware integration remains required.
+
+config KLIPPER_MMU_DEVICE_MMX6
+    bool "MMX6"
+    help
+        MMX6 ROTARY selector composition (cam stepper axis, 6 gates,
+        filament always gripped, no servo). Hardware integration remains
+        required.
+
+config KLIPPER_MMU_DEVICE_PICO_MMU
+    bool "Pico MMU"
+    help
+        Pico MMU SERVO selector composition (no selector stepper; one servo
+        angle per gate selects it, 4 gates, filament always gripped).
+        Hardware integration remains required.
+
+config KLIPPER_MMU_DEVICE_QIDI_BOX
+    bool "QIDI Box"
+    help
+        QIDI Box independent-feeder composition (one always-engaged gear per
+        gate, like KMS/NightOwl; 4 gates; a REAL shared hub switch, not
+        KLIPPER_MMU_VIRTUAL_HUB -- its traced Happy Hare profile homes on a
+        physical mmu_shared_exit switch, not a lane's own LOAD switch). Its
+        gear runs plain STEP/DIR with no TMC UART (drivers set in hardware,
+        Happy Hare's CHOICE_GEAR_TMC_NONE): no run/hold current is claimed.
+        Its buffer has only a tension switch (no compression switch); the
+        missing switch's reading is never fabricated (docs/devices/
+        qidi_box.md, src/buffer_sensor.c). Arrival requires the local
+        toolhead switch (KLIPPER_MMU_PINS_TOOLHEAD): Happy Hare's own
+        extruder_switch_pin for this device is the printer's THR wiring, off
+        this board, and is not supported (docs/selectors.md). Dryer and
+        environment sensor are out of scope. Hardware integration remains
+        required.
+
+config KLIPPER_MMU_DEVICE_QUATTROBOX_1_0
+    bool "QuattroBox 1.0"
+    help
+        QuattroBox independent-feeder composition (passive rewind, single
+        shared exit/hub sensor, no per-lane BAY/LOAD sensor or buffer in its
+        traced Happy Hare profile; the pinned harness renders identical
+        mechanics and sensors for 1.0/1.1/2, so no version-specific
+        difference is implemented yet). Hardware integration remains required.
+
+config KLIPPER_MMU_DEVICE_QUATTROBOX_1_1
+    bool "QuattroBox 1.1"
+    help
+        Same traced mechanics, sensors and buffer absence as QuattroBox 1.0
+        in the pinned Happy Hare harness; no 1.1-specific difference (e.g.
+        optional LED/button) is implemented. Hardware integration required.
+
+config KLIPPER_MMU_DEVICE_QUATTROBOX_2
+    bool "QuattroBox 2"
+    help
+        Same traced mechanics, sensors and buffer absence as QuattroBox 1.0
+        in the pinned Happy Hare harness; no version-2-specific difference is
+        implemented. Hardware integration remains required.
+
+config KLIPPER_MMU_DEVICE_TRADRACK
+    bool "Tradrack"
+    help
+        Tradrack LINEAR selector composition (stepper axis + grip servo,
+        10 gates, 50:17 gear-driven gear stepper). Optional encoder input
+        uses the existing Filament encoder feedback setting. Hardware
+        integration remains required.
+
+config KLIPPER_MMU_DEVICE_BTT_VIVID
+    bool "BTT ViViD"
+    help
+        BTT ViViD INDEXED selector composition (stepper axis, no gate
+        position table -- a per-gate index switch instead, 4 gates, switched
+        buffer arrival, no grip servo). Hardware integration remains
+        required.
+
+config KLIPPER_MMU_DEVICE_CLAYMORE
+    bool "Claymore"
+    help
+        AFC Claymore INDEXED selector composition (shared drive/selector
+        steppers, 4 gates each with its own index switch, forward-only
+        selection -- no gate order, no centering nudge -- and a per-lane
+        powered rewind motor). No Happy Hare dossier exists for this device;
+        its only sources are AFC's own templates/AFC_Claymore_1-AFC_Lite.cfg
+        and extras/AFC_Claymore.py, extras/AFC_vivid.py (AFC_Claymore
+        subclasses AFC_vivid). Claymore's AFC_hub wires a real, separate HUB
+        switch (config/mcu/AFC_Lite_Claymore.cfg's HUB=PE8, distinct from its
+        four LOAD1-4 pins), unlike EMU/KMS's virtual one, so it does not
+        select KLIPPER_MMU_VIRTUAL_HUB. Its per-lane LOAD switch is the only
+        per-lane sensor Claymore's template wires (no separate prep pin), and
+        AFC_lane.py's own prep_state stays permanently unset without one, so
+        this catalogue's per-lane BAY sensor -- not LOAD -- is what LOAD1-4
+        implement here (KLIPPER_MMU_BAY_SENSORS' baseline default, unchanged
+        for this device). Hardware integration remains required.
+
+config KLIPPER_MMU_DEVICE_OPENAMS
+    bool "OpenAMS (planned)"
+    help
+        Existing OpenAMS host/transport integration is separate from a local
+        Klipper MCU device driver.
+
+config KLIPPER_MMU_DEVICE_INLINE_FOLLOWER
+    bool "Inline follower (planned)"
+    help
+        Existing OpenAMS host/transport integration is separate from a local
+        Klipper MCU device driver.
+
+endchoice
+
+config KLIPPER_MMU_DEVICE_ID
+    int
+    default 1 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 2 if KLIPPER_MMU_DEVICE_NIGHTOWL
+    default 3 if KLIPPER_MMU_DEVICE_CUSTOM
+    default 4 if KLIPPER_MMU_DEVICE_CHAMELEON_3D
+    default 5 if KLIPPER_MMU_DEVICE_THREE_MS
+    default 6 if KLIPPER_MMU_DEVICE_ANGRY_BEAVER
+    default 7 if KLIPPER_MMU_DEVICE_EMU
+    default 8 if KLIPPER_MMU_DEVICE_ERCF_1_1
+    default 9 if KLIPPER_MMU_DEVICE_ERCF_2_0
+    default 10 if KLIPPER_MMU_DEVICE_ERCF_3_0
+    default 11 if KLIPPER_MMU_DEVICE_HTLF
+    default 12 if KLIPPER_MMU_DEVICE_KMS
+    default 13 if KLIPPER_MMU_DEVICE_LOW_RIDER
+    default 14 if KLIPPER_MMU_DEVICE_MMX
+    default 15 if KLIPPER_MMU_DEVICE_MMX6
+    default 16 if KLIPPER_MMU_DEVICE_PICO_MMU
+    default 17 if KLIPPER_MMU_DEVICE_QIDI_BOX
+    default 18 if KLIPPER_MMU_DEVICE_QUATTROBOX_1_0
+    default 19 if KLIPPER_MMU_DEVICE_QUATTROBOX_1_1
+    default 20 if KLIPPER_MMU_DEVICE_QUATTROBOX_2
+    default 21 if KLIPPER_MMU_DEVICE_TRADRACK
+    default 22 if KLIPPER_MMU_DEVICE_BTT_VIVID
+    default 23 if KLIPPER_MMU_DEVICE_CLAYMORE
+    default 24 if KLIPPER_MMU_DEVICE_OPENAMS
+    default 25 if KLIPPER_MMU_DEVICE_INLINE_FOLLOWER
+    default 0
+
+config KLIPPER_MMU_DEVICE_NAME
+    string
+    default "BoxTurtle" if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default "NightOwl" if KLIPPER_MMU_DEVICE_NIGHTOWL
+    default "Custom" if KLIPPER_MMU_DEVICE_CUSTOM
+    default "3D Chameleon" if KLIPPER_MMU_DEVICE_CHAMELEON_3D
+    default "3MS" if KLIPPER_MMU_DEVICE_THREE_MS
+    default "Angry Beaver" if KLIPPER_MMU_DEVICE_ANGRY_BEAVER
+    default "EMU" if KLIPPER_MMU_DEVICE_EMU
+    default "ERCF 1.1" if KLIPPER_MMU_DEVICE_ERCF_1_1
+    default "ERCF 2.0" if KLIPPER_MMU_DEVICE_ERCF_2_0
+    default "ERCF 3.0" if KLIPPER_MMU_DEVICE_ERCF_3_0
+    default "HTLF" if KLIPPER_MMU_DEVICE_HTLF
+    default "KMS" if KLIPPER_MMU_DEVICE_KMS
+    default "Low Rider" if KLIPPER_MMU_DEVICE_LOW_RIDER
+    default "MMX" if KLIPPER_MMU_DEVICE_MMX
+    default "MMX6" if KLIPPER_MMU_DEVICE_MMX6
+    default "Pico MMU" if KLIPPER_MMU_DEVICE_PICO_MMU
+    default "QIDI Box" if KLIPPER_MMU_DEVICE_QIDI_BOX
+    default "QuattroBox 1.0" if KLIPPER_MMU_DEVICE_QUATTROBOX_1_0
+    default "QuattroBox 1.1" if KLIPPER_MMU_DEVICE_QUATTROBOX_1_1
+    default "QuattroBox 2" if KLIPPER_MMU_DEVICE_QUATTROBOX_2
+    default "Tradrack" if KLIPPER_MMU_DEVICE_TRADRACK
+    default "BTT ViViD" if KLIPPER_MMU_DEVICE_BTT_VIVID
+    default "Claymore" if KLIPPER_MMU_DEVICE_CLAYMORE
+    default "OpenAMS" if KLIPPER_MMU_DEVICE_OPENAMS
+    default "Inline follower" if KLIPPER_MMU_DEVICE_INLINE_FOLLOWER
+    default "Unknown"
+
+config KLIPPER_MMU_VIRTUAL_HUB
+    bool
+    default n
+    help
+        The owning lane's LOAD switch is this device's virtual HUB boundary;
+        no separate physical HUB pin exists. Selected by EMU and KMS.
+
+config KLIPPER_MMU_PROFILE_IMPLEMENTED
+    bool
+    default y if KLIPPER_MMU_DEVICE_BOXTURTLE || KLIPPER_MMU_DEVICE_NIGHTOWL || KLIPPER_MMU_DEVICE_CUSTOM || KLIPPER_MMU_DEVICE_EMU || KLIPPER_MMU_DEVICE_KMS || KLIPPER_MMU_DEVICE_ANGRY_BEAVER || KLIPPER_MMU_DEVICE_THREE_MS || KLIPPER_MMU_DEVICE_QUATTROBOX_1_0 || KLIPPER_MMU_DEVICE_QUATTROBOX_1_1 || KLIPPER_MMU_DEVICE_QUATTROBOX_2 || KLIPPER_MMU_DEVICE_ERCF_1_1 || KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0 || KLIPPER_MMU_DEVICE_TRADRACK || KLIPPER_MMU_DEVICE_MMX || KLIPPER_MMU_DEVICE_MMX6 || KLIPPER_MMU_DEVICE_CHAMELEON_3D || KLIPPER_MMU_DEVICE_HTLF || KLIPPER_MMU_DEVICE_LOW_RIDER || KLIPPER_MMU_DEVICE_PICO_MMU || KLIPPER_MMU_DEVICE_BTT_VIVID || KLIPPER_MMU_DEVICE_CLAYMORE || KLIPPER_MMU_DEVICE_QIDI_BOX
+    default n
+    help
+        Gates the C profile factory. Planned catalogue entries stay selectable
+        and do not become Custom. This does not advertise runtime readiness.
+
+comment "Composition is pending implementation"
+    depends on !KLIPPER_MMU_PROFILE_IMPLEMENTED
+
+config KLIPPER_MMU_ERCF_BINKY
+    bool "Binky encoder"
+    depends on KLIPPER_MMU_DEVICE_ERCF_1_1
+    default n
+    help
+        ERCF 1.1's Project Options mod (installer/mmu_types/Kconfig.ercf:58-61
+        MOD_BINKY); ERCF 2.0/3.0 have no such option -- their Binky-8/Binky-12
+        encoders are Kconfig.ercf's own unconditional default (:224-231,
+        :267-274), not a choice.
+
+        Composition-identity only: fitting Binky changes ERCF 1.1's encoder
+        type from TCRT5000 to Binky-8, which changes only the uncalibrated
+        mm-per-pulse resolution Happy Hare seeds a fresh build with
+        (installer/Kconfig.encoder:73-112 PARAM_ENCODER_RESOLUTION, 0.7059 vs
+        1.469 mm/count). This firmware's own encoder driver (mcu/encoder.c/h,
+        KLIPPER_MMU_ENCODER) is a plain one-wire pulse counter with no type or
+        resolution setting at all -- clicks are published raw and any mm
+        conversion is host-side -- so there is nothing in this Kconfig tree
+        for Binky to select. Turning this on records the mod's presence
+        without changing any other default.
+
+config KLIPPER_MMU_ERCF_SPRINGY
+    bool "Springy"
+    depends on KLIPPER_MMU_DEVICE_ERCF_1_1
+    default n
+    help
+        ERCF 1.1's sprung selector servo mod, removing the need for top-hat
+        tuning (installer/mmu_types/Kconfig.ercf:63-66 MOD_SPRINGY); ERCF
+        2.0/3.0 have no such option.
+
+        Happy Hare's own CAD model changes cad_last_gate_offset from 2.0 mm to
+        1.2 mm when "s" is in the version string (extras/mmu/unit/selectors/
+        mmu_linear_selector.py:106-107), which changes this build's
+        KLIPPER_MMU_SELECTOR_LAST_GATE_OFFSET_UM default below. That term
+        feeds only the whole-axis maximum-travel bound, never an individual
+        gate's position (mmu_linear_selector.py:335-337 in that Kconfig
+        option's own help text), so Springy leaves
+        KLIPPER_MMU_SELECTOR_GATE_POSITIONS_MM unchanged whether or not it is
+        combined with Triple Decky.
+
+config KLIPPER_MMU_ERCF_TRIPLE_DECKY
+    bool "Triple Decky"
+    depends on KLIPPER_MMU_DEVICE_ERCF_1_1
+    default n
+    help
+        ERCF 1.1's alternative filament block, removing the need for magnetic
+        gate opening (installer/mmu_types/Kconfig.ercf:68-71
+        MOD_TRIPLE_DECKY); ERCF 2.0/3.0 have no such option -- they already
+        take the >=2.0 CAD branch that drops the bearing-block term
+        unconditionally (mmu_linear_selector.py:95-101,349-352).
+
+        Happy Hare's own CAD model changes cad_gate_width from 21.0 mm to
+        23.0 mm and cad_block_width from 5.0 mm to 0 when "t" is in the
+        version string (mmu_linear_selector.py:103-105,349-352), which changes
+        this build's KLIPPER_MMU_SELECTOR_GATE_WIDTH_UM,
+        KLIPPER_MMU_SELECTOR_BLOCK_WIDTH_UM and
+        KLIPPER_MMU_SELECTOR_GATE_POSITIONS_MM defaults below.
+
+config KLIPPER_MMU_ERCF_THUMPER_BLOCKS
+    bool "Thumper Blocks"
+    depends on KLIPPER_MMU_DEVICE_ERCF_2_0
+    default n
+    help
+        ERCF 2.0's alternative filament block mod (installer/mmu_types/
+        Kconfig.ercf:77-89 MOD_THUMPER_BLOCKS); offered for 2.0 only -- ERCF
+        1.1 and 3.0 have no such option.
+
+        Changes the parked distance behind the extruder encoder homing switch
+        from -13 mm to -11 mm (Kconfig.ercf:220-222), which changes this
+        build's KLIPPER_MMU_UNLOAD_HUB_CLEAR_MM default below (see that
+        option's help for the gate_parking_distance mapping).
+
+config KLIPPER_MMU_ERCF_JACK_RABBIT
+    bool "Jack Rabbit selector"
+    depends on KLIPPER_MMU_DEVICE_ERCF_3_0
+    default n
+    help
+        ERCF 3.0's servo-less selector mod (installer/mmu_types/Kconfig.ercf:
+        97-104 MOD_JACK_RABBIT: imply LINEAR_SELECTOR instead of
+        LINEAR_SERVO_SELECTOR, select PARAM_FILAMENT_ALWAYS_GRIPPED); offered
+        for 3.0 only -- ERCF 1.1 and 2.0 have no such option.
+
+        Selecting this clears KLIPPER_MMU_SELECTOR_LINEAR_HAS_SERVO below, so
+        no servo pin is claimed and no servo pulse is ever issued for this
+        build. The selector core already runs a servo-less LINEAR selector
+        the same way it runs a ROTARY one: arriving at the gate position is
+        the engagement (src/operation_core.c's KM_STAGE_SELECT_MOVE handling,
+        `kind == KM_SELECTOR_LINEAR && has_servo` false falls through to the
+        no-grip path already exercised by HTLF/ROTARY) -- filament stays
+        gripped by the drive gear at all times, matching
+        PARAM_FILAMENT_ALWAYS_GRIPPED with no core change needed.
+
+choice
+    prompt "HTLF controller wiring variant"
+    default KLIPPER_MMU_HTLF_BOARD_UNSPECIFIED
+    depends on KLIPPER_MMU_DEVICE_HTLF
+    help
+        Wiring preset identity only. Does not override the upstream MCU choice
+        or any pin configuration.
+
+config KLIPPER_MMU_HTLF_BOARD_UNSPECIFIED
+    bool "Unspecified"
+
+config KLIPPER_MMU_HTLF_BOARD_ERB
+    bool "ERB"
+
+config KLIPPER_MMU_HTLF_BOARD_MMB
+    bool "MMB"
+
+endchoice
+
+choice
+    prompt "QuattroBox motor variant"
+    default KLIPPER_MMU_QUATTRO_MOTOR_UNSPECIFIED
+    depends on KLIPPER_MMU_DEVICE_QUATTROBOX_1_0 || KLIPPER_MMU_DEVICE_QUATTROBOX_1_1 || KLIPPER_MMU_DEVICE_QUATTROBOX_2
+    help
+        Motor identity only. No current or pin defaults.
+
+config KLIPPER_MMU_QUATTRO_MOTOR_UNSPECIFIED
+    bool "Unspecified"
+
+config KLIPPER_MMU_QUATTRO_MOTOR_NEMA14
+    bool "NEMA14"
+
+config KLIPPER_MMU_QUATTRO_MOTOR_NEMA17
+    bool "NEMA17"
+
+endchoice
+
+comment "Prusa: upstream-mentioned; not implemented or qualified"

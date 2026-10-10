@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 13:50:58 -0700
+Subject: [PATCH] rp2040: Notify transmit capacity only when awaited
+
+The can2040 callback woke the CAN routing task after every successful software-CAN transmission.  can2040 owns and drains its accepted four-entry queue independently, so those wakeups perform useful work only after a producer has attempted to enqueue a fifth frame and received a full indication.
+
+Record that full-queue result and suppress completion notifications while no producer is waiting.  Protect the transmit attempt and waiter publication with interrupt masking because can2040 advances its consumer index and calls back from the PIO interrupt; this guarantees a completion can not occur between rejection and publication and be lost.
+
+Clear the waiter before issuing its single wakeup so later completions in the same burst remain interrupt-local.  Message construction, can2040 arbitration, queue depth, and client-visible traffic are unchanged.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/rp2040/can.c b/src/rp2040/can.c
+index 0e62ac3b..5540c9a1 100644
+--- a/src/rp2040/can.c
++++ b/src/rp2040/can.c
+@@ -9,6 +9,7 @@
+ #include "autoconf.h" // CONFIG_CANBUS_FREQUENCY
+ #include "board/armcm_boot.h" // armcm_enable_irq
+ #include "board/io.h" // readl
++#include "board/irq.h" // irq_save
+ #include "can2040.h" // can2040_setup
+ #include "command.h" // DECL_CONSTANT_STR
+ #include "fasthash.h" // fasthash64
+@@ -23,14 +24,30 @@
+ DECL_CONSTANT_STR("RESERVE_PINS_CAN", GPIO_STR_CAN_RX "," GPIO_STR_CAN_TX);
+ 
+ static struct can2040 cbus;
++static uint8_t can_tx_waiting;
+ 
+ // Transmit a packet
+ int
+ canhw_send(struct canbus_msg *msg)
+ {
++    /*
++     * can2040 reports every successful transmit through its callback, but the
++     * routing task needs that notification only after can2040_transmit() has
++     * rejected a frame because its four-entry software queue is full.  Record
++     * that condition with PIO interrupts masked.  The library advances its
++     * consumer index and invokes the callback in that interrupt, so publishing
++     * the waiter before interrupts are restored closes the completion-versus-
++     * rejection race without changing can2040's queue implementation.
++     */
++    irqstatus_t flag = irq_save();
+     int ret = can2040_transmit(&cbus, (void*)msg);
+-    if (ret < 0)
++    if (ret < 0) {
++        writeb(&can_tx_waiting, 1);
++        irq_restore(flag);
+         return -1;
++    }
++    writeb(&can_tx_waiting, 0);
++    irq_restore(flag);
+     return CANMSG_DATA_LEN(msg);
+ }
+ 
+@@ -63,7 +80,16 @@ static void
+ can2040_cb(struct can2040 *cd, uint32_t notify, struct can2040_msg *msg)
+ {
+     if (notify & CAN2040_NOTIFY_TX) {
+-        canbus_notify_tx();
++        /*
++         * A completion normally requires no scheduler work: can2040 already
++         * owns and transmits every entry accepted into its internal queue.
++         * Release one recorded producer waiter and clear it before waking so a
++         * burst of later completions can not recreate per-frame task dispatch.
++         */
++        if (readb(&can_tx_waiting)) {
++            writeb(&can_tx_waiting, 0);
++            canbus_notify_tx();
++        }
+         return;
+     }
+     if (notify & CAN2040_NOTIFY_RX)

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Supported units · klipper-mmu</title>
+<meta name="description" content="The multi-material units klipper-mmu supports, how each one picks a lane, and the chips it builds for.">
+<link rel="stylesheet" href="assets/site.css">
+<script>
+  try { var t = localStorage.getItem('kmmu-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</head>
+<body data-page="devices">
+
+<header class="bar" id="bar">
+  <a class="brand" href="./" aria-label="klipper-mmu home">
+    <svg class="brand-mark" viewBox="0 0 26 26" aria-hidden="true" fill="none" stroke-width="2.4" stroke-linecap="round">
+      <path d="M2 4 C 10 4, 12 13, 17 13" stroke="var(--lane-1)"/>
+      <path d="M2 10 C 9 10, 11 13, 17 13" stroke="var(--lane-2)"/>
+      <path d="M2 16 C 9 16, 11 13, 17 13" stroke="var(--lane-3)"/>
+      <path d="M2 22 C 10 22, 12 13, 17 13" stroke="var(--lane-4)"/>
+      <path d="M17 13 H 24" stroke="var(--ink)"/>
+    </svg>
+    klipper-mmu <small>docs</small>
+  </a>
+  <div class="bar-tools">
+    <button class="toc-toggle" id="toc-toggle" type="button" aria-expanded="false" aria-controls="toc">Contents</button>
+    <button class="theme-toggle" id="theme-toggle" type="button">Dark</button>
+  </div>
+  <div class="bar-progress" id="bar-progress" aria-hidden="true"><span id="bar-progress-fill"></span></div>
+</header>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<div class="page" id="page">
+  <nav class="toc" id="toc" aria-label="Manual"></nav>
+
+  <main class="content">
+<section class="hero" id="units" data-lane="1" data-station="units">
+      <p class="eyebrow"><b>Supported units</b></p>
+      <h1>Which units, and <em>how they work.</em></h1>
+      <p class="lede">Every unit below runs on the same control core. Its differences (how it picks a lane, which sensors it has, its speeds and gearing) are data, taken from Happy Hare&#39;s and AFC&#39;s own configurations for that unit.</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Unit</th><th>Picks a lane with</th><th>Lanes</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td data-label="Unit">BoxTurtle</td><td data-label="Picks a lane with">a feeder per lane</td><td data-label="Lanes">4 or 8</td><td data-label="Notes">Powered respooler per lane; switched or analog (OpenAMS) buffer; AFC Lite wiring preset</td></tr>
+<tr><td data-label="Unit">NightOwl</td><td data-label="Picks a lane with">a feeder per lane</td><td data-label="Lanes">2 or 4</td><td data-label="Notes">Passive rewind; built for most STM32 chips, not only the H723</td></tr>
+<tr><td data-label="Unit">EMU</td><td data-label="Picks a lane with">a feeder per lane</td><td data-label="Lanes">5</td><td data-label="Notes">Each lane&#39;s LOAD switch doubles as the hub (virtual hub)</td></tr>
+<tr><td data-label="Unit">KMS</td><td data-label="Picks a lane with">a feeder per lane</td><td data-label="Lanes">4</td><td data-label="Notes">Virtual hub, with BAY and LOAD switches</td></tr>
+<tr><td data-label="Unit">QIDI Box</td><td data-label="Picks a lane with">a feeder per lane</td><td data-label="Lanes">4</td><td data-label="Notes">Plain STEP/DIR gear (no TMC UART); tension-only buffer switch; needs a local toolhead switch</td></tr>
+<tr><td data-label="Unit">Angry Beaver, 3MS, QuattroBox 1.0 / 1.1 / 2</td><td data-label="Picks a lane with">a feeder per lane</td><td data-label="Lanes">4</td><td data-label="Notes">No per-lane BAY switch; gate availability is learned (see below)</td></tr>
+<tr><td data-label="Unit">ERCF 1.1, 2.0, 3.0</td><td data-label="Picks a lane with">linear selector + grip servo</td><td data-label="Lanes">9, 8, 8</td><td data-label="Notes">Filament encoder on by default; Springy, Triple Decky, Thumper Blocks and Jack Rabbit (no servo) options</td></tr>
+<tr><td data-label="Unit">Tradrack</td><td data-label="Picks a lane with">linear selector + grip servo</td><td data-label="Lanes">10</td><td data-label="Notes"></td></tr>
+<tr><td data-label="Unit">3D Chameleon, HTLF, MMX6</td><td data-label="Picks a lane with">rotary selector</td><td data-label="Lanes">4, 4, 6</td><td data-label="Notes">One gear, driven in a set direction per gate</td></tr>
+<tr><td data-label="Unit">MMX, Low Rider, Pico MMU</td><td data-label="Picks a lane with">servo selector</td><td data-label="Lanes">4, 6, 4</td><td data-label="Notes">No selector stepper; one servo angle per gate. Pico MMU ships uncalibrated</td></tr>
+<tr><td data-label="Unit">BTT ViViD</td><td data-label="Picks a lane with">indexed selector</td><td data-label="Lanes">4</td><td data-label="Notes">A switch per gate; takes the shorter way round</td></tr>
+<tr><td data-label="Unit">Claymore</td><td data-label="Picks a lane with">indexed selector</td><td data-label="Lanes">4</td><td data-label="Notes">A switch per gate; always searches forward (AFC&#39;s rule); powered respoolers</td></tr>
+</tbody>
+</table></div>
+      <div class="note" style="--note: var(--lane-2)">
+  <span class="note-label">Supported means software</span>
+  <p>Each unit builds, starts and passes a whole-system simulation. None has been qualified on real hardware yet. Stock Bambu AMS units and OpenAMS keep their own firmware; klipper-mmu does not run on them.</p>
+</div>
+    </section>
+
+    <section id="kinds" data-lane="2" data-station="picking a lane">
+      <h2>How a unit picks a lane</h2>
+      <div class="table-wrap"><table>
+<thead><tr><th>Kind</th><th>How it selects a lane</th><th>Units</th></tr></thead>
+<tbody>
+<tr><td data-label="Kind">Feeder per lane</td><td data-label="How it selects a lane">Each lane has its own feeder motor. Nothing moves between lanes.</td><td data-label="Units">BoxTurtle, NightOwl, EMU, KMS, QIDI Box, Angry Beaver, 3MS, QuattroBox</td></tr>
+<tr><td data-label="Kind">Linear</td><td data-label="How it selects a lane">A stepper moves a carriage to the gate&#39;s position; a servo grips the filament against one shared gear.</td><td data-label="Units">ERCF, Tradrack</td></tr>
+<tr><td data-label="Kind">Rotary</td><td data-label="How it selects a lane">A stepper turns a selector to the gate; the shared gear turns the way that gate needs.</td><td data-label="Units">3D Chameleon, HTLF, MMX6</td></tr>
+<tr><td data-label="Kind">Servo</td><td data-label="How it selects a lane">A servo swings to the gate&#39;s angle. No selector stepper.</td><td data-label="Units">MMX, Low Rider, Pico MMU</td></tr>
+<tr><td data-label="Kind">Indexed</td><td data-label="How it selects a lane">A stepper turns until the wanted gate&#39;s own switch triggers. No position table to calibrate.</td><td data-label="Units">BTT ViViD, Claymore</td></tr>
+</tbody>
+</table></div>
+      <p>Selector units home on the first selection after start-up or after a fault. Linear, rotary and servo units need their gate positions calibrated; indexed units do not. See <a href="calibration.html#selectors">Calibration</a>.</p>
+    </section>
+
+    <section id="sensors" data-lane="3" data-station="sensors">
+      <h2>Sensors</h2>
+      <p>A unit uses the sensors it has and refuses operations that need one it lacks. It never assumes a reading from a missing sensor.</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Sensor</th><th>What the unit uses it for</th></tr></thead>
+<tbody>
+<tr><td data-label="Sensor">BAY switch (per lane)</td><td data-label="What the unit uses it for">Filament is inserted in that lane.</td></tr>
+<tr><td data-label="Sensor">LOAD switch (per lane)</td><td data-label="What the unit uses it for">The feeder has gripped the filament. On EMU and KMS it is also the hub.</td></tr>
+<tr><td data-label="Sensor">HUB switch</td><td data-label="What the unit uses it for">Filament has reached the point where all lanes meet.</td></tr>
+<tr><td data-label="Sensor">Toolhead switch</td><td data-label="What the unit uses it for">Filament has reached the extruder (arrival).</td></tr>
+<tr><td data-label="Sensor">Buffer (FPS)</td><td data-label="What the unit uses it for">Compression during a load means arrival; during a print it sets the follow speed. Switched or analog.</td></tr>
+<tr><td data-label="Sensor">Encoder</td><td data-label="What the unit uses it for">Clicks as filament moves. No click over 10 mm of gear travel is a stall.</td></tr>
+</tbody>
+</table></div>
+      <p>A load ends on the unit&#39;s own board: at a local toolhead switch, or when the buffer compresses. A sensor on another board (for example a toolhead switch wired to the printer&#39;s toolhead MCU) cannot end a load. Wire it to the MMU&#39;s board instead.</p>
+    </section>
+
+    <section id="no-bay" data-lane="4" data-station="units without BAY">
+      <h2>Units without a BAY switch</h2>
+      <p>Angry Beaver, 3MS and QuattroBox cannot see whether a lane has filament. They follow Happy Hare&#39;s rule: each gate is <em>unknown</em>, <em>available</em> or <em>empty</em>. An unknown gate is tried. A load that succeeds marks it available; a load that finds no filament marks it empty. You can set it yourself with <code>KLIPPER_MMU_SET_GATE_METADATA GATE=n AVAILABLE=0|1</code>. EJECT backs the lane out by a set distance (20&nbsp;mm; 1500&nbsp;mm on 3MS) and marks the gate empty, as Happy Hare does.</p>
+    </section>
+
+    <section id="chips" data-lane="1" data-station="chips">
+      <h2>Chips and boards</h2>
+      <p>You choose the chip first, in Klipper&#39;s own menu. A board preset only fills in default pins; you can change every pin.</p>
+      <ul>
+        <li><strong>STM32H723</strong> (AFC Lite): every unit.</li>
+        <li><strong>STM32G0B0 / G0B1</strong> (BTT MMB): Angry Beaver, ERCF 2.0 and ERCF 3.0, the units Happy Hare ships on the MMB. On these 128 KiB chips, klipper-mmu&#39;s own code is built for size so it fits.</li>
+        <li><strong>F207, F405, F407, F429, F765, G431, G474, H743, H750</strong>: NightOwl and the generic Custom profile.</li>
+      </ul>
+      <p>The menu needs a chip with at least 128 KiB of flash. Options a chip cannot support (for example an analog buffer without enough ADC inputs) are hidden or refused at build time.</p>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <p>klipper-mmu is an optional add-on to Klipper, a separate project with its own authors and license (GPL-3.0). It builds on the work of the Happy Hare, AFC, BoxTurtle and OpenAMS projects.</p>
+  <p>Set in Bricolage Grotesque, Source Serif 4 and JetBrains Mono (SIL Open Font License), served from this site.</p>
+</footer>
+
+<script src="assets/site.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Sun, 23 Aug 2026 22:51:58 -0700
+Subject: [PATCH] serialqueue: Validate and initialize CAN frames
+
+A short read from a CAN socket left part of struct can_frame
+undefined while the receive path still consumed its length and
+payload.  Outbound frames also copied uninitialized padding bytes
+into the kernel.
+
+Require a complete frame, validate can_dlc against both CAN and
+input buffer limits, and zero the outbound frame before filling it.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/klippy/chelper/serialqueue.c b/klippy/chelper/serialqueue.c
+index e43e144d..823285be 100644
+--- a/klippy/chelper/serialqueue.c
++++ b/klippy/chelper/serialqueue.c
+@@ -329,9 +329,19 @@ input_event(struct serialqueue *sq, double eventtime)
+ {
+     if (sq->serial_fd_type == SQT_CAN) {
+         struct can_frame cf;
++        // Require one complete kernel CAN frame per read
+         int ret = read(sq->serial_fd, &cf, sizeof(cf));
+-        if (ret <= 0) {
+-            report_errno("can read", ret);
++        if (ret != sizeof(cf)) {
++            if (ret >= 0)
++                errorf("Got incomplete CAN frame (size=%d)", ret);
++            else
++                report_errno("can read", ret);
++            pollreactor_do_exit(sq->pr);
++            return;
++        }
++        if (cf.can_dlc > CAN_MAX_DLEN
++            || cf.can_dlc > sizeof(sq->input_buf) - sq->input_pos) {
++            errorf("Got invalid CAN frame length: %d", cf.can_dlc);
+             pollreactor_do_exit(sq->pr);
+             return;
+         }
+@@ -396,6 +406,8 @@ do_write(struct serialqueue *sq, void *buf, int buflen)
+     }
+     // Write to CAN fd
+     struct can_frame cf;
++    // Clear kernel-visible padding fields
++    memset(&cf, 0, sizeof(cf));
+     while (buflen) {
+         int size = buflen > 8 ? 8 : buflen;
+         cf.can_id = sq->client_id;

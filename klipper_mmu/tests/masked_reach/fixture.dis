@@ -1,0 +1,52 @@
+fixture.elf:     file format elf32-littlearm
+
+
+Disassembly of section .text:
+
+08000100 <root_isr>:
+ 8000100:	push	{r4, lr}
+ 8000102:	bl	8000200 <helper_b>
+ 8000106:	ldr	r3, [pc, #8]	@ (8000110 <root_isr+0x10>)
+ 8000108:	blx	r3
+ 800010a:	bl	8000400 <helper_d>
+ 800010e:	pop	{r4, pc}
+ 8000110:	.word	0x20000000
+
+08000200 <helper_b>:
+ 8000200:	push	{r4, lr}
+ 8000202:	cbz	r0, 800020a <helper_b+0xa>
+ 8000204:	bl	8000300 <helper_c>
+ 8000208:	bl	8000600 <__aeabi_uldivmod>
+ 800020c:	pop	{r4, pc}
+
+08000300 <helper_c>:
+ 8000300:	push	{r3, lr}
+ 8000302:	bl	8000700 <__aeabi_ddiv>
+ 8000306:	cmp	r0, #0
+ 8000308:	bne.w	8000200 <helper_b>
+ 800030c:	pop	{r3, pc}
+
+08000400 <helper_d>:
+ 8000400:	adds	r0, #1
+ 8000402:	b.w	8000500 <helper_e>
+
+08000500 <helper_e>:
+ 8000500:	vadd.f64	d0, d0, d1
+ 8000504:	bx	lr
+
+08000600 <__aeabi_uldivmod>:
+ 8000600:	push	{r4, lr}
+ 8000602:	udiv	r0, r0, r1
+ 8000606:	pop	{r4, pc}
+
+08000700 <__aeabi_ddiv>:
+ 8000700:	push	{r4, lr}
+ 8000702:	bl	8000800 <__aeabi_dmul>
+ 8000706:	pop	{r4, pc}
+
+08000800 <__aeabi_dmul>:
+ 8000800:	bx	lr
+
+08000900 <unreachable_f>:
+ 8000900:	bl	8000700 <__aeabi_ddiv>
+ 8000904:	bx	lr

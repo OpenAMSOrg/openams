@@ -1,0 +1,64 @@
+--- a/src/Kconfig
++++ b/src/Kconfig
+@@ -92,6 +92,16 @@
+     bool
+     depends on HAVE_GPIO_ADC
+     default y
++config WANT_ADC_LOCAL
++    bool "Firmware-local exclusive sequential ADC pairs"
++    depends on MACH_STM32H723 && WANT_ADC
++    default n
++    help
++        Own one ADC unit exclusively for a firmware-local sequential pin
++        pair. Ordinary gpio_adc_setup clients and the local pair never
++        share that unit, and the winner keeps it for the boot lifetime.
++        Sequential reads run one after another; they are not simultaneous
++        or synchronized ADC conversions.
+ config WANT_SPI
+     bool
+     depends on HAVE_GPIO && HAVE_GPIO_SPI
+@@ -112,6 +122,19 @@
+     bool
+     depends on HAVE_GPIO_HARD_PWM
+     default y
++config WANT_HARD_PWM_QUERY
++    bool "Expose hardware PWM routes to local MCU modules"
++    depends on MACH_STM32 && WANT_HARD_PWM
++    default n
++config WANT_HARD_PWM_LOCAL_PAIR
++    bool "Support local paired PWM channels"
++    depends on MACH_STM32H723 && WANT_HARD_PWM
++    default n
++config HARD_PWM_LOCAL_MAX_PAIRS
++    int "Maximum local PWM pairs"
++    depends on WANT_HARD_PWM_LOCAL_PAIR
++    range 1 8
++    default 8
+ config WANT_BUTTONS
+     bool
+     depends on HAVE_GPIO
+@@ -358,3 +381,24 @@
+     bool
+ config HAVE_SOFTWARE_DIVIDE_REQUIRED
+     bool
++
++# Optional MCU callers share the existing TMC UART driver.
++config WANT_TMCUART_LOCAL
++    bool "Support local MCU TMC UART callers"
++    depends on WANT_TMCUART && (MACH_STM32H723 || MACH_STM32H743 || MACH_STM32H750 || MACH_STM32F207 || MACH_STM32F405 || MACH_STM32F407 || MACH_STM32F429 || MACH_STM32F765 || MACH_STM32G431 || MACH_STM32G474 || MACH_STM32G0B0 || MACH_STM32G0B1)
++    default n
++
++config TMCUART_LOCAL_MAX_CHANNELS
++    int "Maximum local TMC UART channels"
++    depends on WANT_TMCUART_LOCAL
++    range 1 8
++    default 8
++
++config WANT_GPIO_LOCAL
++    bool "Firmware-local exclusive GPIO ownership"
++    depends on MACH_STM32H723 || MACH_STM32H743 || MACH_STM32H750 || MACH_STM32F207 || MACH_STM32F405 || MACH_STM32F407 || MACH_STM32F429 || MACH_STM32F765 || MACH_STM32G431 || MACH_STM32G474 || MACH_STM32G0B0 || MACH_STM32G0B1
++    default n
++    help
++        Optional driver API only, with no automatic MMU setup or
++        actuation. Boot-lifetime claims and normal pin reservations
++        still apply.

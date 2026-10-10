@@ -1,0 +1,191 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 13:54:21 -0700
+Subject: [PATCH] canbus: Use classic-sized programmable FDCAN FIFOs
+
+The programmable M_CAN backends reserved the 64-byte CAN-FD maximum for every receive and transmit element even though Klipper and its gs_usb bridge expose classical CAN only.  With the existing message-RAM allocation that left just three active entries in each direction, making short interrupt delays or host bursts much more likely to exhaust hardware buffering.
+
+Configure eight-byte elements and use the recovered space for sixteen receive and sixteen transmit entries on STM32H7, ATSAM, and ATSAMD.  Keep the complete allocation at 212 words, including explicit tail padding, so DMA-visible bounds remain unchanged and the STM32H7 FDCAN2 partition retains its established base address.
+
+STM32G0 and STM32G4 implement a reduced fixed layout whose registers do not expose programmable element or FIFO sizes.  Preserve their original three-entry, 64-byte mapping exactly instead of applying an unsupported configuration.
+
+The deeper receive FIFO absorbs ISR latency, and the deeper transmit FIFO lets one routing pass submit a larger burst before requesting a capacity wakeup.  Physical frames remain eight-byte classical CAN records with unchanged identifiers and ordering.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/atsam/fdcan.c b/src/atsam/fdcan.c
+index 7434cf57..9580e221 100644
+--- a/src/atsam/fdcan.c
++++ b/src/atsam/fdcan.c
+@@ -57,7 +57,7 @@
+ struct fdcan_fifo {
+     uint32_t id_section;
+     uint32_t dlc_section;
+-    uint32_t data[64 / 4];
++    uint32_t data[8 / 4];
+ };
+ 
+ #define FDCAN_XTD (1<<30)
+@@ -66,10 +66,11 @@ struct fdcan_fifo {
+ struct fdcan_msg_ram {
+     uint32_t FLS[28]; // Filter list standard
+     uint32_t FLE[16]; // Filter list extended
+-    struct fdcan_fifo RXF0[3];
++    struct fdcan_fifo RXF0[16];
+     struct fdcan_fifo RXF1[3];
+     uint32_t TEF[6]; // Tx event FIFO
+-    struct fdcan_fifo TXFIFO[3];
++    struct fdcan_fifo TXFIFO[16];
++    uint32_t unused[22];
+ };
+ 
+ // Message ram is in DTCM - locate it there to avoid cache.
+@@ -401,13 +402,26 @@ can_init(void)
+         - (CCFG_CANxDMABA_Msk & CCFG_CANxDMABA);
+     CANx->MCAN_RXF0C = f0sa
+         | (ARRAY_SIZE(MSG_RAM.RXF0) << MCAN_RXF0C_F0S_Pos);
+-    CANx->MCAN_RXESC = (7 << MCAN_RXESC_F1DS_Pos)
+-        | (7 << MCAN_RXESC_F0DS_Pos);
++    /*
++     * Klipper and gs_usb use classical CAN exclusively, so every receive and
++     * transmit element needs eight data bytes, not the reset-independent
++     * 64-byte CAN-FD maximum.  The smaller element size expands each active
++     * FIFO from three records to sixteen while retaining the existing 212-word
++     * message-RAM allocation.
++     *
++     * Deeper receive buffering tolerates interrupt latency without overwriting
++     * commands, while deeper transmit buffering lets the routing task submit a
++     * burst before it needs the demand-driven capacity interrupt.  FIFO 1
++     * retains its prior entry count, and explicit tail padding documents and
++     * preserves the total allocation instead of silently changing this
++     * DMA-visible memory contract.
++     */
++    CANx->MCAN_RXESC = 0;
+     uint32_t tbsa = (uint32_t)MSG_RAM.TXFIFO
+         - (CCFG_CANxDMABA_Msk & CCFG_CANxDMABA);
+     CANx->MCAN_TXBC = tbsa
+         | (ARRAY_SIZE(MSG_RAM.TXFIFO) << MCAN_TXBC_TFQS_Pos);
+-    CANx->MCAN_TXESC = 7 << MCAN_TXESC_TBDS_Pos;
++    CANx->MCAN_TXESC = 0;
+ 
+     /* Leave the initialisation mode */
+     CANx->MCAN_CCCR &= ~MCAN_CCCR_CCE;
+diff --git a/src/atsamd/fdcan.c b/src/atsamd/fdcan.c
+index 33006668..f55b805b 100644
+--- a/src/atsamd/fdcan.c
++++ b/src/atsamd/fdcan.c
+@@ -74,7 +74,7 @@
+ struct fdcan_fifo {
+     uint32_t id_section;
+     uint32_t dlc_section;
+-    uint32_t data[64 / 4];
++    uint32_t data[8 / 4];
+ };
+ 
+ #define FDCAN_XTD (1<<30)
+@@ -83,10 +83,11 @@ struct fdcan_fifo {
+ struct fdcan_msg_ram {
+     uint32_t FLS[28]; // Filter list standard
+     uint32_t FLE[16]; // Filter list extended
+-    struct fdcan_fifo RXF0[3];
++    struct fdcan_fifo RXF0[16];
+     struct fdcan_fifo RXF1[3];
+     uint32_t TEF[6]; // Tx event FIFO
+-    struct fdcan_fifo TXFIFO[3];
++    struct fdcan_fifo TXFIFO[16];
++    uint32_t unused[22];
+ };
+ 
+ // Message ram is in regular memory
+@@ -411,10 +412,24 @@ can_init(void)
+     /* Setup message RAM addresses */
+     uint32_t f0sa = (uint32_t)MSG_RAM.RXF0 - CAN0_MSG_RAM_ADDR;
+     CANx->RXF0C.reg = f0sa | (ARRAY_SIZE(MSG_RAM.RXF0) << CAN_RXF0C_F0S_Pos);
+-    CANx->RXESC.reg = (7 << CAN_RXESC_F1DS_Pos) | (7 << CAN_RXESC_F0DS_Pos);
++    /*
++     * Klipper and gs_usb use classical CAN exclusively, so every receive and
++     * transmit element needs eight data bytes, not the reset-independent
++     * 64-byte CAN-FD maximum.  The smaller element size expands each active
++     * FIFO from three records to sixteen while retaining the existing 212-word
++     * message-RAM allocation.
++     *
++     * Deeper receive buffering tolerates interrupt latency without overwriting
++     * commands, while deeper transmit buffering lets the routing task submit a
++     * burst before it needs the demand-driven capacity interrupt.  FIFO 1
++     * retains its prior entry count, and explicit tail padding documents and
++     * preserves the total allocation instead of silently changing this
++     * hardware-visible memory contract.
++     */
++    CANx->RXESC.reg = 0;
+     uint32_t tbsa = (uint32_t)MSG_RAM.TXFIFO - CAN0_MSG_RAM_ADDR;
+     CANx->TXBC.reg = tbsa | (ARRAY_SIZE(MSG_RAM.TXFIFO) << CAN_TXBC_TFQS_Pos);
+-    CANx->TXESC.reg = 7 << CAN_TXESC_TBDS_Pos;
++    CANx->TXESC.reg = 0;
+ 
+     /* Leave the initialisation mode */
+     CANx->CCCR.reg &= ~CAN_CCCR_CCE;
+diff --git a/src/stm32/fdcan.c b/src/stm32/fdcan.c
+index 0185f95c..e6704a31 100644
+--- a/src/stm32/fdcan.c
++++ b/src/stm32/fdcan.c
+@@ -93,7 +93,12 @@
+ struct fdcan_fifo {
+     uint32_t id_section;
+     uint32_t dlc_section;
++#if CONFIG_MACH_STM32H7
++    uint32_t data[8 / 4];
++#else
++    /* STM32G0/G4 implement a fixed three-element, 64-byte-data layout. */
+     uint32_t data[64 / 4];
++#endif
+ };
+ 
+ #define FDCAN_XTD (1<<30)
+@@ -102,10 +107,19 @@ struct fdcan_fifo {
+ struct fdcan_msg_ram {
+     uint32_t FLS[28]; // Filter list standard
+     uint32_t FLE[16]; // Filter list extended
++#if CONFIG_MACH_STM32H7
++    struct fdcan_fifo RXF0[16];
++#else
+     struct fdcan_fifo RXF0[3];
++#endif
+     struct fdcan_fifo RXF1[3];
+     uint32_t TEF[6]; // Tx event FIFO
++#if CONFIG_MACH_STM32H7
++    struct fdcan_fifo TXFIFO[16];
++    uint32_t unused[22];
++#else
+     struct fdcan_fifo TXFIFO[3];
++#endif
+ };
+ 
+ struct fdcan_ram_layout {
+@@ -427,10 +441,25 @@ can_init(void)
+     /* Setup message RAM addresses */
+     uint32_t f0sa = (uint32_t)MSG_RAM.RXF0 - SRAMCAN_BASE;
+     SOC_CAN->RXF0C = f0sa | (ARRAY_SIZE(MSG_RAM.RXF0) << FDCAN_RXF0C_F0S_Pos);
+-    SOC_CAN->RXESC = (7 << FDCAN_RXESC_F1DS_Pos) | (7 << FDCAN_RXESC_F0DS_Pos);
++    /*
++     * Klipper and gs_usb use classical CAN exclusively, so every receive and
++     * transmit element needs eight data bytes, not the reset-independent
++     * 64-byte CAN-FD maximum.  The smaller element size expands each active
++     * FIFO from three records to sixteen inside the same 212-word
++     * per-controller message-RAM partition.  Preserving that total is
++     * significant on dual STM32 controllers because fdcan2 begins immediately
++     * after fdcan1.
++     *
++     * Deeper receive buffering tolerates interrupt latency without overwriting
++     * commands, while deeper transmit buffering lets the routing task submit a
++     * burst before it needs the demand-driven capacity interrupt.  The unused
++     * FIFO 1 retains its prior entry count, and explicit tail padding prevents
++     * this optimization from moving the second controller's base address.
++     */
++    SOC_CAN->RXESC = 0;
+     uint32_t tbsa = (uint32_t)MSG_RAM.TXFIFO - SRAMCAN_BASE;
+     SOC_CAN->TXBC = tbsa | (ARRAY_SIZE(MSG_RAM.TXFIFO) << FDCAN_TXBC_TFQS_Pos);
+-    SOC_CAN->TXESC = 7 << FDCAN_TXESC_TBDS_Pos;
++    SOC_CAN->TXESC = 0;
+ #endif
+ 
+     /* Leave the initialisation mode */

@@ -1,0 +1,92 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 11:56:19 -0700
+Subject: [PATCH] canbus: Drain pending FDCAN receive frames
+
+The FDCAN receive interrupt is a new-message event, not a count of queued records.  Each handler cleared that event and acknowledged only one FIFO entry.  If interrupt latency allowed several frames to accumulate first, the remaining entries could wait for another arrival and occupy the three-entry FIFO in the meantime.
+
+Walk receive FIFO 0 until its fill level reaches zero after acknowledging the interrupt.  This preserves wire order, releases every slot represented by the event, and prevents a quiet trailing frame from remaining stranded in hardware.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/atsam/fdcan.c b/src/atsam/fdcan.c
+index 5e3fc816..30252c62 100644
+--- a/src/atsam/fdcan.c
++++ b/src/atsam/fdcan.c
+@@ -203,8 +203,20 @@ CAN_IRQHandler(void)
+     if (ir & MCAN_IE_RF0NE) {
+         CANx->MCAN_IR = MCAN_IE_RF0NE;
+ 
+-        uint32_t rxf0s = CANx->MCAN_RXF0S;
+-        if (rxf0s & MCAN_RXF0S_F0FL_Msk) {
++        /*
++         * RF0N reports that FIFO 0 transitioned to containing new data; it is
++         * not one interrupt record per FIFO element.  Several frames can arrive
++         * before this handler runs.  After RF0N is cleared, acknowledging only
++         * the oldest element may leave a quiet trailing frame in the FIFO with
++         * no new transition to raise another interrupt.  Re-read the hardware
++         * fill level after every acknowledgement and drain the complete batch.
++         * Acknowledging by the current get index preserves receive order while
++         * promptly returning every one of the three scarce FIFO slots.
++         */
++        for (;;) {
++            uint32_t rxf0s = CANx->MCAN_RXF0S;
++            if (!(rxf0s & MCAN_RXF0S_F0FL_Msk))
++                break;
+             // Read and ack data packet
+             uint32_t idx = (rxf0s & MCAN_RXF0S_F0GI_Msk) >> MCAN_RXF0S_F0GI_Pos;
+             struct fdcan_fifo *rxf0 = &MSG_RAM.RXF0[idx];
+diff --git a/src/atsamd/fdcan.c b/src/atsamd/fdcan.c
+index 24977392..03bf39d1 100644
+--- a/src/atsamd/fdcan.c
++++ b/src/atsamd/fdcan.c
+@@ -219,8 +219,20 @@ CAN_IRQHandler(void)
+     if (ir & CAN_IE_RF0NE) {
+         CANx->IR.reg = CAN_IE_RF0NE;
+ 
+-        uint32_t rxf0s = CANx->RXF0S.reg;
+-        if (rxf0s & CAN_RXF0S_F0FL_Msk) {
++        /*
++         * RF0N reports that FIFO 0 transitioned to containing new data; it is
++         * not one interrupt record per FIFO element.  Several frames can arrive
++         * before this handler runs.  After RF0N is cleared, acknowledging only
++         * the oldest element may leave a quiet trailing frame in the FIFO with
++         * no new transition to raise another interrupt.  Re-read the hardware
++         * fill level after every acknowledgement and drain the complete batch.
++         * Acknowledging by the current get index preserves receive order while
++         * promptly returning every one of the three scarce FIFO slots.
++         */
++        for (;;) {
++            uint32_t rxf0s = CANx->RXF0S.reg;
++            if (!(rxf0s & CAN_RXF0S_F0FL_Msk))
++                break;
+             // Read and ack data packet
+             uint32_t idx = (rxf0s & CAN_RXF0S_F0GI_Msk) >> CAN_RXF0S_F0GI_Pos;
+             struct fdcan_fifo *rxf0 = &MSG_RAM.RXF0[idx];
+diff --git a/src/stm32/fdcan.c b/src/stm32/fdcan.c
+index facd490d..b40f8e45 100644
+--- a/src/stm32/fdcan.c
++++ b/src/stm32/fdcan.c
+@@ -246,8 +246,20 @@ CAN_IRQHandler(void)
+     if (ir & FDCAN_IE_RF0NE) {
+         SOC_CAN->IR = FDCAN_IE_RF0NE;
+ 
+-        uint32_t rxf0s = SOC_CAN->RXF0S;
+-        if (rxf0s & FDCAN_RXF0S_F0FL) {
++        /*
++         * RF0N reports that FIFO 0 transitioned to containing new data; it is
++         * not one interrupt record per FIFO element.  Several frames can arrive
++         * before this handler runs.  After RF0N is cleared, acknowledging only
++         * the oldest element may leave a quiet trailing frame in the FIFO with
++         * no new transition to raise another interrupt.  Re-read the hardware
++         * fill level after every acknowledgement and drain the complete batch.
++         * Acknowledging by the current get index preserves receive order while
++         * promptly returning every one of the three scarce FIFO slots.
++         */
++        for (;;) {
++            uint32_t rxf0s = SOC_CAN->RXF0S;
++            if (!(rxf0s & FDCAN_RXF0S_F0FL))
++                break;
+             // Read and ack data packet
+             uint32_t idx = (rxf0s & FDCAN_RXF0S_F0GI) >> FDCAN_RXF0S_F0GI_Pos;
+             struct fdcan_fifo *rxf0 = &MSG_RAM.RXF0[idx];

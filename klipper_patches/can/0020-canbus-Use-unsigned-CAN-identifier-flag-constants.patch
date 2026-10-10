@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 12:10:45 -0700
+Subject: [PATCH] canbus: Use unsigned CAN identifier flag constants
+
+CANMSG_ID_EFF was formed by shifting the signed integer constant 1 into bit 31.  The C language does not define a signed left shift whose result is not representable as an int, so compiler optimizations were not required to retain the intended 0x80000000 mask.
+
+Give both identifier flag constants an unsigned type.  This matches the uint32_t field that stores the flags and makes every backend extended-frame test well-defined without changing the wire representation.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/generic/canbus.h b/src/generic/canbus.h
+index a0a2c2ab..c280bf68 100644
+--- a/src/generic/canbus.h
++++ b/src/generic/canbus.h
+@@ -12,8 +12,15 @@ struct canbus_msg {
+     };
+ };
+ 
+-#define CANMSG_ID_RTR (1<<30)
+-#define CANMSG_ID_EFF (1<<31)
++/*
++ * CAN identifiers and their SocketCAN-compatible flags are stored together in
++ * a uint32_t.  Keep the flag constants unsigned as well: shifting a signed
++ * integer into bit 31 is undefined by C, so an optimizer would not be required
++ * to preserve the extended-frame test even though common compilers currently
++ * produce the intended 0x80000000 value.
++ */
++#define CANMSG_ID_RTR (1u<<30)
++#define CANMSG_ID_EFF (1u<<31)
+ 
+ #define CANMSG_DATA_LEN(msg) ((msg)->dlc > 8 ? 8 : (msg)->dlc)
+ 

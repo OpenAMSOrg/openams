@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "profile_id": "synthetic-lane-v1",
+  "parameters": {
+    "step_mm": 0.125,
+    "forward_transfer": 1,
+    "reverse_transfer": 1,
+    "hub_mm": 10,
+    "arrival_mm": 30,
+    "buffer_capacity_mm": 20,
+    "switch_hysteresis_mm": 0.25,
+    "rewind_max_mm_s": 10,
+    "rewind_time_constant_s": 0.1
+  },
+  "parameter_sources": {
+    "step_mm": "Synthetic fixture assumption; not measured shaft calibration",
+    "forward_transfer": "Synthetic fixture assumption",
+    "reverse_transfer": "Synthetic fixture assumption",
+    "hub_mm": "Synthetic fixture geometry",
+    "arrival_mm": "Synthetic fixture geometry",
+    "buffer_capacity_mm": "Synthetic fixture geometry",
+    "switch_hysteresis_mm": "Synthetic fixture assumption",
+    "rewind_max_mm_s": "Synthetic fixture assumption",
+    "rewind_time_constant_s": "Synthetic fixture assumption"
+  }
+}

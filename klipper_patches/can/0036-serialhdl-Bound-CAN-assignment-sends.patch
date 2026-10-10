@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 13:31:55 -0700
+Subject: [PATCH] serialhdl: Bound CAN assignment sends
+
+connect_canbus() applies a 90-second retry deadline, but its initial python-can send did not pass a timeout.  python-can treats that omission as permission to wait indefinitely for transmit availability, so a saturated or wedged SocketCAN queue could block the reactor thread before the outer deadline was checked again.
+
+Give each assignment send a one-second timeout.  Normal SocketCAN queueing completes far sooner, while timeout failures enter the existing socket cleanup and retry path instead of preventing all reactor callbacks from running.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/klippy/serialhdl.py b/klippy/serialhdl.py
+index a49fc7de..88c63d86 100644
+--- a/klippy/serialhdl.py
++++ b/klippy/serialhdl.py
+@@ -167,7 +167,17 @@ class SerialReader:
+                 bus = can.interface.Bus(channel=canbus_iface,
+                                         can_filters=filters,
+                                         bustype='socketcan')
+-                bus.send(set_id_msg)
++                # python-can defines a missing timeout as permission to block
++                # indefinitely while the local transmit queue is unavailable.
++                # That would run in the reactor thread and prevent both the
++                # surrounding 90-second connection deadline and every other
++                # reactor callback from making progress.  Bound only this
++                # individual queue attempt; a timeout raises CanError and uses
++                # the existing cleanup, pause, and retry path.  One second is
++                # deliberately much longer than normal SocketCAN queue latency
++                # while still keeping a wedged interface subordinate to
++                # Klipper's connection deadline.
++                bus.send(set_id_msg, timeout=1.0)
+             except (can.CanError, os.error, IOError) as e:
+                 if bus is not None:
+                     # Socket construction and the first assignment send share

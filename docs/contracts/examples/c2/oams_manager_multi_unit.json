@@ -1,0 +1,1047 @@
+{
+  "schema_version": 2,
+  "api_version": 1,
+  "schema": "openams.manager",
+  "ready": true,
+  "current_group": "T0",
+  "lanes": [
+    {
+      "id": "fps",
+      "state": "loaded",
+      "current_group": "T0",
+      "current_slot": 5,
+      "following": true,
+      "direction": 1,
+      "message": "loaded",
+      "pressure": 0.5,
+      "set_point": 0.5
+    }
+  ],
+  "lanes_by_fps": {
+    "fps": {
+      "op": "LOADED",
+      "group": "T0",
+      "unit": [
+        1,
+        1
+      ],
+      "runout": "idle",
+      "following": true,
+      "since": 1733.0,
+      "message": "loaded",
+      "direction": 1,
+      "stage": null,
+      "motion_stage": null,
+      "reload_target": null,
+      "runout_from": null,
+      "pressure": 0.5,
+      "set_point": 0.5,
+      "extruder": "extruder",
+      "motion_settled": true,
+      "state": "loaded",
+      "current_slot": 5
+    }
+  },
+  "topology": {
+    "schema_version": 1,
+    "fps": [
+      "fps"
+    ],
+    "oams": {
+      "oams1": {
+        "idx": 0,
+        "lane": "fps",
+        "kind": "oams",
+        "family": "ams1",
+        "bays": 4,
+        "capabilities": {
+          "family": "ams1",
+          "display_name": "AMS 1",
+          "bays": 4,
+          "spool_drive_count": 4,
+          "feed_motor_control": "device_owned_speed_current",
+          "device_owned_motion_control": true,
+          "dryer": false,
+          "dryer_zone_count": 0,
+          "dryer_module_count": 0,
+          "dryer_independent_zones": false,
+          "heater_count": 0,
+          "fan_count": 0,
+          "dryer_temperature_sensor_count": 0,
+          "spool_rotation_during_drying": false,
+          "dryer_target_min_c": null,
+          "dryer_target_max_c": null,
+          "vent_count": 0,
+          "autonomous_follower": true,
+          "ptfe_calibration": true,
+          "hub_hes_calibration": true,
+          "rfid": true,
+          "host_sensor_configuration": true,
+          "runtime_pid_tuning": true,
+          "logger_control": true,
+          "error_led_control": true,
+          "rfid_reader_scope": "per_bay",
+          "rfid_uid_inventory": true,
+          "rfid_material_metadata": "host_owned",
+          "schema_version": 1,
+          "board_name": "oams-stm32f072",
+          "heater_control": false,
+          "firmware_version": "example-1.0",
+          "build_version": "example-1.0",
+          "firmware_capability_schema": 0,
+          "telemetry": false,
+          "telemetry_channels": []
+        }
+      },
+      "ams2": {
+        "idx": 1,
+        "lane": "fps",
+        "kind": "oams",
+        "family": "ams2",
+        "bays": 4,
+        "capabilities": {
+          "family": "ams2",
+          "display_name": "AMS 2 Pro",
+          "bays": 4,
+          "spool_drive_count": 4,
+          "feed_motor_control": "device_owned_speed_current",
+          "device_owned_motion_control": true,
+          "dryer": true,
+          "dryer_zone_count": null,
+          "dryer_module_count": 2,
+          "dryer_independent_zones": null,
+          "heater_count": 2,
+          "fan_count": 2,
+          "dryer_temperature_sensor_count": 2,
+          "spool_rotation_during_drying": false,
+          "dryer_target_min_c": 30.0,
+          "dryer_target_max_c": 65.0,
+          "vent_count": 2,
+          "autonomous_follower": true,
+          "ptfe_calibration": false,
+          "hub_hes_calibration": false,
+          "rfid": false,
+          "host_sensor_configuration": false,
+          "runtime_pid_tuning": true,
+          "logger_control": false,
+          "error_led_control": false,
+          "rfid_reader_scope": "per_bay",
+          "rfid_uid_inventory": false,
+          "rfid_material_metadata": "device_synchronized",
+          "schema_version": 1,
+          "board_name": "ams2",
+          "firmware_version": "example-1.0",
+          "build_version": "example-1.0",
+          "firmware_capability_schema": 5,
+          "telemetry": true,
+          "normal_motion": true,
+          "heater_control": true,
+          "board_telemetry": false,
+          "link_status": true,
+          "tray_info": true,
+          "tray_read": true,
+          "tray_write": true,
+          "rfid_reader_count": 0,
+          "vent_actuator_count": 0,
+          "telemetry_channels": [
+            "domain",
+            "dryer"
+          ]
+        }
+      },
+      "amsht": {
+        "idx": 2,
+        "lane": "fps",
+        "kind": "oams",
+        "family": "ams_ht",
+        "bays": 1,
+        "capabilities": {
+          "family": "ams_ht",
+          "display_name": "AMS HT",
+          "bays": 1,
+          "spool_drive_count": 1,
+          "feed_motor_control": "device_owned_speed_current",
+          "device_owned_motion_control": true,
+          "dryer": true,
+          "dryer_zone_count": 1,
+          "dryer_module_count": 1,
+          "dryer_independent_zones": false,
+          "heater_count": 1,
+          "fan_count": 1,
+          "dryer_temperature_sensor_count": 2,
+          "spool_rotation_during_drying": false,
+          "dryer_target_min_c": 30.0,
+          "dryer_target_max_c": 80.0,
+          "vent_count": 2,
+          "autonomous_follower": true,
+          "ptfe_calibration": false,
+          "hub_hes_calibration": false,
+          "rfid": false,
+          "host_sensor_configuration": false,
+          "runtime_pid_tuning": true,
+          "logger_control": false,
+          "error_led_control": false,
+          "rfid_reader_scope": "single_bay",
+          "rfid_uid_inventory": false,
+          "rfid_material_metadata": "host_owned",
+          "schema_version": 1,
+          "board_name": "ams-ht",
+          "firmware_version": "example-1.0",
+          "build_version": "example-1.0",
+          "firmware_capability_schema": 5,
+          "telemetry": true,
+          "normal_motion": true,
+          "heater_control": true,
+          "board_telemetry": true,
+          "link_status": true,
+          "tray_info": true,
+          "tray_read": true,
+          "rfid_reader_count": 0,
+          "vent_actuator_count": 0,
+          "telemetry_channels": [
+            "board",
+            "domain",
+            "dryer"
+          ]
+        }
+      }
+    },
+    "groups": {
+      "T0": {
+        "lane": "fps",
+        "bays": [
+          "ams2-1",
+          "ams2-0",
+          "amsht-0"
+        ]
+      },
+      "T1": {
+        "lane": "fps",
+        "bays": [
+          "oams1-0",
+          "oams1-1"
+        ]
+      },
+      "T2": {
+        "lane": "fps",
+        "bays": [
+          "ams2-2"
+        ]
+      },
+      "T3": {
+        "lane": "fps",
+        "bays": [
+          "oams1-2"
+        ]
+      }
+    }
+  },
+  "devices": {
+    "oams1": {
+      "schema_version": 1,
+      "current_spool": null,
+      "oams_idx": 0,
+      "connected": true,
+      "fps_value": 0.0,
+      "fps_upper_threshold": 0.7,
+      "fps_lower_threshold": 0.3,
+      "f1s_hes_value": [
+        1,
+        1,
+        1,
+        0
+      ],
+      "hub_hes_value": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "fps_target": 0.5,
+      "current_kp": 0.375,
+      "current_ki": 0.0,
+      "current_kd": 0.0,
+      "current_target": 0.3,
+      "f1s_hes_value_0": 1,
+      "f1s_hes_value_1": 1,
+      "f1s_hes_value_2": 1,
+      "f1s_hes_value_3": 0,
+      "hub_hes_value_0": 0,
+      "hub_hes_value_1": 0,
+      "hub_hes_value_2": 0,
+      "hub_hes_value_3": 0,
+      "kp": 6.0,
+      "ki": 0.0,
+      "kd": 0.0,
+      "encoder_clicks": 48211,
+      "i_value": 0.0,
+      "protocol_version": null,
+      "gen_matched_protocol": false,
+      "family": "ams1",
+      "bay_count": 4,
+      "capabilities": {
+        "family": "ams1",
+        "display_name": "AMS 1",
+        "bays": 4,
+        "spool_drive_count": 4,
+        "feed_motor_control": "device_owned_speed_current",
+        "device_owned_motion_control": true,
+        "dryer": false,
+        "dryer_zone_count": 0,
+        "dryer_module_count": 0,
+        "dryer_independent_zones": false,
+        "heater_count": 0,
+        "fan_count": 0,
+        "dryer_temperature_sensor_count": 0,
+        "spool_rotation_during_drying": false,
+        "dryer_target_min_c": null,
+        "dryer_target_max_c": null,
+        "vent_count": 0,
+        "autonomous_follower": true,
+        "ptfe_calibration": true,
+        "hub_hes_calibration": true,
+        "rfid": true,
+        "host_sensor_configuration": true,
+        "runtime_pid_tuning": true,
+        "logger_control": true,
+        "error_led_control": true,
+        "rfid_reader_scope": "per_bay",
+        "rfid_uid_inventory": true,
+        "rfid_material_metadata": "host_owned",
+        "schema_version": 1,
+        "board_name": "oams-stm32f072",
+        "heater_control": false,
+        "firmware_version": "example-1.0",
+        "build_version": "example-1.0",
+        "firmware_capability_schema": 0,
+        "telemetry": false,
+        "telemetry_channels": []
+      },
+      "capability_warnings": [],
+      "bays": [
+        {
+          "index": 0,
+          "ready": true,
+          "loaded": false,
+          "calibrated": true,
+          "calibration_state": "configured",
+          "path_length_mm": 1600.0,
+          "positioning": false,
+          "spool_id": 12,
+          "link_source": "tag",
+          "tag": {
+            "uid": "8a3f12c4",
+            "format": "bambu",
+            "read_at": 1523.4,
+            "spoolman_id": null,
+            "bambu": {
+              "manufacturer": "Bambu",
+              "type": "PLA",
+              "detailed": "PLA Basic",
+              "color_argb": 4278856073,
+              "weight_g": 1000,
+              "diameter_mm": 1.75,
+              "drying_temp_c": 55,
+              "drying_time_h": 8,
+              "bed_temp_c": 35,
+              "hotend_max_c": 230,
+              "hotend_min_c": 190,
+              "nozzle_diameter": 0.4,
+              "spool_width_mm": 66.25,
+              "length_m": 330,
+              "tray_uid": "5c2e8d0a9f1b4e7c8a2d6f0e3b9c1a47",
+              "production": "2024_05_12_10_30"
+            }
+          },
+          "spool_hint": null,
+          "supported_actions": [
+            "set_spool",
+            "clear_spool"
+          ]
+        },
+        {
+          "index": 1,
+          "ready": true,
+          "loaded": false,
+          "calibrated": true,
+          "calibration_state": "configured",
+          "path_length_mm": 1600.0,
+          "positioning": false,
+          "spool_id": 15,
+          "link_source": "manual",
+          "tag": null,
+          "spool_hint": null,
+          "supported_actions": [
+            "set_spool",
+            "clear_spool"
+          ]
+        },
+        {
+          "index": 2,
+          "ready": true,
+          "loaded": false,
+          "calibrated": true,
+          "calibration_state": "configured",
+          "path_length_mm": 1600.0,
+          "positioning": false,
+          "spool_id": null,
+          "link_source": "none",
+          "tag": null,
+          "spool_hint": null,
+          "supported_actions": [
+            "set_spool"
+          ]
+        },
+        {
+          "index": 3,
+          "ready": false,
+          "loaded": false,
+          "calibrated": true,
+          "calibration_state": "configured",
+          "path_length_mm": 1600.0,
+          "positioning": false,
+          "spool_id": null,
+          "link_source": "none",
+          "tag": null,
+          "spool_hint": null,
+          "supported_actions": []
+        }
+      ],
+      "telemetry": {},
+      "supported_actions": [
+        "clear_errors",
+        "load",
+        "unload",
+        "follower",
+        "configure_pid",
+        "calibrate_ptfe",
+        "calibrate_hub_hes"
+      ],
+      "identity": {
+        "serial": "000000000000000000000001",
+        "firmware": "example-1.0",
+        "board": "oams-stm32f072"
+      },
+      "calibration": {
+        "state": "configured",
+        "path_length_mm": 1600.0
+      },
+      "environment": {
+        "temp_c": 24.3,
+        "rh_pct": 31.0,
+        "source": "hdc1080"
+      },
+      "dryer": null,
+      "faults": [],
+      "follower_uncertain": false
+    },
+    "ams2": {
+      "schema_version": 1,
+      "current_spool": 1,
+      "oams_idx": 1,
+      "connected": true,
+      "fps_value": 0.48,
+      "fps_upper_threshold": 0.7,
+      "fps_lower_threshold": 0.3,
+      "f1s_hes_value": [
+        1,
+        1,
+        1,
+        0
+      ],
+      "hub_hes_value": [
+        0,
+        1,
+        0,
+        0
+      ],
+      "fps_target": 0.5,
+      "current_kp": 0.375,
+      "current_ki": 0.0,
+      "current_kd": 0.0,
+      "current_target": 0.3,
+      "f1s_hes_value_0": 1,
+      "f1s_hes_value_1": 1,
+      "f1s_hes_value_2": 1,
+      "f1s_hes_value_3": 0,
+      "hub_hes_value_0": 0,
+      "hub_hes_value_1": 1,
+      "hub_hes_value_2": 0,
+      "hub_hes_value_3": 0,
+      "kp": 6.0,
+      "ki": 0.0,
+      "kd": 0.0,
+      "encoder_clicks": 48211,
+      "i_value": 0.0,
+      "protocol_version": 3,
+      "gen_matched_protocol": true,
+      "family": "ams2",
+      "bay_count": 4,
+      "capabilities": {
+        "family": "ams2",
+        "display_name": "AMS 2 Pro",
+        "bays": 4,
+        "spool_drive_count": 4,
+        "feed_motor_control": "device_owned_speed_current",
+        "device_owned_motion_control": true,
+        "dryer": true,
+        "dryer_zone_count": null,
+        "dryer_module_count": 2,
+        "dryer_independent_zones": null,
+        "heater_count": 2,
+        "fan_count": 2,
+        "dryer_temperature_sensor_count": 2,
+        "spool_rotation_during_drying": false,
+        "dryer_target_min_c": 30.0,
+        "dryer_target_max_c": 65.0,
+        "vent_count": 2,
+        "autonomous_follower": true,
+        "ptfe_calibration": false,
+        "hub_hes_calibration": false,
+        "rfid": false,
+        "host_sensor_configuration": false,
+        "runtime_pid_tuning": true,
+        "logger_control": false,
+        "error_led_control": false,
+        "rfid_reader_scope": "per_bay",
+        "rfid_uid_inventory": false,
+        "rfid_material_metadata": "device_synchronized",
+        "schema_version": 1,
+        "board_name": "ams2",
+        "firmware_version": "example-1.0",
+        "build_version": "example-1.0",
+        "firmware_capability_schema": 5,
+        "telemetry": true,
+        "normal_motion": true,
+        "heater_control": true,
+        "board_telemetry": false,
+        "link_status": true,
+        "tray_info": true,
+        "tray_read": true,
+        "tray_write": true,
+        "rfid_reader_count": 0,
+        "vent_actuator_count": 0,
+        "telemetry_channels": [
+          "domain",
+          "dryer"
+        ]
+      },
+      "capability_warnings": [],
+      "bays": [
+        {
+          "index": 0,
+          "ready": true,
+          "loaded": false,
+          "calibrated": true,
+          "calibration_state": "configured",
+          "path_length_mm": 1600.0,
+          "positioning": false,
+          "spool_id": 30,
+          "link_source": "manual",
+          "tag": {
+            "uid": null,
+            "format": "unit_summary",
+            "read_at": 1523.4,
+            "spoolman_id": null,
+            "bambu": null,
+            "summary": {
+              "code": "GFB99",
+              "material": "ABS",
+              "color_argb": 4292030255,
+              "nozzle_min_c": 240,
+              "nozzle_max_c": 270,
+              "manufacturer": null
+            }
+          },
+          "spool_hint": null,
+          "supported_actions": [
+            "set_spool",
+            "clear_spool"
+          ]
+        },
+        {
+          "index": 1,
+          "ready": true,
+          "loaded": true,
+          "calibrated": true,
+          "calibration_state": "configured",
+          "path_length_mm": 1600.0,
+          "positioning": false,
+          "spool_id": 31,
+          "link_source": "manual",
+          "tag": {
+            "uid": null,
+            "format": "unit_summary",
+            "read_at": 1523.4,
+            "spoolman_id": null,
+            "bambu": null,
+            "summary": {
+              "code": "GFB99",
+              "material": "ABS",
+              "color_argb": 4292030255,
+              "nozzle_min_c": 240,
+              "nozzle_max_c": 270,
+              "manufacturer": null
+            }
+          },
+          "spool_hint": null,
+          "supported_actions": [
+            "unload",
+            "set_spool",
+            "clear_spool"
+          ]
+        },
+        {
+          "index": 2,
+          "ready": true,
+          "loaded": false,
+          "calibrated": true,
+          "calibration_state": "configured",
+          "path_length_mm": 1600.0,
+          "positioning": false,
+          "spool_id": 21,
+          "link_source": "manual",
+          "tag": {
+            "uid": null,
+            "format": "unit_summary",
+            "read_at": 1523.4,
+            "spoolman_id": null,
+            "bambu": null,
+            "summary": {
+              "code": "GFG99",
+              "material": "PETG",
+              "color_argb": 4278190080,
+              "nozzle_min_c": 230,
+              "nozzle_max_c": 260,
+              "manufacturer": null
+            }
+          },
+          "spool_hint": null,
+          "supported_actions": [
+            "set_spool",
+            "clear_spool"
+          ]
+        },
+        {
+          "index": 3,
+          "ready": false,
+          "loaded": false,
+          "calibrated": true,
+          "calibration_state": "configured",
+          "path_length_mm": 1600.0,
+          "positioning": false,
+          "spool_id": null,
+          "link_source": "none",
+          "tag": null,
+          "spool_hint": null,
+          "supported_actions": []
+        }
+      ],
+      "telemetry": {
+        "domain": {
+          "motion_state": 2,
+          "motion_stage": 4,
+          "motion_fault": 0,
+          "dryer_state": 0,
+          "dryer_fault": 0,
+          "system_fault": 0,
+          "timestamp": 1523.1,
+          "motion_state_name": "follow",
+          "motion_stage_name": "follow",
+          "dryer_state_name": "off",
+          "motion_fault_name": "none",
+          "dryer_fault_name": "none",
+          "system_fault_name": "none"
+        },
+        "dryer": {
+          "state": 0,
+          "fault": 0,
+          "target_centic": 0,
+          "heater_centic": 2600,
+          "chamber_centic": 2750,
+          "humidity_mgm3": 6100,
+          "remaining_s": 0,
+          "heater_permille": 0,
+          "fan_permille": 0,
+          "fan_rpm": 0,
+          "fan_pwm_permille": 0,
+          "vent_position": 1,
+          "purging": 0,
+          "door_closed": 1,
+          "timestamp": 1523.3,
+          "target_c": 0.0,
+          "heater_c": 26.0,
+          "chamber_c": 27.5,
+          "state_name": "off",
+          "fault_name": "none",
+          "humidity_gm3": 6.1,
+          "vent_position_name": "closed"
+        }
+      },
+      "supported_actions": [
+        "clear_errors",
+        "load",
+        "unload",
+        "follower",
+        "dryer_start",
+        "dryer_stop",
+        "clear_fault",
+        "rfid_scan"
+      ],
+      "identity": {
+        "serial": "000000000000000000000003",
+        "firmware": "example-1.0",
+        "board": "ams2"
+      },
+      "calibration": {
+        "state": "configured",
+        "path_length_mm": 1600.0
+      },
+      "environment": {
+        "temp_c": 27.5,
+        "rh_pct": 22.0,
+        "source": "firmware"
+      },
+      "dryer": {
+        "state": "off",
+        "target_c": null,
+        "remaining_s": 0,
+        "heater_pct": 0,
+        "fan_pct": 0,
+        "fault": "none",
+        "adapter": null
+      },
+      "faults": [],
+      "follower_uncertain": false
+    },
+    "amsht": {
+      "schema_version": 1,
+      "current_spool": null,
+      "oams_idx": 2,
+      "connected": true,
+      "fps_value": 0.0,
+      "fps_upper_threshold": 0.7,
+      "fps_lower_threshold": 0.3,
+      "f1s_hes_value": [
+        1
+      ],
+      "hub_hes_value": [
+        0
+      ],
+      "fps_target": 0.5,
+      "current_kp": 0.375,
+      "current_ki": 0.0,
+      "current_kd": 0.0,
+      "current_target": 0.3,
+      "f1s_hes_value_0": 1,
+      "f1s_hes_value_1": 0,
+      "f1s_hes_value_2": 0,
+      "f1s_hes_value_3": 0,
+      "hub_hes_value_0": 0,
+      "hub_hes_value_1": 0,
+      "hub_hes_value_2": 0,
+      "hub_hes_value_3": 0,
+      "kp": 6.0,
+      "ki": 0.0,
+      "kd": 0.0,
+      "encoder_clicks": 48211,
+      "i_value": 0.0,
+      "protocol_version": 3,
+      "gen_matched_protocol": true,
+      "family": "ams_ht",
+      "bay_count": 1,
+      "capabilities": {
+        "family": "ams_ht",
+        "display_name": "AMS HT",
+        "bays": 1,
+        "spool_drive_count": 1,
+        "feed_motor_control": "device_owned_speed_current",
+        "device_owned_motion_control": true,
+        "dryer": true,
+        "dryer_zone_count": 1,
+        "dryer_module_count": 1,
+        "dryer_independent_zones": false,
+        "heater_count": 1,
+        "fan_count": 1,
+        "dryer_temperature_sensor_count": 2,
+        "spool_rotation_during_drying": false,
+        "dryer_target_min_c": 30.0,
+        "dryer_target_max_c": 80.0,
+        "vent_count": 2,
+        "autonomous_follower": true,
+        "ptfe_calibration": false,
+        "hub_hes_calibration": false,
+        "rfid": false,
+        "host_sensor_configuration": false,
+        "runtime_pid_tuning": true,
+        "logger_control": false,
+        "error_led_control": false,
+        "rfid_reader_scope": "single_bay",
+        "rfid_uid_inventory": false,
+        "rfid_material_metadata": "host_owned",
+        "schema_version": 1,
+        "board_name": "ams-ht",
+        "firmware_version": "example-1.0",
+        "build_version": "example-1.0",
+        "firmware_capability_schema": 5,
+        "telemetry": true,
+        "normal_motion": true,
+        "heater_control": true,
+        "board_telemetry": true,
+        "link_status": true,
+        "tray_info": true,
+        "tray_read": true,
+        "rfid_reader_count": 0,
+        "vent_actuator_count": 0,
+        "telemetry_channels": [
+          "board",
+          "domain",
+          "dryer"
+        ]
+      },
+      "capability_warnings": [],
+      "bays": [
+        {
+          "index": 0,
+          "ready": true,
+          "loaded": false,
+          "calibrated": true,
+          "calibration_state": "configured",
+          "path_length_mm": 1600.0,
+          "positioning": false,
+          "spool_id": 44,
+          "link_source": "manual",
+          "tag": {
+            "uid": null,
+            "format": "unit_summary",
+            "read_at": 1523.4,
+            "spoolman_id": null,
+            "bambu": null,
+            "summary": {
+              "code": "GFB98",
+              "material": "ASA",
+              "color_argb": 4286611584,
+              "nozzle_min_c": 240,
+              "nozzle_max_c": 270,
+              "manufacturer": null
+            }
+          },
+          "spool_hint": null,
+          "supported_actions": [
+            "set_spool",
+            "clear_spool"
+          ]
+        }
+      ],
+      "telemetry": {
+        "domain": {
+          "motion_state": 0,
+          "motion_stage": 0,
+          "motion_fault": 0,
+          "dryer_state": 0,
+          "dryer_fault": 0,
+          "system_fault": 0,
+          "timestamp": 1523.1,
+          "motion_state_name": "idle",
+          "motion_stage_name": "stopped",
+          "dryer_state_name": "off",
+          "motion_fault_name": "none",
+          "dryer_fault_name": "none",
+          "system_fault_name": "none"
+        },
+        "dryer": {
+          "state": 0,
+          "fault": 0,
+          "target_centic": 0,
+          "heater_centic": 2600,
+          "chamber_centic": 2600,
+          "humidity_mgm3": 6100,
+          "remaining_s": 0,
+          "heater_permille": 0,
+          "fan_permille": 0,
+          "fan_rpm": 0,
+          "fan_pwm_permille": 0,
+          "vent_position": 1,
+          "purging": 0,
+          "door_closed": 1,
+          "timestamp": 1523.3,
+          "target_c": 0.0,
+          "heater_c": 26.0,
+          "chamber_c": 26.0,
+          "state_name": "off",
+          "fault_name": "none",
+          "humidity_gm3": 6.1,
+          "vent_position_name": "closed"
+        }
+      },
+      "supported_actions": [
+        "clear_errors",
+        "load",
+        "unload",
+        "follower",
+        "dryer_start",
+        "dryer_stop",
+        "clear_fault",
+        "rfid_scan"
+      ],
+      "identity": {
+        "serial": "000000000000000000000004",
+        "firmware": "example-1.0",
+        "board": "ams-ht"
+      },
+      "calibration": {
+        "state": "configured",
+        "path_length_mm": 1600.0
+      },
+      "environment": {
+        "temp_c": 26.0,
+        "rh_pct": 18.0,
+        "source": "firmware"
+      },
+      "dryer": {
+        "state": "off",
+        "target_c": null,
+        "remaining_s": 0,
+        "heater_pct": 0,
+        "fan_pct": 0,
+        "fault": "none",
+        "adapter": null
+      },
+      "faults": [],
+      "follower_uncertain": false
+    }
+  },
+  "settings": {
+    "read_tag_on_insertion": true,
+    "read_tags_at_startup": true,
+    "auto_reload_on_runout": true,
+    "auto_create_spoolman_spools": true,
+    "apply_pa_on_load": false,
+    "sync_unit_tray_info": true
+  },
+  "commands": {
+    "load": "OPENAMS_LOAD",
+    "unload": "OPENAMS_UNLOAD",
+    "cancel": "OAMSM_LOAD_FILAMENT_CANCEL",
+    "reset": "OAMSM_CLEAR_ERRORS"
+  },
+  "units": [
+    {
+      "id": "0",
+      "name": "oams1",
+      "kind": "oams",
+      "topology": "hub",
+      "lane": "fps",
+      "connected": true,
+      "slots": [
+        {
+          "id": 0,
+          "bay": 0,
+          "ready": true,
+          "loaded": false
+        },
+        {
+          "id": 1,
+          "bay": 1,
+          "ready": true,
+          "loaded": false
+        },
+        {
+          "id": 2,
+          "bay": 2,
+          "ready": true,
+          "loaded": false
+        },
+        {
+          "id": 3,
+          "bay": 3,
+          "ready": false,
+          "loaded": false
+        }
+      ]
+    },
+    {
+      "id": "1",
+      "name": "ams2",
+      "kind": "oams",
+      "topology": "hub",
+      "lane": "fps",
+      "connected": true,
+      "slots": [
+        {
+          "id": 4,
+          "bay": 0,
+          "ready": true,
+          "loaded": false
+        },
+        {
+          "id": 5,
+          "bay": 1,
+          "ready": true,
+          "loaded": true
+        },
+        {
+          "id": 6,
+          "bay": 2,
+          "ready": true,
+          "loaded": false
+        },
+        {
+          "id": 7,
+          "bay": 3,
+          "ready": false,
+          "loaded": false
+        }
+      ]
+    },
+    {
+      "id": "2",
+      "name": "amsht",
+      "kind": "oams",
+      "topology": "hub",
+      "lane": "fps",
+      "connected": true,
+      "slots": [
+        {
+          "id": 8,
+          "bay": 0,
+          "ready": true,
+          "loaded": false
+        }
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "T0",
+      "lane": "fps",
+      "slots": [
+        5,
+        4,
+        8
+      ]
+    },
+    {
+      "name": "T1",
+      "lane": "fps",
+      "slots": [
+        0,
+        1
+      ]
+    },
+    {
+      "name": "T2",
+      "lane": "fps",
+      "slots": [
+        6
+      ]
+    },
+    {
+      "name": "T3",
+      "lane": "fps",
+      "slots": [
+        2
+      ]
+    }
+  ]
+}

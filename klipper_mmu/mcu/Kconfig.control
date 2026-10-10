@@ -1,0 +1,976 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Included only inside the optional klipper-mmu menu.
+menu "Mechanism and optional feedback"
+
+config KLIPPER_MMU_LOAD_SENSORS
+    bool "Use separate physical LOAD sensors for each lane" if !KLIPPER_MMU_DEVICE_EMU
+    depends on KLIPPER_MMU_PROFILE_IMPLEMENTED
+    default y if KLIPPER_MMU_DEVICE_EMU
+    default y if KLIPPER_MMU_DEVICE_BOXTURTLE && KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_PIN_CONFIG
+    default y if KLIPPER_MMU_DEVICE_KMS
+    default n
+    help
+        Enable one explicitly configured local GPIO input per lane for LOAD
+        presence. BAY inputs remain preparation sensors. This setting does
+        not enable motor commands or assume any device wiring.
+
+        KMS's traced Happy Hare profile renders a per-lane LOAD/exit switch
+        for each gate (no separate shared HUB), so it defaults on. Angry
+        Beaver, 3MS and QuattroBox 1.0/1.1/2 render no per-lane LOAD switch
+        (they home to one shared sensor), so they default off like BoxTurtle
+        without the AFC Lite preset.
+
+config KLIPPER_MMU_BAY_SENSORS
+    bool "Use separate per-lane BAY/entry sensors"
+    default n if KLIPPER_MMU_DEVICE_ANGRY_BEAVER || KLIPPER_MMU_DEVICE_THREE_MS || KLIPPER_MMU_DEVICE_QUATTROBOX_1_0 || KLIPPER_MMU_DEVICE_QUATTROBOX_1_1 || KLIPPER_MMU_DEVICE_QUATTROBOX_2
+    default y
+    help
+        Enable one explicitly configured local GPIO input per lane for BAY
+        (preparation/entry) presence. This setting does not enable motor
+        commands or assume any device wiring.
+
+        Angry Beaver, 3MS and QuattroBox 1.0/1.1/2's traced Happy Hare
+        profiles render no per-lane BAY/entry switch, so they default off.
+        Every other device keeps the baseline per-lane BAY switch.
+
+config KLIPPER_MMU_GEAR_TMC_UART
+    # Promptless: this is the selected device's own hardware fact, not a
+    # user choice. A prompt let a saved .config disagree with the device
+    # (a KMS with it turned off still selected the TMC UART boot gate with
+    # no UART pin to claim; a QIDI Box with it turned on still got no TMC
+    # UART backend compiled in, mcu/Kconfig's *_BOOT_GATES). Deriving it
+    # from the device keeps the two in lock-step; every *_BOOT_GATES config
+    # stays keyed on the device, unchanged.
+    bool
+    default n if KLIPPER_MMU_DEVICE_QIDI_BOX
+    default y
+    help
+        Whether the feeder gear is a TMC chip this firmware can actually
+        talk to over UART. When off, KLIPPER_MMU_PINS_UART,
+        KLIPPER_MMU_TMC_ADDRESSES and KLIPPER_MMU_TMC_UART_PULLUP are not
+        offered or claimed -- a user is never asked to invent a pin for
+        hardware that does not exist -- and mcu/board_startup.c runs the
+        gear as plain STEP/DIR instead (drivers set in hardware).
+
+        This is independent of KLIPPER_MMU_TMC_UART_SHARED (mcu/Kconfig.tmc),
+        which only selects whether this firmware's own local shared-UART
+        driver binding is compiled into the image; it says nothing about
+        whether the fitted hardware has a UART-reachable driver at all.
+
+        QIDI Box's gear has no TMC UART (Happy Hare's own
+        installer/mmu_types/Kconfig.qidi_box:28-29, CHOICE_GEAR_TMC
+        defaulting to CHOICE_GEAR_TMC_NONE), so it defaults off. Every
+        other device in this catalogue keeps today's default of on.
+
+config KLIPPER_MMU_POWERED_REWIND
+    bool "Powered DC rewind"
+    depends on !KLIPPER_MMU_DEVICE_EMU
+    default y if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default y if KLIPPER_MMU_DEVICE_CLAYMORE
+    default n
+    help
+        Select the powered-rewind controller. Otherwise use passive rewind.
+        A board output backend and validated pin assignments are still required.
+
+        Claymore wires a forward/reverse/enable PWM respooler motor per lane
+        (templates/AFC_Claymore_1-AFC_Lite.cfg's afc_motor_rwd/fwd/enb),
+        BoxTurtle's own shape, behind its shared selector instead of
+        BoxTurtle's independent per-lane feeders (klipper_mmu/selector.h;
+        km_core_bind_lane_driver already binds one shared feeder driver to
+        every lane while keeping each lane's own rewinder driver distinct,
+        so a selector and per-lane powered rewind were never mutually
+        exclusive at that layer).
+
+config KLIPPER_MMU_ENCODER
+    bool "Filament encoder feedback"
+    default y if KLIPPER_MMU_DEVICE_ERCF_1_1 || KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0
+    default n
+    help
+        Use acquired encoder travel for supported calibration/progress checks.
+        Absent encoder feedback is not required by the baseline controller.
+
+        ERCF's Happy Hare family selects MMU_HAS_ENCODER unconditionally for
+        every version (installer/mmu_types/Kconfig.ercf:8 select MMU_HAS_
+        ENCODER on MMU_FAMILY_ERCF), so every ERCF preset defaults this on;
+        override to n only for a gutted/sensorless build. Tradrack's own
+        encoder is a popular but optional mod (installer/mmu_types/
+        Kconfig.tradrack:29 "Binky encoder", only implies MMU_HAS_ENCODER
+        when MOD_BINKY is chosen), so it keeps the plain default off.
+
+config KLIPPER_MMU_ENCODER_DETECTION_LENGTH_MM
+    int "Encoder clog/stall detection length (mm)"
+    depends on KLIPPER_MMU_ENCODER
+    range 1 2147483647
+    default 10
+    help
+        Fault (or, with measured current, escalate current first) once the
+        gear has commanded this much travel with no new encoder click --
+        Happy Hare's own model is distance, not time (the pinned
+        extras/mmu/unit/mmu_encoder.py:69 default detection_length, 10 mm).
+        A fixed time window is the wrong test at a real print's slow feed
+        rate: a coarse encoder (0.7-1.5 mm/count) can need well over a
+        second to produce even one click, so this is compared against
+        travel, never a clock.
+
+config KLIPPER_MMU_DIFF_BUFFER
+    bool "Paired analog DiffA/DiffB buffer"
+    default n
+    help
+        Replace switched-buffer feedback with calibrated proportional feedback.
+        Requires an explicit runtime calibration table and validated ADC routing.
+        No assumed calibration is compiled in. On the reference AFC Lite wiring,
+        SW1/PC4 and SW2/PC5 cannot also be used for HUB/TRG1 switches.
+
+config KLIPPER_MMU_FPS_ARRIVAL
+    bool "End LOAD on calibrated DiffA/DiffB buffer position (FPS arrival)"
+    depends on KLIPPER_MMU_DIFF_BUFFER
+    default n
+    help
+        After HUB and a minimum travel, complete LOAD when the calibrated
+        buffer position from the FPS Hall-effect sensor, read over the
+        DiffA/DiffB pair, stays past a threshold because the filament has
+        stopped at the extruder. The travel bounds below are this MMU's outer
+        limits; the host narrows them from a stored step estimate. Startup
+        rejects unset (0) or contradictory values. Buffer position alone
+        does not prove where the tip is. See docs/fps-arrival.md.
+
+config KLIPPER_MMU_TOOLHEAD_SENSOR
+    bool "Local toolhead arrival switch" if KLIPPER_MMU_FPS_ARRIVAL
+    default y
+    help
+        Required unless FPS arrival is selected. With FPS arrival, a fitted
+        switch must also be fresh and active before LOAD completes. Without
+        it, no pin is claimed and PTFE calibration is unavailable.
+
+config KLIPPER_MMU_MEASURED_CURRENT
+    bool "Measured rewind current feedback"
+    depends on KLIPPER_MMU_POWERED_REWIND
+    default n
+    help
+        Add measured-current regulation to the powered rewinder. This requires
+        a real current-sense input; a TMC current setting is not a measurement.
+
+endmenu
+
+menu "Motion and driver defaults"
+
+config KLIPPER_MMU_RATE_TICK_US
+    int "Rate tick (microseconds)"
+    range 250 2000
+    default 1000
+    help
+        The fixed interval between trajectory generation ticks.
+
+
+config KLIPPER_MMU_HH_MOTION_DEFAULTS
+    bool
+    default y if KLIPPER_MMU_DEVICE_NIGHTOWL || KLIPPER_MMU_DEVICE_KMS || KLIPPER_MMU_DEVICE_ANGRY_BEAVER || KLIPPER_MMU_DEVICE_THREE_MS || KLIPPER_MMU_DEVICE_QUATTROBOX_1_0 || KLIPPER_MMU_DEVICE_QUATTROBOX_1_1 || KLIPPER_MMU_DEVICE_QUATTROBOX_2 || KLIPPER_MMU_DEVICE_QIDI_BOX || KLIPPER_MMU_DEVICE_HTLF || KLIPPER_MMU_DEVICE_MMX || KLIPPER_MMU_DEVICE_MMX6 || KLIPPER_MMU_DEVICE_LOW_RIDER || KLIPPER_MMU_DEVICE_EMU || KLIPPER_MMU_DEVICE_TRADRACK || KLIPPER_MMU_DEVICE_BTT_VIVID || KLIPPER_MMU_DEVICE_CLAYMORE || KLIPPER_MMU_DEVICE_ERCF_1_1 || KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0 || KLIPPER_MMU_DEVICE_CHAMELEON_3D || KLIPPER_MMU_DEVICE_PICO_MMU
+    help
+        Devices whose motion defaults come from their Happy Hare dossier
+        (docs/devices/) rather than from BoxTurtle or the generic fallbacks.
+        Claymore has no Happy Hare dossier; its own AFC evidence (templates/
+        AFC_Claymore_1-AFC_Lite.cfg, extras/AFC_*.py) plays the same role.
+
+config KLIPPER_MMU_FEED_SPEED_MM_S
+    int "Maximum following/feed speed (mm/s)"
+    range 1 275
+    default 26 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 26 if KLIPPER_MMU_FPS_ARRIVAL && KLIPPER_MMU_HH_MOTION_DEFAULTS
+    default 50 if KLIPPER_MMU_DEVICE_NIGHTOWL || KLIPPER_MMU_DEVICE_KMS || KLIPPER_MMU_DEVICE_QUATTROBOX_1_0 || KLIPPER_MMU_DEVICE_QUATTROBOX_1_1 || KLIPPER_MMU_DEVICE_QUATTROBOX_2 || KLIPPER_MMU_DEVICE_QIDI_BOX || KLIPPER_MMU_DEVICE_HTLF || KLIPPER_MMU_DEVICE_MMX || KLIPPER_MMU_DEVICE_MMX6 || KLIPPER_MMU_DEVICE_LOW_RIDER || KLIPPER_MMU_DEVICE_TRADRACK || KLIPPER_MMU_DEVICE_ERCF_1_1 || KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0
+    default 80 if KLIPPER_MMU_DEVICE_ANGRY_BEAVER || KLIPPER_MMU_DEVICE_THREE_MS || KLIPPER_MMU_DEVICE_EMU || KLIPPER_MMU_DEVICE_BTT_VIVID || KLIPPER_MMU_DEVICE_CHAMELEON_3D || KLIPPER_MMU_DEVICE_PICO_MMU
+    default 25 if KLIPPER_MMU_DEVICE_CLAYMORE
+    default 5
+    help
+        Fastest filament speed the LOAD, FOLLOW, calibration and rewind
+        moves may use, in the units a person measures filament in. BoxTurtle
+        asks for 26 mm/s (its reference 18000 microsteps/s at the old
+        688.17 steps/mm). The fallback 5 mm/s is the rounded value that
+        reproduces the old 3500 microsteps/s fallback at the reference
+        mechanics below; it is not a measurement of any other mechanism.
+
+        NightOwl, KMS, Angry Beaver, 3MS, QuattroBox 1.0/1.1/2, QIDI Box,
+        HTLF, MMX, MMX6, Low Rider, EMU, Tradrack, BTT ViViD, ERCF 1.1/2.0/3.0
+        and 3D Chameleon take Happy Hare's gear_homing_speed from their
+        dossier (docs/devices/): 50 mm/s for NightOwl, KMS, the QuattroBox
+        family, QIDI Box, HTLF, MMX, MMX6, Low Rider, Tradrack and every ERCF
+        version; 80 mm/s for Angry Beaver, 3MS, EMU, BTT ViViD and 3D
+        Chameleon, because LOAD arrives at its switch at this one feed speed.
+        With KLIPPER_MMU_FPS_ARRIVAL set they take BoxTurtle's qualified
+        26 mm/s instead, since that arrival couples the feed speed to the
+        buffer travel.
+
+        QIDI Box's own LOAD (docs/devices/qidi_box.md), HTLF's own LOAD
+        (docs/devices/htlf.json:162) and EMU's own LOAD (docs/devices/
+        emu.json:176) each also have a separate, faster bowden-traversal
+        phase at gear_load_speed (120, 135 and 250 mm/s): that is each
+        device's own KLIPPER_MMU_STEP_MAX_SPEED_MM_S driver ceiling
+        (mcu/Kconfig.feeder) instead, above every other Happy Hare device's
+        shared 100 mm/s ceiling bucket, since a feed/retract speed may never
+        exceed that ceiling.
+
+        Claymore has no Happy Hare dossier. Its AFC unit inherits AFC.py:234's
+        plain short_moves_speed default, 25 mm/s (unoverridden by
+        templates/AFC_Claymore_1-AFC_Lite.cfg or extras/AFC_Claymore.py),
+        the speed AFC itself uses for a gate-to-HUB SpeedMode.HUB move
+        (extras/AFC_lane.py's get_speed_accel) and for the retract clear
+        past HUB (extras/AFC_BoxTurtle.py, which AFC_Claymore -> AFC_vivid
+        inherits from). Its separate, faster long_moves_speed (300 mm/s,
+        the template's own override, line 17) is this device's own
+        KLIPPER_MMU_STEP_MAX_SPEED_MM_S ceiling instead, the same pattern
+        as QIDI Box, HTLF and EMU above.
+
+        Firmware converts once at build time with the mechanics entries
+        below. The menu range ends where the common core's 200000 steps/s
+        ceiling falls under those default mechanics; a different gearing or
+        rotation distance can push a legal looking value past the ceiling,
+        and the build then refuses it (mcu/feeder_mechanics.h).
+
+config KLIPPER_MMU_RETRACT_SPEED_MM_S
+    int "Retract speed (mm/s)"
+    range 1 275
+    default 26 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 250 if KLIPPER_MMU_DEVICE_EMU
+    default 25 if KLIPPER_MMU_DEVICE_CLAYMORE
+    default 80 if KLIPPER_MMU_HH_MOTION_DEFAULTS
+    default 3
+    help
+        Unload retract speed. The BoxTurtle preset wants the same 26 mm/s as
+        the feed, and the fallback 3 mm/s is the rounded value that
+        reproduces the old 2500 microsteps/s fallback at the reference
+        mechanics below. Converting here-and-only-here keeps the driver
+        ceiling comparison in microsteps per second, where the driver lives.
+
+        NightOwl, KMS, Angry Beaver, 3MS, QuattroBox 1.0/1.1/2, QIDI Box,
+        HTLF, MMX, MMX6, Low Rider, Tradrack, BTT ViViD and every ERCF and
+        3D Chameleon version take Happy Hare's gear_unload_speed from their
+        dossier (docs/devices/), 80 mm/s for all of them. EMU's own
+        gear_unload_speed is 250 mm/s (docs/devices/emu.json:178), well
+        above that shared bucket, so it takes its own value instead; its
+        driver ceiling below is raised to admit it.
+
+        Claymore has no Happy Hare dossier. Its retract-past-HUB clear move
+        (extras/AFC_BoxTurtle.py, inherited through AFC_vivid) uses the same
+        short_moves_speed (25 mm/s, AFC.py:234, unoverridden by Claymore) as
+        its feed speed above -- AFC gives it no separate unload speed field.
+
+config KLIPPER_MMU_ACCELERATION_MM_S2
+    int "Acceleration (mm/s squared)"
+    range 1 2750
+    default 500 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 120 if KLIPPER_MMU_DEVICE_EMU
+    default 400 if KLIPPER_MMU_DEVICE_CLAYMORE
+    default 100 if KLIPPER_MMU_HH_MOTION_DEFAULTS
+    default 11
+    help
+        BoxTurtle asks for 500 mm/s^2 for the calibrated LOAD ramp: the
+        filament leaves the HUB at cruise and must shed it before the
+        arrival window, and 500 is the briskest the reference pancake
+        stepper is qualified for without losing steps. The fallback 11 mm/s^2
+        reproduces the old 8000 microsteps/s^2 fallback at the reference
+        mechanics below.
+
+        NightOwl, KMS, Angry Beaver, 3MS, QuattroBox 1.0/1.1/2, QIDI Box,
+        HTLF, MMX, MMX6, Low Rider, Tradrack, BTT ViViD and every ERCF and
+        3D Chameleon version take Happy Hare's gear_load_accel from their
+        dossier (docs/devices/), 100 mm/s^2 for all of them. EMU's own
+        gear_load_accel is 120 mm/s^2 (docs/devices/emu.json:177), so it
+        takes its own value instead.
+
+        Claymore has no Happy Hare dossier. AFC's own short_moves_accel
+        default is 400 mm/s^2 (AFC.py:235, unoverridden by Claymore), the
+        acceleration AFC itself pairs with the short_moves_speed feed and
+        retract speed above (extras/AFC_lane.py's get_speed_accel).
+
+config KLIPPER_MMU_DECELERATION_MM_S2
+    int "Braking acceleration (mm/s squared)"
+    range 1 2750
+    default 500 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 500 if KLIPPER_MMU_FPS_ARRIVAL && KLIPPER_MMU_HH_MOTION_DEFAULTS
+    default 80 if KLIPPER_MMU_DEVICE_EMU
+    default 400 if KLIPPER_MMU_HH_MOTION_DEFAULTS
+    default 17
+    help
+        Braking is allowed to be brisker than acceleration. BoxTurtle asks
+        for 500 mm/s^2: the calibrated LOAD stops from cruise and then from
+        the crawl inside the arrival window, and the build-time check in
+        mcu/feeder_mechanics.h proves that braking fits the buffer travel
+        past the arrival threshold. The fallback 17 mm/s^2 reproduces the
+        old 12000 microsteps/s^2 fallback at the reference mechanics below.
+
+        NightOwl, KMS, Angry Beaver, 3MS, QuattroBox 1.0/1.1/2, QIDI Box,
+        HTLF, MMX, MMX6, Low Rider, Tradrack, BTT ViViD and every ERCF and
+        3D Chameleon version take Happy Hare's gear_short_move_accel from
+        their dossier (docs/devices/), 400 mm/s^2 for all of them: Happy
+        Hare has no separate braking value, and this is each one's briskest
+        gear acceleration. Claymore has no Happy Hare dossier, but AFC's own
+        short_moves_accel (AFC.py:235, unoverridden by Claymore) is the same
+        400 mm/s^2, its own briskest gear acceleration too (see
+        KLIPPER_MMU_ACCELERATION_MM_S2 above), so it takes the same bucket.
+        EMU's own gear_short_move_accel is only 80 mm/s^2 (docs/devices/
+        emu.json:183), lower than its own gear_load_accel above -- Happy
+        Hare's dossier for EMU simply is not brisker on the brake than on
+        the ramp -- so it takes its own value instead of this shared bucket.
+        With KLIPPER_MMU_FPS_ARRIVAL set every device in this class takes
+        BoxTurtle's qualified 500 mm/s^2 instead, which the buffer-travel
+        stop check requires regardless of the attached gear's own dossier.
+
+config KLIPPER_MMU_JERK_MM_S3
+    int "Jerk (mm/s cubed, 0 = automatic)"
+    range 0 137500
+    default 0
+    help
+        0 uses 20 times the lower of the acceleration and braking
+        acceleration, so the acceleration is reached in 50 ms; at the
+        BoxTurtle defaults that is 10000 mm/s^3, 7272727 microsteps/s^3,
+        where the two 500 mm/s^2 defaults are equal. A higher value reaches
+        the acceleration sooner, a lower value starts and stops more gently.
+        The menu magnitude is a physical claim about the filament, not a
+        re-labelled step number: only 0 keeps its exact old meaning, and the
+        explicit BoxTurtle step value above is what the old help text named.
+
+config KLIPPER_MMU_UNLOAD_HUB_CLEAR_MM
+    int "Unload post-HUB clear distance (mm)"
+    range 0 5000
+    default 65 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 100 if KLIPPER_MMU_DEVICE_NIGHTOWL
+    default 20 if KLIPPER_MMU_DEVICE_KMS
+    default 50 if KLIPPER_MMU_DEVICE_ANGRY_BEAVER
+    default 250 if KLIPPER_MMU_DEVICE_THREE_MS || KLIPPER_MMU_DEVICE_CHAMELEON_3D
+    default 23 if KLIPPER_MMU_DEVICE_QUATTROBOX_1_0 || KLIPPER_MMU_DEVICE_QUATTROBOX_1_1 || KLIPPER_MMU_DEVICE_QUATTROBOX_2
+    default 11 if KLIPPER_MMU_ERCF_THUMPER_BLOCKS
+    default 23 if KLIPPER_MMU_DEVICE_ERCF_1_1
+    default 13 if KLIPPER_MMU_DEVICE_ERCF_2_0
+    default 16 if KLIPPER_MMU_DEVICE_ERCF_3_0
+    default 80 if KLIPPER_MMU_DEVICE_QIDI_BOX
+    default 25 if KLIPPER_MMU_DEVICE_MMX || KLIPPER_MMU_DEVICE_MMX6 || KLIPPER_MMU_DEVICE_LOW_RIDER || KLIPPER_MMU_DEVICE_PICO_MMU || KLIPPER_MMU_DEVICE_HTLF
+    default 18 if KLIPPER_MMU_DEVICE_TRADRACK
+    default 0
+    help
+        How far to retract past the HUB during unload, in millimetres of
+        filament. BoxTurtle's provisional 65 mm default is the rounded value
+        that reproduces the old 44731-microstep default at the reference
+        mechanics below. Calibrate and qualify this distance for the fitted
+        mechanism before motion use. 0 leaves it unset; the common core does
+        not require a nonzero clear distance.
+
+        NightOwl, KMS, Angry Beaver, 3MS and QuattroBox 1.0/1.1/2 take the
+        park distance behind the switch this build uses as HUB from the
+        unload_park decision in their dossier (docs/devices/): 100, 20, 50,
+        250 and 23 mm. 0 would leave UNLOAD resting between LOAD and HUB.
+        3D Chameleon's own dossier gate_parking_distance is the same 250 mm,
+        negative like every ERCF-family value below (docs/devices/
+        3d_chameleon.json:173: -250).
+
+        MMX, MMX6, Low Rider, Pico MMU and HTLF all trace to the same 25 mm
+        gate_parking_distance in their pinned Happy Hare profile (docs/
+        devices/mmx.json:176, mmx6.json:173, low_rider.json:176,
+        pico_mmu.json:176, htlf.json:173: -25), taking this option's
+        absolute-value convention like the five defaults above. Tradrack's
+        own value is -17.5 mm (docs/devices/tradrack.json:182), rounded up
+        to the nearest whole millimetre (18) since this option is an
+        integer; rounding up keeps the clear at least as far past HUB as the
+        dossier asks for, never short of it.
+
+        ERCF has no shared/virtual HUB switch, but this is the same firmware
+        concept every ERCF dossier's own concept-mapping table already names
+        for `gate_parking_distance` (docs/devices/ercf_*.md's "Parking /
+        clearance" row: -> `unload_hub_clear_steps`; partly mapped, owner
+        decision): the same shared-gear retract, this time behind the
+        extruder encoder homing switch the core also treats as this build's
+        HUB. ERCF's own Kconfig.ercf default is negative (mm behind the
+        switch); this option takes its absolute value, the same convention
+        the five defaults above already use. 1.1 is -23 mm
+        (installer/mmu_types/Kconfig.ercf:174-176); 2.0 is -13 mm, -11 mm
+        with the Thumper Blocks mod (:220-222, listed first here since
+        Thumper Blocks implies ERCF 2.0); 3.0 is -16 mm (:264). Neither
+        Binky, Springy, Triple Decky nor Jack Rabbit change this value.
+
+        QIDI Box takes 80 mm, its own dossier's gate_parking_distance
+        (docs/devices/qidi_box.md's PRELOAD/LOAD "Final parking" move,
+        -80.00 mm) -- a stable parameter, unlike this device's own UNLOAD
+        trace, which the dossier separately records as unreliable (its
+        Decisions section) for the simulator-only harness profile it ran
+        against, not for this static distance.
+
+config KLIPPER_MMU_EJECT_FINAL_DISTANCE_MM
+    int "EJECT distance without a BAY switch (mm)"
+    depends on !KLIPPER_MMU_BAY_SENSORS
+    range 0 2000
+    default 20 if KLIPPER_MMU_DEVICE_ANGRY_BEAVER
+    default 1500 if KLIPPER_MMU_DEVICE_THREE_MS
+    default 20 if KLIPPER_MMU_DEVICE_QUATTROBOX_1_0 || KLIPPER_MMU_DEVICE_QUATTROBOX_1_1 || KLIPPER_MMU_DEVICE_QUATTROBOX_2
+    default 0
+    help
+        A unit without BAY switches cannot see when EJECT has cleared the
+        gate, so it ejects the way Happy Hare does: one blind move back by
+        this distance from where UNLOAD parked the lane (Happy Hare's
+        gate_final_eject_distance; docs/devices/<device>.json). 0 refuses
+        EJECT on this unit.
+
+config KLIPPER_MMU_GATE_HOMING_MAX_MM
+    int "Maximum gate-to-HUB travel (mm, 0=unset)"
+    range 0 5000
+    default 300 if KLIPPER_MMU_DEVICE_BOXTURTLE || KLIPPER_MMU_DEVICE_NIGHTOWL || KLIPPER_MMU_DEVICE_KMS
+    default 500 if KLIPPER_MMU_DEVICE_ANGRY_BEAVER || KLIPPER_MMU_DEVICE_THREE_MS || KLIPPER_MMU_DEVICE_CHAMELEON_3D
+    default 100 if KLIPPER_MMU_DEVICE_QUATTROBOX_1_0 || KLIPPER_MMU_DEVICE_QUATTROBOX_1_1 || KLIPPER_MMU_DEVICE_QUATTROBOX_2 || KLIPPER_MMU_DEVICE_ERCF_1_1 || KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0 || KLIPPER_MMU_DEVICE_TRADRACK || KLIPPER_MMU_DEVICE_PICO_MMU
+    default 1500 if KLIPPER_MMU_DEVICE_QIDI_BOX
+    default 600 if KLIPPER_MMU_DEVICE_EMU
+    default 1000 if KLIPPER_MMU_DEVICE_HTLF || KLIPPER_MMU_DEVICE_MMX || KLIPPER_MMU_DEVICE_MMX6 || KLIPPER_MMU_DEVICE_LOW_RIDER
+    default 800 if KLIPPER_MMU_DEVICE_BTT_VIVID || KLIPPER_MMU_DEVICE_CLAYMORE
+    default 0
+    help
+        The farthest a lane's own gate can sit from the shared HUB sensor,
+        in millimetres of filament: the distance KLIPPER_MMU_HUB_TIMEOUT's
+        LOAD_FEED_TO_HUB stage must cover. KLIPPER_MMU_HUB_TIMEOUT defaults
+        from it (mcu/config.c), 1.25x this distance at the feed speed plus
+        one ramp, so a gate that is genuinely far from the HUB gets a real
+        deadline instead of the old flat 8 s guess.
+
+        Every value above is this device's own Happy Hare dossier
+        gate_homing_max (docs/devices/<device>.json): 300 mm for BoxTurtle,
+        NightOwl and KMS; 500 mm for Angry Beaver, 3MS and 3D Chameleon;
+        100 mm for the QuattroBox family, all three ERCF versions, Tradrack
+        and Pico MMU; 1500 mm for QIDI Box; 600 mm for EMU; 1000 mm for
+        HTLF, MMX, MMX6 and Low Rider; 800 mm for BTT ViViD. Claymore has no
+        Happy Hare dossier (mcu/Kconfig.selector's own note); it takes the
+        same 800 mm evidence Kconfig.selector already cites for it,
+        extras/AFC_vivid.py:76's max_selector_movement. 0 (Custom and any
+        uncatalogued device) leaves KLIPPER_MMU_HUB_TIMEOUT at its flat
+        fallback: measure and calibrate the fitted path before trusting it.
+
+config KLIPPER_MMU_FPS_ARRIVAL_MAX_MM
+    int "Maximum filament travel after HUB (mm, 0=unset)"
+    range 0 5000
+    default 1900 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 0 if KLIPPER_MMU_DEVICE_CUSTOM
+    default 2000
+    help
+        The farthest HUB-to-toolhead (Bowden) travel this MMU's path can
+        ever need, in millimetres of filament past the HUB. FPS arrival's
+        own outer bound (KLIPPER_MMU_FPS_ARRIVAL_PERMILLE's menu, above)
+        uses this only when KLIPPER_MMU_FPS_ARRIVAL is selected: mcu/config.c
+        zeroes the profile's fps_arrival_max_steps otherwise, exactly as
+        before this option moved here. Every device's KLIPPER_MMU_
+        ARRIVAL_TIMEOUT, KLIPPER_MMU_RETRACT_TIMEOUT and KLIPPER_MMU_
+        CAL_RETRACT_TIMEOUT now default from this same distance too (mcu/
+        config.c), 1.25x it at the stage's slowest configured speed plus one
+        ramp, so a real 1-2 m Bowden gets a real deadline instead of the old
+        flat 8-15 s guesses.
+
+        BoxTurtle's 1900 mm is the 1725 mm reference Bowden plus 10%
+        (tests/motion_budget/README.md). Every other catalogued device
+        takes 2000 mm, Happy Hare's own bowden_homing_max default
+        (docs/devices/*.json; identical across every pinned dossier, from
+        its installer's config/base/mmu_parameters.cfg) -- measure and
+        calibrate the fitted path before trusting it. Custom stays 0
+        (unset), preserving its own flat KLIPPER_MMU_ARRIVAL_TIMEOUT,
+        KLIPPER_MMU_RETRACT_TIMEOUT and KLIPPER_MMU_CAL_RETRACT_TIMEOUT
+        fallbacks: it names no real hardware to take 2000 mm as evidence for.
+
+config KLIPPER_MMU_FEEDER_ROTATION_DISTANCE_UM
+    int "Feeder rotation distance (micrometres per output rotation)"
+    range 1 2147483647
+    default 22732 if KLIPPER_MMU_DEVICE_KMS || KLIPPER_MMU_DEVICE_ANGRY_BEAVER || KLIPPER_MMU_DEVICE_THREE_MS || KLIPPER_MMU_DEVICE_QUATTROBOX_1_0 || KLIPPER_MMU_DEVICE_QUATTROBOX_1_1 || KLIPPER_MMU_DEVICE_QUATTROBOX_2 || KLIPPER_MMU_DEVICE_EMU || KLIPPER_MMU_DEVICE_CHAMELEON_3D || KLIPPER_MMU_DEVICE_ERCF_1_1 || KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0 || KLIPPER_MMU_DEVICE_MMX || KLIPPER_MMU_DEVICE_MMX6 || KLIPPER_MMU_DEVICE_PICO_MMU || KLIPPER_MMU_DEVICE_TRADRACK
+    default 8450 if KLIPPER_MMU_DEVICE_BTT_VIVID
+    default 35100 if KLIPPER_MMU_DEVICE_CLAYMORE
+    default 13600 if KLIPPER_MMU_DEVICE_QIDI_BOX
+    default 23000 if KLIPPER_MMU_DEVICE_LOW_RIDER
+    default 4650 if KLIPPER_MMU_DEVICE_HTLF
+    default 22000
+    help
+        BTT ViViD overrides it to 8.45 mm (installer/mmu_types/Kconfig.vvd:
+        89-90). KMS, Angry Beaver, 3MS, QuattroBox 1.0/1.1/2 and EMU all
+        trace to the same 22.7316868 mm rotation distance in their pinned
+        Happy Hare profile (docs/devices/emu.json:67, rounded to the nearest
+        micrometre); see the gear ratio entries below for how their drive
+        differs. Claymore has no Happy Hare dossier: AFC's own [AFC_stepper
+        Claymore_drive] rotation_distance is 35.1 mm (templates/
+        AFC_Claymore_1-AFC_Lite.cfg). QIDI Box traces to 13.6 mm
+        (docs/devices/qidi_box.md's [mmu_stepper unit0_gear]
+        rotation_distance).
+
+        3D Chameleon, both ERCF 1.1/2.0/3.0, MMX, MMX6, Pico MMU and
+        Tradrack all trace to the same 22.7316868 mm rotation distance too
+        (docs/devices/<device>.json's [mmu_stepper unit0_gear]
+        rotation_distance: 3d_chameleon.json:67, ercf_1_1.json:70,
+        ercf_2_0.json:70, ercf_3_0.json:70, mmx.json:67, mmx6.json:67,
+        pico_mmu.json:67, tradrack.json:66), so they join the same bucket;
+        see the gear ratio entries below for how their drive differs. Low
+        Rider's own rotation distance is 23 mm (docs/devices/low_rider.json:
+        67). HTLF's is 4.65 mm (docs/devices/htlf.json:67) -- the same small
+        direct-drive wheel the pre-menu 688.17 steps/mm default described
+        (see the gear ratio entries below).
+
+        EMU's real mechanics matter here: its own gear_load_speed and
+        gear_unload_speed (250 mm/s, KLIPPER_MMU_STEP_MAX_SPEED_MM_S and
+        KLIPPER_MMU_RETRACT_SPEED_MM_S above) only clear the driver's pulse
+        budget (mcu/feeder_mechanics.h, step_dir_driver.c) at this rotation
+        distance and the 1:1 ratio below, not at the 22 mm/50:10 generic
+        fallback a device with no override here would otherwise keep.
+
+        Filament travel produced by one full rotation of the driven feeder
+        output: the same quantity as Klipper's stepper rotation_distance,
+        written in micrometres. It belongs to the wheel the filament rides
+        on, not to the motor, the microstepping or the gearbox. The reference
+        BoxTurtle wheel travels 22 mm (22000 um) per rotation, so this is the
+        default.
+
+        Measure it instead of trusting anyone's datasheet: mark the filament
+        at the feeder inlet, rotate the output exactly one turn, and measure
+        how many millimetres disappeared. Or derive it from a known steps/mm
+        figure: rotation_distance_um = full_steps * microsteps * A * 1000000
+        / (B * steps_per_mm * 1000).
+
+config KLIPPER_MMU_FEEDER_LANE_ROTATION_DISTANCES_UM
+    string "Per-lane feeder rotation distances (micrometres, comma list, blank=uniform)"
+    default ""
+    help
+        Happy Hare's variable_rotation_distances (3MS, EMU) and AFC's
+        per-lane rotation_distance: every gate's own feeder wheel can differ
+        slightly from this device's reference KLIPPER_MMU_FEEDER_ROTATION_
+        DISTANCE_UM above (gear wear, printed-part tolerance), so every speed
+        and distance stays exact for whichever lane is actually driving
+        (src/trajectory.c's lane scale, applied where the core engages the
+        active lane's feeder). Comma-separated, no spaces, exactly
+        KLIPPER_MMU_LANE_COUNT entries. Blank (default) means every lane is
+        1:1 with the reference above -- the trajectory applies no scale at
+        all, bit-for-bit today's arithmetic.
+
+        Each entry must be within 0.8x-1.25x of the reference value
+        (km_profile_validate): lane-to-lane manufacturing variation, not a
+        different gearing -- a unit whose gates are actually geared
+        differently is a different device profile, not this list. The
+        host's feeder_rotation_distances (docs/install.md) overrides this
+        list entirely at MCU configuration; either way a restart is needed
+        after a change, exactly like Klipper's own rotation_distance.
+
+        3MS and EMU mark variable per-gate drive scale in their Happy Hare
+        dossiers but ship no measured per-gate values (docs/devices/3ms.json,
+        docs/devices/emu.json), so neither device defaults this list --
+        measure it with KLIPPER_MMU_CALIBRATE ... SAVE=0
+        (docs/g-code-commands.md) instead of guessing one.
+
+config KLIPPER_MMU_FEEDER_FULL_STEPS
+    int "Feeder motor full steps per rotation"
+    range 1 1000
+    default 200
+    help
+        Full steps in one revolution of the motor, before microstepping: 200
+        for a 1.8 degree stepper, 400 for 0.9 degree.
+
+config KLIPPER_MMU_FEEDER_GEAR_RATIO_A
+    int "Feeder gear ratio: motor turns (A)"
+    range 1 100000
+    default 50 if KLIPPER_MMU_DEVICE_KMS || KLIPPER_MMU_DEVICE_TRADRACK
+    default 1 if KLIPPER_MMU_DEVICE_ANGRY_BEAVER || KLIPPER_MMU_DEVICE_THREE_MS || KLIPPER_MMU_DEVICE_QUATTROBOX_1_0 || KLIPPER_MMU_DEVICE_QUATTROBOX_1_1 || KLIPPER_MMU_DEVICE_QUATTROBOX_2 || KLIPPER_MMU_DEVICE_BTT_VIVID || KLIPPER_MMU_DEVICE_QIDI_BOX || KLIPPER_MMU_DEVICE_EMU || KLIPPER_MMU_DEVICE_HTLF || KLIPPER_MMU_DEVICE_ERCF_3_0 || KLIPPER_MMU_DEVICE_CHAMELEON_3D
+    default 80 if KLIPPER_MMU_DEVICE_ERCF_1_1 || KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_LOW_RIDER || KLIPPER_MMU_DEVICE_MMX || KLIPPER_MMU_DEVICE_MMX6
+    default 40 if KLIPPER_MMU_DEVICE_CLAYMORE
+    default 32 if KLIPPER_MMU_DEVICE_PICO_MMU
+    default 50
+    help
+        Klipper's gear_ratio A:B as two integers: A motor revolutions turn
+        the output B times. BoxTurtle's gearbox is a 50:10 reduction, so A is
+        50 and B is 10. A direct-drive feeder has no gearbox and is 1:1. A
+        larger numerator slows the output down and raises steps per
+        millimetre.
+
+        KMS traces to a 50:17 gearbox; Tradrack traces to the same 50:17
+        (docs/devices/tradrack.json:67). Angry Beaver, 3MS, QuattroBox
+        1.0/1.1/2, QIDI Box and EMU all trace to a direct-drive 1:1 gear in
+        the pinned Happy Hare profile (docs/devices/qidi_box.md's
+        [mmu_stepper unit0_gear] gear_ratio: 1:1; docs/devices/emu.json:68).
+        HTLF, ERCF 3.0 and 3D Chameleon also trace to 1:1 (docs/devices/
+        htlf.json:68, ercf_3_0.json:71, 3d_chameleon.json:68). ERCF 1.1/2.0,
+        Low Rider, MMX and MMX6 all trace to an 80:20 gearbox (docs/devices/
+        ercf_1_1.json:71, ercf_2_0.json:71, low_rider.json:68, mmx.json:68,
+        mmx6.json:68). Claymore (no Happy Hare dossier) overrides this to
+        40:20 (templates/AFC_Claymore_1-AFC_Lite.cfg's [AFC_stepper
+        Claymore_drive] gear_ratio). Pico MMU's own dossier gear_ratio is
+        1.28:1 (docs/devices/pico_mmu.json:68); this menu's integers are
+        32:25, the same ratio (1.28 = 32/25) since the field must be a whole
+        number.
+
+config KLIPPER_MMU_FEEDER_GEAR_RATIO_B
+    int "Feeder gear ratio: output turns (B)"
+    range 1 100000
+    default 17 if KLIPPER_MMU_DEVICE_KMS || KLIPPER_MMU_DEVICE_TRADRACK
+    default 1 if KLIPPER_MMU_DEVICE_ANGRY_BEAVER || KLIPPER_MMU_DEVICE_THREE_MS || KLIPPER_MMU_DEVICE_QUATTROBOX_1_0 || KLIPPER_MMU_DEVICE_QUATTROBOX_1_1 || KLIPPER_MMU_DEVICE_QUATTROBOX_2 || KLIPPER_MMU_DEVICE_BTT_VIVID || KLIPPER_MMU_DEVICE_QIDI_BOX || KLIPPER_MMU_DEVICE_EMU || KLIPPER_MMU_DEVICE_HTLF || KLIPPER_MMU_DEVICE_ERCF_3_0 || KLIPPER_MMU_DEVICE_CHAMELEON_3D
+    default 20 if KLIPPER_MMU_DEVICE_ERCF_1_1 || KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_LOW_RIDER || KLIPPER_MMU_DEVICE_MMX || KLIPPER_MMU_DEVICE_MMX6 || KLIPPER_MMU_DEVICE_CLAYMORE
+    default 25 if KLIPPER_MMU_DEVICE_PICO_MMU
+    default 10
+    help
+        Output revolutions produced by A motor revolutions; BoxTurtle's 10.
+        See the A entry. BTT ViViD's and EMU's gears are direct-drive 1:1
+        (installer/mmu_types/Kconfig.vvd:87-88; docs/devices/emu.json:68), as
+        are HTLF's, ERCF 3.0's and 3D Chameleon's. Tradrack shares KMS's
+        50:17. ERCF 1.1/2.0, Low Rider, MMX and MMX6 share an 80:20 gearbox.
+        Claymore's is 40:20 (templates/AFC_Claymore_1-AFC_Lite.cfg's
+        [AFC_stepper Claymore_drive] gear_ratio). Pico MMU's 32:25 is its own
+        1.28:1 dossier ratio (docs/devices/pico_mmu.json:68) as a whole-number
+        fraction; see the A entry.
+
+        With the microsteps from KLIPPER_MMU_TMC_MICROSTEPS the menu derives
+        the step scale exactly once, in mcu/feeder_mechanics.h:
+
+            steps_per_m = full_steps * microsteps * A * 1000000
+                          / (B * rotation_distance_um)
+
+        A millimetre value becomes microsteps as
+        (value * steps_per_m + 500) / 1000, rounded to the nearest
+        microstep. The reference BoxTurtle mechanics (200 full steps, 16
+        microsteps, 50:10, 22000 um) give 727272 steps per metre, or 727.27
+        per millimetre. The old 688172 default was the same arithmetic
+        without the gearbox and with a 4.65 mm wheel, which is why the same
+        100 mm of travel used to be 68817 microsteps and is now 72727.
+
+config KLIPPER_MMU_RUN_CURRENT
+    int "Driver run-current default (mA)"
+    range 1 65535
+    default 800 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 800 if KLIPPER_MMU_DEVICE_CLAYMORE
+    default 800 if KLIPPER_MMU_DEVICE_HTLF || KLIPPER_MMU_DEVICE_ERCF_3_0
+    default 1270 if KLIPPER_MMU_DEVICE_TRADRACK || KLIPPER_MMU_DEVICE_QUATTROBOX_1_0 || KLIPPER_MMU_DEVICE_QUATTROBOX_1_1
+    default 600 if KLIPPER_MMU_DEVICE_QUATTROBOX_2
+    default 500 if KLIPPER_MMU_DEVICE_ERCF_1_1 || KLIPPER_MMU_DEVICE_ERCF_2_0
+    default 700
+    help
+        A requested driver setting, not measured current. The selected backend
+        must validate its own electrical/current limit before configuring it.
+
+        Claymore's gear run current is 800 mA (templates/
+        AFC_Claymore_1-AFC_Lite.cfg's [tmc2209 AFC_stepper Claymore_drive]
+        run_current: 0.8); AFC gives no hold-current override, so it takes
+        the generic KLIPPER_MMU_HOLD_CURRENT fallback below unoverridden.
+
+        HTLF and ERCF 3.0 also cite 800 mA (installer/mmu_types/
+        Kconfig.htlf:38-39, Kconfig.ercf:248-249). Tradrack and QuattroBox
+        1.0/1.1 cite 1270 mA (Kconfig.tradrack:57-58, Kconfig.quattro_box:
+        79-80,112-113). QuattroBox 2 cites 600 mA (Kconfig.quattro_box:
+        149-150). ERCF 1.1 and 2.0 cite 500 mA (Kconfig.ercf:158-159,
+        204-205).
+
+        NightOwl, KMS, Angry Beaver, 3MS, MMX, MMX6, 3D Chameleon, Low
+        Rider and Pico MMU all cite 700 mA (Kconfig.night_owl:87-88,
+        Kconfig.kms:89-90, Kconfig.angry_beaver:40-41, Kconfig.3ms:35-36,
+        Kconfig.mmx:35-36, Kconfig.mmx6:33-34, Kconfig.3d_chameleon:34-35,
+        Kconfig.low_rider:43-44, Kconfig.pico_mmu:37-38), the same as the
+        generic fallback above, so they take it unoverridden. Custom has
+        no Happy Hare or AFC source and keeps that generic fallback too.
+
+config KLIPPER_MMU_HOLD_CURRENT
+    int "Driver hold-current default (mA)"
+    range 0 KLIPPER_MMU_RUN_CURRENT
+    default 200 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 100 if KLIPPER_MMU_DEVICE_BTT_VIVID
+    default 200 if KLIPPER_MMU_DEVICE_ERCF_3_0 || KLIPPER_MMU_DEVICE_TRADRACK || KLIPPER_MMU_DEVICE_QUATTROBOX_1_0 || KLIPPER_MMU_DEVICE_QUATTROBOX_1_1 || KLIPPER_MMU_DEVICE_QUATTROBOX_2
+    default 100 if KLIPPER_MMU_DEVICE_NIGHTOWL || KLIPPER_MMU_DEVICE_KMS || KLIPPER_MMU_DEVICE_ANGRY_BEAVER || KLIPPER_MMU_DEVICE_THREE_MS || KLIPPER_MMU_DEVICE_MMX || KLIPPER_MMU_DEVICE_MMX6 || KLIPPER_MMU_DEVICE_CHAMELEON_3D || KLIPPER_MMU_DEVICE_LOW_RIDER || KLIPPER_MMU_DEVICE_PICO_MMU || KLIPPER_MMU_DEVICE_HTLF || KLIPPER_MMU_DEVICE_ERCF_1_1 || KLIPPER_MMU_DEVICE_ERCF_2_0
+    default 150
+    help
+        BTT ViViD's gear run current is 700 mA (installer/mmu_types/
+        Kconfig.vvd:91-92), the same as the generic KLIPPER_MMU_RUN_CURRENT
+        fallback below, so it takes that unoverridden; its hold current is
+        100 mA (Kconfig.vvd:93-94), overridden here.
+
+        ERCF 3.0, Tradrack and QuattroBox 1.0/1.1/2 all cite 200 mA
+        (installer/mmu_types/Kconfig.ercf:250-251, Kconfig.tradrack:59-60,
+        Kconfig.quattro_box:81-82,114-115,151-152). NightOwl, KMS, Angry
+        Beaver, 3MS, MMX, MMX6, 3D Chameleon, Low Rider, Pico MMU, HTLF and
+        ERCF 1.1/2.0 all cite 100 mA (Kconfig.night_owl:89-90,
+        Kconfig.kms:91-92, Kconfig.angry_beaver:42-43, Kconfig.3ms:37-38,
+        Kconfig.mmx:37-38, Kconfig.mmx6:35-36, Kconfig.3d_chameleon:36-37,
+        Kconfig.low_rider:45-46, Kconfig.pico_mmu:39-40, Kconfig.htlf:40-41,
+        Kconfig.ercf:160-161,206-207); none of that group matches the 150 mA
+        fallback below, unlike their run current above. Custom and Claymore
+        keep that 150 mA fallback: Custom has no Happy Hare or AFC source,
+        and AFC gives Claymore's gear driver no hold-current override (see
+        KLIPPER_MMU_RUN_CURRENT above).
+
+config KLIPPER_MMU_REWIND_DUTY
+    int "Rewind PWM limit (permille)"
+    depends on KLIPPER_MMU_POWERED_REWIND
+    range 0 1000
+    default 600
+
+config KLIPPER_MMU_CURRENT_LIMIT
+    int "Measured rewind current limit (mA)"
+    depends on KLIPPER_MMU_MEASURED_CURRENT
+    range 2 65535
+    default 800
+
+config KLIPPER_MMU_CURRENT_TARGET
+    int "Measured rewind current target (mA, below limit)"
+    depends on KLIPPER_MMU_MEASURED_CURRENT
+    range 1 65535
+    default 500
+    help
+        The common profile validator rejects a target at or above the limit.
+
+config KLIPPER_MMU_BUFFER_GAIN_UM_S
+    int "Proportional following gain (micrometres/s per permille)"
+    depends on KLIPPER_MMU_DIFF_BUFFER
+    range 1 275000
+    default 11
+    help
+        Extra follow speed per permille of buffer position error, in
+        micrometres of filament per second. The fallback 11 um/s is the
+        rounded value that reproduces the old default of 8000 (8 microsteps/s
+        per permille) at the reference mechanics above: it belongs with those
+        mechanics, so change them together. Firmware still holds the value as
+        microsteps/s x1000, which is the same scale factor.
+
+config KLIPPER_MMU_BUFFER_DEADBAND
+    int "Proportional buffer deadband (permille)"
+    depends on KLIPPER_MMU_DIFF_BUFFER
+    range 0 249
+    default 10
+
+if KLIPPER_MMU_FPS_ARRIVAL
+config KLIPPER_MMU_FPS_ARRIVAL_PERMILLE
+    int "FPS arrival threshold (calibrated permille)"
+    range 501 999
+    default 700
+    help
+        Calibrated position of the compression-only Hall buffer: 0 is
+        uncompressed rest (slack or tension read the same), and FOLLOW holds
+        it near mid-range (500) while the extruder feeds. A LOAD ends once
+        compression passes this point, well above the print target. Must
+        exceed 500 plus the deadband and stay below the fully compressed end
+        (1000), which fails LOAD.
+
+config KLIPPER_MMU_FPS_ARRIVAL_SAMPLES
+    int "FPS arrival consecutive acquisitions"
+    range 2 255
+    default 3
+    help
+        Distinct acquisitions at or above the threshold: the crossing plus
+        two confirmations, so one noisy pair from the long differential
+        line (DiffA and DiffB are read one after the other, not
+        simultaneously) cannot complete LOAD.
+
+config KLIPPER_MMU_FPS_ARRIVAL_HOLD_MS
+    int "FPS arrival hold (ms)"
+    range 1 2147483647
+    default 20
+    help
+        First-to-last candidate span; below the load-to-arrival timeout.
+        At the 1 ms ADC and controller cadence this is about 20
+        acquisitions, so brief noise on the differential line cannot
+        qualify. At the 20 mm/s crawl default it is 291 feeder microsteps,
+        0.40 mm of filament at the reference mechanics. Along with the
+        three-tick settling allowance and the braking ramp from the crawl,
+        the build-time checks in mcu/feeder_mechanics.h prove it fits in the
+        buffer travel above the threshold.
+
+config KLIPPER_MMU_FPS_ARRIVAL_MIN_MM
+    int "FPS arrival minimum travel after HUB (mm, 0=unset)"
+    range 0 5000
+    default 100 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 0
+    help
+        Outer limit; a calibrated HUB-to-arrival distance must be at or
+        above it. The BoxTurtle default is 100 mm of filament pulled past
+        the HUB, which is what its old 68817-microstep default meant at the
+        old 688.17 steps/mm. Firmware converts it with the reference
+        mechanics above, exports the step result as KLIPPER_MMU_FPS_MIN_STEPS,
+        and keeps using microsteps everywhere else. KLIPPER_MMU_FPS_ARRIVAL_MAX_MM
+        (mcu/Kconfig.control's "Motion and driver defaults" menu) is this
+        outer limit's maximum counterpart; it moved out of this block
+        because every device's KLIPPER_MMU_ARRIVAL_TIMEOUT and
+        KLIPPER_MMU_CAL_RETRACT_TIMEOUT now default from it too, not only
+        FPS arrival's own.
+
+config KLIPPER_MMU_LOAD_CRUISE_SPEED_MM_S
+    int "LOAD cruise speed (mm/s)"
+    range 1 275
+    default 200 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 100 if KLIPPER_MMU_FPS_ARRIVAL && KLIPPER_MMU_HH_MOTION_DEFAULTS
+    default 26
+    help
+        Ceiling for the mid-path LOAD run, not a speed every load must
+        reach: a short lane-to-HUB stash, a short path, or any path whose
+        braking budget cannot use it happily runs slower. BoxTurtle's
+        200 mm/s is the reference pancake stepper at its limit: 1.8 degree,
+        50:10 gearing and a 22 mm rotation distance put it near 2700 motor
+        RPM, where torque is thin. Qualify the fitted printer before
+        trusting it. With KLIPPER_MMU_FPS_ARRIVAL set NightOwl, KMS, Angry
+        Beaver, 3MS and QuattroBox 1.0/1.1/2 take Happy Hare's gear_load_speed
+        from their dossier (docs/devices/), 100 mm/s for all seven. The
+        build refuses a value whose converted steps/s pass the common core
+        ceiling, and refuses a driver ceiling below it.
+
+config KLIPPER_MMU_LOAD_CRAWL_SPEED_MM_S
+    int "LOAD crawl speed (mm/s)"
+    range 1 274
+    default 20 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 20 if KLIPPER_MMU_FPS_ARRIVAL && KLIPPER_MMU_HH_MOTION_DEFAULTS
+    default 5
+    help
+        The speed for the final approach into the arrival window, and the
+        probe speed of a step-estimated CALIBRATE. The core retargets to it
+        once the distance left to the window is inside the stopping distance
+        from the current speed plus three ticks of travel, and never speeds
+        up again before arrival. Must stay below the cruise speed; the
+        build-time checks in mcu/feeder_mechanics.h prove that stopping from
+        here after the arrival latency fits in the buffer travel above the
+        threshold. With KLIPPER_MMU_FPS_ARRIVAL set the Happy Hare devices
+        take BoxTurtle's qualified 20 mm/s, which those checks were made for.
+
+config KLIPPER_MMU_LOAD_WINDOW_MM
+    int "LOAD arrival window (mm)"
+    range 0 5000
+    default 50 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 50 if KLIPPER_MMU_FPS_ARRIVAL && KLIPPER_MMU_HH_MOTION_DEFAULTS
+    default 0
+    help
+        Arrival counts within the calibrated HUB-to-arrival distance plus or
+        minus this, in millimetres of filament. Before a calibrated distance
+        is known (CALIBRATE itself), the outer minimum and maximum bound the
+        travel instead. Must be narrower than half the outer spread so the
+        two rules can never disagree, and wide enough that the crawl's last
+        steps land inside it. 0 means unset. With KLIPPER_MMU_FPS_ARRIVAL
+        set the Happy Hare devices take BoxTurtle's qualified 50 mm window;
+        their outer travel limits stay unset until the path is measured.
+
+config KLIPPER_MMU_BUFFER_TRAVEL_MM
+    int "Buffer travel (mm)"
+    range 0 5000
+    default 15 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 15 if KLIPPER_MMU_FPS_ARRIVAL && KLIPPER_MMU_HH_MOTION_DEFAULTS
+    default 0
+    help
+        Total filament travel the buffer compresses over, from rest to fully
+        compressed. Build-time checks in mcu/feeder_mechanics.h use it to
+        prove a LOAD can brake to a stop after arrival, inside the part of
+        the travel above the arrival threshold, and well before the buffer
+        reads fully compressed. BoxTurtle's reference buffer travels 15 mm.
+        0 means unset. With KLIPPER_MMU_FPS_ARRIVAL set the Happy Hare
+        devices take the same 15 mm: the OpenAMS FPS buffer is the same
+        hardware on every one of them.
+endif
+
+endmenu
+
+menu "Local protection and operation deadlines"
+
+config KLIPPER_MMU_SENSOR_AGE
+    int "Maximum sensor sample age (ms)"
+    range 1 60000
+    default 200
+
+config KLIPPER_MMU_HOST_LEASE
+    int "Host communication lease (ms)"
+    range 1 60000
+    default 2000
+
+config KLIPPER_MMU_PROGRESS_TIMEOUT
+    int "Progress timeout (ms)"
+    range 1 2147483647
+    default 2000
+
+config KLIPPER_MMU_HUB_TIMEOUT
+    int "Load to hub timeout (ms, 0=derive from geometry)"
+    range 0 2147483647
+    default 20000 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 0
+    help
+        LOAD_FEED_TO_HUB's deadline. BoxTurtle's 20000 ms is its own
+        qualified margin over the AFC reference gate-to-HUB path (155 mm,
+        tests/motion_budget/README.md) at its 26 mm/s feed.
+
+        0 (every other device) makes mcu/config.c derive it instead: 1.25x
+        KLIPPER_MMU_GATE_HOMING_MAX_MM at KLIPPER_MMU_FEED_SPEED_MM_S, plus
+        one acceleration ramp, the same margin tests/motion_budget/
+        check_budget.py already checks BoxTurtle's own numbers against. A
+        device with no KLIPPER_MMU_GATE_HOMING_MAX_MM evidence (Custom, any
+        uncatalogued device) keeps the old flat 8000 ms guess instead.
+
+config KLIPPER_MMU_ARRIVAL_TIMEOUT
+    int "Load to arrival sensor timeout (ms, 0=derive from geometry)"
+    range 0 2147483647
+    default 118750 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 0
+    help
+        LOAD_FEED_TO_BUFFER's deadline. BoxTurtle's 118750 ms is 1.25 times
+        the 1900 mm outer travel at the 20 mm/s crawl: with a calibrated
+        profile the whole run after the HUB crawls the final stretch, and a
+        step-estimated CALIBRATE walks that same distance at the crawl
+        before its own retract timeout applies. The 25 percent covers
+        acceleration, sampling and the arrival hold.
+
+        0 (every other device) makes mcu/config.c derive it the same way:
+        1.25x KLIPPER_MMU_FPS_ARRIVAL_MAX_MM, plus one acceleration ramp, at
+        KLIPPER_MMU_LOAD_CRAWL_SPEED_MM_S with KLIPPER_MMU_FPS_ARRIVAL
+        selected (the whole post-HUB run crawls, as above) or at
+        KLIPPER_MMU_FEED_SPEED_MM_S otherwise (a switch-arrival LOAD never
+        slows down before its toolhead sensor, so feed speed is the whole
+        run's speed). A device with no KLIPPER_MMU_FPS_ARRIVAL_MAX_MM
+        evidence (Custom) keeps the old flat 12000 ms guess instead.
+
+config KLIPPER_MMU_RETRACT_TIMEOUT
+    int "Unload retract timeout (ms, 0=derive from geometry)"
+    range 0 2147483647
+    default 90000 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 0
+    help
+        UNLOAD_RETRACT_TO_HUB, UNLOAD_RETRACT_TO_LOAD, EJECT_TO_BAY and a
+        LOAD retry's own retract all share this deadline; a LOAD retry is
+        the long one, retracting from up to the outer arrival travel back
+        past HUB by KLIPPER_MMU_UNLOAD_HUB_CLEAR_MM. BoxTurtle's 90000 ms
+        covers that at its 26 mm/s retract.
+
+        0 (every other device) makes mcu/config.c derive it the same way:
+        1.25x (KLIPPER_MMU_FPS_ARRIVAL_MAX_MM plus
+        KLIPPER_MMU_UNLOAD_HUB_CLEAR_MM), plus one acceleration ramp, at
+        KLIPPER_MMU_RETRACT_SPEED_MM_S. A device with no
+        KLIPPER_MMU_FPS_ARRIVAL_MAX_MM evidence (Custom) keeps the old flat
+        8000 ms guess instead.
+
+config KLIPPER_MMU_REWIND_TIMEOUT
+    int "Unload rewind timeout (ms, 0=derive from geometry)"
+    range 0 2147483647
+    default 15000 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 0
+    help
+        UNLOAD_STOP_SETTLE (waiting for the preceding retract to stop) and
+        UNLOAD_REWIND_TO_SPOOL (the KLIPPER_MMU_UNLOAD_HUB_CLEAR_MM move
+        past it) share this deadline. BoxTurtle's flat 15000 ms already
+        covers its own 65 mm clear at 26 mm/s many times over, so it keeps
+        that exact number rather than a smaller derived one.
+
+        0 (every other device) makes mcu/config.c derive it the same way:
+        1.25x KLIPPER_MMU_UNLOAD_HUB_CLEAR_MM, plus one acceleration ramp,
+        at KLIPPER_MMU_RETRACT_SPEED_MM_S. A device with no
+        KLIPPER_MMU_UNLOAD_HUB_CLEAR_MM evidence (EMU, HTLF, MMX, MMX6, Low
+        Rider, Pico MMU, Tradrack, BTT ViViD, Claymore, Custom) keeps the
+        old flat 15000 ms guess instead. The catalogued clear distances that
+        do exist are all short, so a derived value tends to tighten this
+        deadline rather than grow it -- 2562 ms for NightOwl's 100 mm clear
+        at 80 mm/s, for example -- but it is still a real number for
+        whatever speed this device actually has configured, not a weaker
+        one.
+
+config KLIPPER_MMU_CAL_PROBE_TIMEOUT
+    int "Encoder calibration probe timeout (ms)"
+    range 1 2147483647
+    default 15000
+
+config KLIPPER_MMU_CAL_RETRACT_TIMEOUT
+    int "Calibration retract timeout (ms, 0=derive from geometry)"
+    range 0 2147483647
+    default 90000 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 0
+    help
+        CALIBRATE_RETRACT's deadline: from wherever CALIBRATE_PROBE stopped
+        (up to the outer arrival travel) back until HUB and the toolhead
+        both clear, with no KLIPPER_MMU_UNLOAD_HUB_CLEAR_MM added (this
+        stage stops on sensors, not a commanded clear distance). BoxTurtle
+        reuses its own KLIPPER_MMU_RETRACT_TIMEOUT value (90000 ms), since
+        that already covers the larger (plus-clear) retract distance too.
+
+        0 (every other device) makes mcu/config.c derive it the same way:
+        1.25x KLIPPER_MMU_FPS_ARRIVAL_MAX_MM, plus one acceleration ramp, at
+        KLIPPER_MMU_RETRACT_SPEED_MM_S. A device with no
+        KLIPPER_MMU_FPS_ARRIVAL_MAX_MM evidence (Custom) keeps the old flat
+        15000 ms guess instead.
+
+endmenu

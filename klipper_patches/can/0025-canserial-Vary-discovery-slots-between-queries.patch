@@ -1,0 +1,57 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 12:14:49 -0700
+Subject: [PATCH] canserial: Vary discovery slots between queries
+
+Discovery slot selection was deterministic for a given UUID.  If two unassigned nodes mapped to the same slot, their same-identifier responses collided; every later query selected the same slot and repeated the collision, making both nodes permanently invisible to discovery.
+
+Seed the UUID hash with a counter that advances for each accepted discovery query.  This gives every node a changing deterministic slot sequence without depending on a hardware random-number source.  A collision in one round therefore does not force the same pair of responses to collide on every retry.
+
+Update the protocol documentation to state why slot selection changes between queries.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/docs/CANBUS_protocol.md b/docs/CANBUS_protocol.md
+index 04f41852..534d3619 100644
+--- a/docs/CANBUS_protocol.md
++++ b/docs/CANBUS_protocol.md
+@@ -38,7 +38,8 @@ delay that response by an interval derived from their `canbus_uuid` so
+ that multiple unassigned nodes do not normally transmit the response
+ with the same CAN bus id at the same time. Response slots are separated
+ by enough time to transmit the complete response at the configured CAN
+-bus frequency.
++bus frequency, and the slot selection changes on later queries so that
++a collision in one discovery round does not persist indefinitely.
+ 
+ The CMD_QUERY_UNASSIGNED message format is:
+ `<1-byte message_id = 0x00>`
+diff --git a/src/generic/canserial.c b/src/generic/canserial.c
+index 9a60d1e0..c5c1977f 100644
+--- a/src/generic/canserial.c
++++ b/src/generic/canserial.c
+@@ -52,6 +52,7 @@ static struct canbus_data {
+     // Tx data
+     struct task_wake tx_wake;
+     struct timer query_timer;
++    uint32_t query_number;
+     uint8_t transmit_pos, transmit_max, query_state;
+ 
+     // Rx data
+@@ -235,7 +236,16 @@ can_process_query_unassigned(struct canbus_msg *msg)
+     uint32_t slot_count = CAN_QUERY_RESPONSE_WINDOW_US / slot_us;
+     if (!slot_count)
+         slot_count = 1;
+-    uint32_t uuid_slot = CanData.uuid[0] | CanData.uuid[1] << 8;
++    /*
++     * A UUID-only slot is deterministic.  If two nodes happen to select the
++     * same slot, every later discovery query would reproduce the collision and
++     * neither node could ever be discovered.  Use the accepted-query count as
++     * a hash seed so each node follows a different deterministic slot sequence.
++     * This does not require a hardware random-number source, and a collision in
++     * one discovery round no longer forces the same collision on every retry.
++     */
++    uint32_t uuid_slot = fasthash64(CanData.uuid, sizeof(CanData.uuid),
++                                    CanData.query_number++);
+     uint32_t delay = 100 + uuid_slot % slot_count * slot_us;
+     CanData.query_state = CQS_WAITING;
+     CanData.query_timer.waketime = timer_read_time() + timer_from_us(delay);

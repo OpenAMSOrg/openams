@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Included inside the enabled H723 pin menu.
+if KLIPPER_MMU_DIFF_BUFFER && WANT_ADC
+menu "DiffA/DiffB acquisition limits"
+
+config KLIPPER_MMU_ADC_CONVERSION_TIMEOUT_US
+    int "Conversion timeout (us, 0=unset)"
+    range 0 2147483647
+    default 1000 if KLIPPER_MMU_BOARD_AFC_LITE
+    default 0
+    help
+        Bounds each conversion, including its queued work. The total pair
+        deadline also applies. Determine limits from measured local timing.
+        Zero leaves acquisition configuration unavailable. The AFC Lite
+        default matches the release matrix's boxturtle-h723-{usb,can} images;
+        it is a provisional starting point, not a measured board timing.
+
+config KLIPPER_MMU_ADC_PAIR_SPAN_US
+    int "Maximum pair acquisition span (us, 0=unset)"
+    range 0 2147483647
+    default 3000 if KLIPPER_MMU_BOARD_AFC_LITE
+    default 0
+    help
+        Bounds elapsed time from pair admission through both readings. These
+        are sequential samples, not simultaneous physical capture. This limit
+        must not exceed the acquisition sample-age limit below. The AFC Lite
+        default matches the release matrix's boxturtle-h723-{usb,can} images.
+
+config KLIPPER_MMU_ADC_SAMPLE_AGE_US
+    int "Maximum acquisition sample age (us, 0=unset)"
+    range 0 60000000
+    default 20000 if KLIPPER_MMU_BOARD_AFC_LITE
+    default 0
+    help
+        Age is measured from the first DiffA attempt. It must not exceed the
+        operation profile's maximum sensor age (which is in milliseconds).
+        Acquisition limits do not replace paired sensor calibration. Configure
+        actual calibration separately; no nominal voltage curve is assumed.
+        The AFC Lite default matches the release matrix's
+        boxturtle-h723-{usb,can} images.
+
+config KLIPPER_MMU_ADC_SAMPLE_PERIOD_US
+    int "Minimum delay between completed DiffA/DiffB pairs (us)"
+    range 1000 1000000
+    default 1000
+    help
+        Bounds the local ADC interrupt load after each completed pair. A new
+        pair starts no sooner than this delay after the previous completion;
+        in-progress conversion retries still meet their own deadlines. Keep
+        this delay plus the pair span below the sample-age limit. The default
+        is 1 ms, matching the local controller cadence.
+
+endmenu
+endif

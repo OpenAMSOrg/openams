@@ -1,0 +1,182 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Saved STM32 TMC2209 register settings. They do not initialize a driver.
+# Local UART binding still depends on WANT_TMCUART and WANT_TMCUART_LOCAL.
+menu "Feeder TMC2209 register settings"
+
+config KLIPPER_MMU_TMC_UART_SHARED
+    bool "Local shared TMC UART driver binding"
+    depends on WANT_TMCUART && WANT_TMCUART_LOCAL
+    default n
+    help
+        Attach feeder lanes to the shared upstream TMC UART driver via local
+        callbacks. Requires both upstream WANT_TMCUART and the local driver
+        extension (WANT_TMCUART_LOCAL). Selection alone does not claim
+        hardware availability, reserve pins, or initialize stepper drivers.
+
+config KLIPPER_MMU_TMC_ADDRESSES
+    string "UART address by lane (0..3)"
+    depends on KLIPPER_MMU_GEAR_TMC_UART
+    default "0,0,0,0" if KLIPPER_MMU_BOARD_AFC_LITE
+    default ""
+    help
+        One address per lane, separated by commas without spaces. Address
+        must match each driver's MS1/MS2 wiring. Separate UART pins may use
+        the same address; this does not configure a shared multidrop bus.
+        Unused without KLIPPER_MMU_GEAR_TMC_UART (mcu/Kconfig.control).
+
+config KLIPPER_MMU_TMC_UART_PULLUP
+    string "UART receiver pull-up by lane (0=none, 1=pull-up)"
+    depends on KLIPPER_MMU_GEAR_TMC_UART
+    default "1,1,1,1" if KLIPPER_MMU_BOARD_AFC_LITE
+    default ""
+    help
+        Exactly one 0 or 1 per configured lane, comma-separated without spaces.
+        0 disables the MCU pull-up; 1 enables the internal MCU receiver pull-up.
+        External resistor and electrical requirements still depend on board wiring.
+        The AFC Lite four-lane preset defaults to 1,1,1,1. Custom wiring requires
+        explicit values.
+
+
+config KLIPPER_MMU_TMC_RSENSE
+    int "Sense resistor (milliohms, 0=unset)"
+    range 0 1000
+    default 110 if KLIPPER_MMU_BOARD_AFC_LITE
+    default 0
+    help
+        The AFC Turtle template uses 0.110 ohm. Check the fitted driver board.
+        A custom board needs an explicit value. This is a current-setting
+        parameter, not an MCU current measurement.
+
+config KLIPPER_MMU_TMC_CURRENT_CEILING
+    int "Motor/board current ceiling (mA, 0=unset)"
+    range 0 2000
+    default 800 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 0
+    help
+        Set the permitted limit for the fitted motor and board explicitly.
+        The factory remains unavailable while this is unset. The BoxTurtle
+        preset uses 800 mA, the same value as its run-current default, so the
+        register factory can validate. Replace 800 with the fitted motor and
+        board limit before enabling motion. The run/hold targets come from
+        the motion/driver defaults menu and must fit this limit and the
+        driver's representable current range. Zero hold current is not a
+        valid startup register setting; disabling uses ENABLE.
+
+config KLIPPER_MMU_TMC_MICROSTEPS
+    int "Microsteps (power of two, 1..256)"
+    range 1 256
+    default 16
+    help
+        Microsteps per full step. This is one of the inputs to the
+        millimetre-to-microstep conversion in the motion menu, so changing it
+        changes how far a commanded millimetre actually is. Changing either
+        this or the feeder mechanics also requires reviewing motion and
+        travel calibration.
+
+config KLIPPER_MMU_TMC_INTERPOLATE
+    bool "Interpolate to 256 microsteps"
+    default y
+
+config KLIPPER_MMU_TMC_STEALTHCHOP
+    bool "Use stealthChop"
+    default n
+
+config KLIPPER_MMU_TMC_TIMEOUT_US
+    int "UART transaction timeout (us)"
+    range 6600 100000
+    default 20000
+    help
+        The accepted 40000-baud transport requires at least 264 bit periods.
+
+config KLIPPER_MMU_TMC_DIAGNOSTIC_US
+    int "Driver diagnostic interval (us)"
+    range 6600 1000000
+    default 100000
+    help
+        Must be at least the transaction timeout. Firmware schedules these
+        diagnostics locally; selecting a value does not qualify interrupt cost.
+
+config KLIPPER_MMU_SELECTOR_RUN_CURRENT
+    int "Selector axis driver run-current default (mA)"
+    depends on KLIPPER_MMU_SELECTOR_STEPPER
+    range 1 65535
+    default 400 if KLIPPER_MMU_DEVICE_ERCF_1_1 || KLIPPER_MMU_DEVICE_ERCF_2_0
+    default 700 if KLIPPER_MMU_DEVICE_ERCF_3_0
+    default 630 if KLIPPER_MMU_DEVICE_TRADRACK || KLIPPER_MMU_DEVICE_CHAMELEON_3D
+    default 600 if KLIPPER_MMU_DEVICE_HTLF
+    default 800 if KLIPPER_MMU_DEVICE_BTT_VIVID
+    default 800 if KLIPPER_MMU_DEVICE_CLAYMORE
+    default 500
+    help
+        The selector axis moves its own, usually lighter, carriage; it is a
+        separate motor from the shared gear and gets its own current
+        setting. A requested driver setting, not measured current. Values
+        come from the pinned Happy Hare oracle's per-device selector stepper
+        templates (installer/mmu_types/Kconfig.ercf:166,212,256 for ERCF
+        1.1/2.0/3.0; Kconfig.tradrack:65-66; Kconfig.3d_chameleon:42-43;
+        Kconfig.htlf:50-51). BTT ViViD overrides it to 800 mA (Kconfig.vvd:
+        103-104). MMX6 takes the generic 500 mA default
+        (installer/Kconfig.selector_stepper:35-37); none of the nine
+        devices this catalogue supports use a selector TMC chip other than
+        TMC2209 (installer/Kconfig.pins:149-176: no "None" choice exists for
+        the selector, unlike the gear's CHOICE_GEAR_TMC_NONE).
+
+        Claymore has no Happy Hare template; AFC's own
+        [tmc2209 AFC_stepper Claymore_selector] run_current is 0.8 A
+        (templates/AFC_Claymore_1-AFC_Lite.cfg), the same 800 mA as BTT
+        ViViD by coincidence of hardware, not a shared oracle.
+
+config KLIPPER_MMU_SELECTOR_HOLD_CURRENT
+    int "Selector axis driver hold-current default (mA)"
+    depends on KLIPPER_MMU_SELECTOR_STEPPER
+    range 0 KLIPPER_MMU_SELECTOR_RUN_CURRENT
+    default 300 if KLIPPER_MMU_DEVICE_HTLF
+    default 300 if KLIPPER_MMU_DEVICE_BTT_VIVID
+    default 200
+    help
+        Happy Hare's generic selector hold-current default is 200 mA
+        (installer/Kconfig.selector_stepper:39-41) and every device in this
+        catalogue except HTLF takes it unoverridden (ERCF 1.1/2.0/3.0:
+        installer/mmu_types/Kconfig.ercf:168,214,258; Tradrack:
+        Kconfig.tradrack:67-68; 3D Chameleon: Kconfig.3d_chameleon:44-45).
+        HTLF overrides it to 300 mA (Kconfig.htlf:52-53), and BTT ViViD also
+        to 300 mA (Kconfig.vvd:105-106).
+
+config KLIPPER_MMU_SELECTOR_UART_ADDRESS
+    int "Selector axis UART address (0..3)"
+    depends on KLIPPER_MMU_SELECTOR_UART
+    range 0 3
+    default 0
+    help
+        Happy Hare's selector TMC template only ever emits a uart_address
+        line for the four generic/manual board choices (EASY_BRD,
+        SKR_PICO_1, OTHER, MANUAL); every named board this catalogue's
+        default devices resolve to (MMB 2.0 for ERCF 2.0/3.0, Mellow
+        EASY-BRD CAN for Tradrack) omits it, so Klipper's own tmc2209
+        driver falls back to address 0 (config/base/mmu_hardware.cfg:
+        391-395; klippy/extras/tmc_uart.py:206 in the pinned Klipper
+        source). This firmware supports the selector on its own dedicated
+        UART wire (a distinct KLIPPER_MMU_PINS_SELECTOR_UART pin from the
+        gear's KLIPPER_MMU_PINS_UART) and also the classic ERCF 1.1
+        EASY-BRD wiring, where both TMC2209s share one UART pin at
+        different addresses (installer/boards/Kconfig.easy_brd_rp2040:24-25
+        sets PIN_SELECTOR_UART = PIN_GEAR_UART). To share the gear's wire,
+        set KLIPPER_MMU_PINS_SELECTOR_UART equal to KLIPPER_MMU_PINS_UART
+        and give this option a value different from the gear's own
+        KLIPPER_MMU_TMC_ADDRESSES; leaving both at address 0, or any other
+        equal pair, is refused. Wiring the selector to its own separate pin
+        needs no such care and is the simpler choice when your board allows it.
+
+config KLIPPER_MMU_SELECTOR_UART_PULLUP
+    bool "Enable the MCU's internal UART receiver pull-up for the selector"
+    depends on KLIPPER_MMU_SELECTOR_UART
+    default n
+    help
+        Same meaning as KLIPPER_MMU_TMC_UART_PULLUP, for the selector's own
+        dedicated wire: n leaves the MCU receiver pull-up disabled (an
+        external resistor is assumed unless you know your wiring needs the
+        internal one). Happy Hare does not model this MCU-local setting;
+        it is this firmware's own, and the safe default requires an
+        explicit choice rather than silently enabling a pull-up.
+
+endmenu

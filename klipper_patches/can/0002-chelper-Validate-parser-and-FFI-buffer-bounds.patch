@@ -1,0 +1,125 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Sun, 23 Aug 2026 22:51:41 -0700
+Subject: [PATCH] chelper: Validate parser and FFI buffer bounds
+
+Malformed MCU messages could make the VLQ decoder read past the
+supplied message.  The FFI helpers also accepted negative or
+oversized buffer lengths, allowing invalid memcpy() and output
+pointer arithmetic.
+
+Carry an end pointer through VLQ decoding, enforce protocol and
+destination sizes, and reject invalid pointers or lengths before
+accessing buffers.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/klippy/chelper/msgblock.c b/klippy/chelper/msgblock.c
+index 2e73e556..8581843f 100644
+--- a/klippy/chelper/msgblock.c
++++ b/klippy/chelper/msgblock.c
+@@ -85,32 +85,42 @@ f4: *p++ = v & 0x7f;
+     return p;
+ }
+ 
+-// Parse an integer that was encoded as a "variable length quantity"
+-static uint32_t
+-parse_int(uint8_t **pp)
++// Parse a bounded integer encoded as a "variable length quantity"
++static int
++parse_int(uint8_t **pp, uint8_t *end, uint32_t *value)
+ {
+-    uint8_t *p = *pp, c = *p++;
++    uint8_t *p = *pp;
++    if (p >= end)
++        return -1;
++    uint8_t c = *p++;
+     uint32_t v = c & 0x7f;
+     if ((c & 0x60) == 0x60)
+         v |= -0x20;
++    int count = 1;
+     while (c & 0x80) {
++        if (p >= end || count >= 5)
++            return -1;
+         c = *p++;
+         v = (v<<7) | (c & 0x7f);
++        count++;
+     }
+     *pp = p;
+-    return v;
++    *value = v;
++    return 0;
+ }
+ 
+ // Parse the VLQ contents of a message
+ int
+ msgblock_decode(uint32_t *data, int data_len, uint8_t *msg, int msg_len)
+ {
++    if (data_len < 0 || (!data && data_len) || !msg
++        || msg_len < MESSAGE_MIN || msg_len > MESSAGE_MAX)
++        return -1;
+     uint8_t *p = &msg[MESSAGE_HEADER_SIZE];
+     uint8_t *end = &msg[msg_len - MESSAGE_TRAILER_SIZE];
+     while (data_len--) {
+-        if (p >= end)
++        if (parse_int(&p, end, data++))
+             return -1;
+-        *data++ = parse_int(&p);
+     }
+     if (p != end)
+         // Invalid message
+@@ -136,6 +146,10 @@ message_alloc(void)
+ struct queue_message *
+ message_fill(uint8_t *data, int len)
+ {
++    if (len < 0 || len > MESSAGE_MAX || (!data && len)) {
++        errorf("Invalid message length: %d", len);
++        return NULL;
++    }
+     struct queue_message *qm = message_alloc();
+     memcpy(qm->msg, data, len);
+     qm->len = len;
+diff --git a/klippy/chelper/pyhelper.c b/klippy/chelper/pyhelper.c
+index 8d4e4ee8..9997ecf3 100644
+--- a/klippy/chelper/pyhelper.c
++++ b/klippy/chelper/pyhelper.c
+@@ -77,6 +77,12 @@ report_errno(char *where, int rc)
+ char *
+ dump_string(char *outbuf, int outbuf_size, char *inbuf, int inbuf_size)
+ {
++    if (!outbuf || outbuf_size <= 0)
++        return outbuf;
++    if (!inbuf || inbuf_size < 0 || outbuf_size < 5) {
++        outbuf[0] = '\0';
++        return outbuf;
++    }
+     char *outend = &outbuf[outbuf_size-5], *o = outbuf;
+     uint8_t *inend = (void*)&inbuf[inbuf_size], *p = (void*)inbuf;
+     while (p < inend && o < outend) {
+diff --git a/klippy/chelper/serialqueue.c b/klippy/chelper/serialqueue.c
+index c2321720..e43e144d 100644
+--- a/klippy/chelper/serialqueue.c
++++ b/klippy/chelper/serialqueue.c
+@@ -939,7 +939,13 @@ serialqueue_send(struct serialqueue *sq, struct command_queue *cq, uint8_t *msg
+                  , int len, uint64_t min_clock, uint64_t req_clock
+                  , uint64_t notify_id)
+ {
++    if (len < 0 || len > MESSAGE_PAYLOAD_MAX) {
++        errorf("Invalid serial message length: %d", len);
++        return;
++    }
+     struct queue_message *qm = message_fill(msg, len);
++    if (!qm)
++        return;
+     qm->min_clock = min_clock;
+     qm->req_clock = req_clock;
+     qm->notify_id = notify_id;
+@@ -1030,6 +1036,8 @@ serialqueue_get_clock_est(struct serialqueue *sq, struct clock_estimate *ce)
+ void __visible
+ serialqueue_get_stats(struct serialqueue *sq, char *buf, int len)
+ {
++    if (!buf || len <= 0)
++        return;
+     struct serialqueue stats;
+     pthread_mutex_lock(&sq->lock);
+     pthread_mutex_lock(&sq->transmit_requests.lock);

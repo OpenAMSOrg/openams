@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-50 -50 100 100">
+  <title>OpenAMS</title>
+  <path d="M-30.37 29.74C-31.91 26.67 -33.02 23.52 -33.71 20.39C-34.39 17.26 -34.65 14.15 -34.53 11.18C-34.4 8.2 -33.9 5.35 -33.07 2.72C-32.25 0.09 -31.11 -2.32 -29.75 -4.46C-28.38 -6.59 -26.79 -8.45 -25.05 -10" fill="none" stroke="#d9534f" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="-9" cy="-15.59" r="6.5" fill="#d9534f"/>
+  <path d="M29.74 30.37C26.67 31.91 23.52 33.02 20.39 33.71C17.26 34.39 14.15 34.65 11.18 34.53C8.2 34.4 5.35 33.9 2.72 33.07C0.09 32.25 -2.32 31.11 -4.46 29.75C-6.59 28.38 -8.45 26.79 -10 25.05" fill="none" stroke="#e8a01a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="-15.59" cy="9" r="6.5" fill="#e8a01a"/>
+  <path d="M30.37 -29.74C31.91 -26.67 33.02 -23.52 33.71 -20.39C34.39 -17.26 34.65 -14.15 34.53 -11.18C34.4 -8.2 33.9 -5.35 33.07 -2.72C32.25 -0.09 31.11 2.32 29.75 4.46C28.38 6.59 26.79 8.45 25.05 10" fill="none" stroke="#3d8bd4" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="9" cy="15.59" r="6.5" fill="#3d8bd4"/>
+  <path d="M-29.74 -30.37C-26.67 -31.91 -23.52 -33.02 -20.39 -33.71C-17.26 -34.39 -14.15 -34.65 -11.18 -34.53C-8.2 -34.4 -5.35 -33.9 -2.72 -33.07C-0.09 -32.25 2.32 -31.11 4.46 -29.75C6.59 -28.38 8.45 -26.79 10 -25.05" fill="none" stroke="#3f9f5f" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="15.59" cy="-9" r="6.5" fill="#3f9f5f"/>
+</svg>

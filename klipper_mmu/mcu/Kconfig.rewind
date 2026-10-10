@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Included inside the enabled H723 pin menu.
+if KLIPPER_MMU_POWERED_REWIND
+menu "Rewind bridge limits and outputs"
+
+config KLIPPER_MMU_REWIND_CYCLE_US
+    int "Requested PWM period (us, 0=unset)"
+    range 0 1000000
+    default 50 if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 0
+    help
+        One requested period for all rewind channels, including channels that
+        share a timer. For example, 50 us requests 20 kHz. The BoxTurtle AFC
+        Lite preset uses that 50 us example so the factory can validate. It is
+        not a measured bridge recommendation. Select the period from the
+        motor/bridge requirements.
+        The board adapter must validate timer resolution and the actual period.
+
+config KLIPPER_MMU_REWIND_ENABLE_HIGH
+    string "Rewind ENABLE active level by lane (1=high, 0=low)"
+    default "1,1,1,1" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default ""
+    help
+        Comma-separated 0 or 1, exactly one per configured lane, no spaces.
+        Explicit electrical choices are required; no qualified defaults are
+        supplied. These settings do not start or enable a motor.
+
+config KLIPPER_MMU_REWIND_FORWARD_HIGH
+    string "Forward PWM active level by lane (1=high, 0=low)"
+    default "1,1,1,1" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default ""
+    help
+        Electrical active level for the forward input of each motor bridge.
+        Logical zero duty must map to its inactive level.
+
+config KLIPPER_MMU_REWIND_REVERSE_HIGH
+    string "Reverse PWM active level by lane (1=high, 0=low)"
+    default "1,1,1,1" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default ""
+    help
+        Electrical active level for the reverse input of each motor bridge.
+        Logical zero duty must map to its inactive level.
+
+config KLIPPER_MMU_REWIND_BRIDGE_CEILING
+    int "Bridge duty ceiling (permille, 0=unset)"
+    range 0 1000
+    default 600 if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 0
+    help
+        Select a ceiling appropriate for the actual motor and bridge. The
+        operation profile's rewind PWM limit must not exceed this ceiling.
+        Zero leaves driver configuration unavailable; it does not mean full duty.
+
+config KLIPPER_MMU_REWIND_DEADTIME_US
+    int "Reversal off interval (us, 0=unset)"
+    range 0 2147483647
+    default 50 if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 0
+    help
+        Required continuous observed off time before opposite drive. Determine
+        this from your hardware. This software reversal interval does not replace
+        the bridge chip's internal switching interlock or transistor dead time.
+
+config KLIPPER_MMU_REWIND_LATENESS_US
+    int "Maximum direction-command age (us, 0=unset)"
+    range 0 1000
+    default 50 if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 0
+    help
+        Maximum age of the local direction timestamp, including callback work.
+        Choose this from the local control timing requirements. It is not a
+        guaranteed fault response time or an allowance for host round trips.
+
+endmenu
+endif

@@ -1,0 +1,83 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Options for the explicit upstream driver API extension installed by
+# `tools/install.py install-driver-api`. This package owns the declarations so
+# Klipper's src/Kconfig carries only the marked add-on hook. Names, types,
+# dependencies, ranges, defaults and help match the earlier src/Kconfig
+# declarations, so saved configurations and the add-on's selects keep working.
+#
+# Without the add-on hook these symbols are undefined. The patched drivers
+# test them only with `#if`, so that build is the same as with them off.
+# Enabling one here without the installed extension stops the build with a
+# message from this package's Makefile.
+
+config WANT_ADC_LOCAL
+    bool "Firmware-local exclusive sequential ADC pairs"
+    depends on MACH_STM32H723 && WANT_ADC
+    default n
+    help
+        Own one ADC unit exclusively for a firmware-local sequential pin
+        pair. Ordinary gpio_adc_setup clients and the local pair never
+        share that unit, and the winner keeps it for the boot lifetime.
+        Sequential reads run one after another; they are not simultaneous
+        or synchronized ADC conversions.
+config WANT_HARD_PWM_QUERY
+    bool "Expose hardware PWM routes to local MCU modules"
+    depends on MACH_STM32 && WANT_HARD_PWM
+    default n
+config WANT_HARD_PWM_LOCAL_PAIR
+    bool "Support local paired PWM channels"
+    depends on MACH_STM32H723 && WANT_HARD_PWM
+    default n
+config HARD_PWM_LOCAL_MAX_PAIRS
+    int "Maximum local PWM pairs"
+    depends on WANT_HARD_PWM_LOCAL_PAIR
+    range 1 8
+    default 8
+
+# Optional MCU callers share the existing TMC UART driver.
+config WANT_TMCUART_LOCAL
+    bool "Support local MCU TMC UART callers"
+    depends on WANT_TMCUART && (MACH_STM32H723 || MACH_STM32H743 || MACH_STM32H750 || MACH_STM32F207 || MACH_STM32F405 || MACH_STM32F407 || MACH_STM32F429 || MACH_STM32F765 || MACH_STM32G431 || MACH_STM32G474 || MACH_STM32G0B0 || MACH_STM32G0B1)
+    default n
+
+config TMCUART_LOCAL_MAX_CHANNELS
+    int "Maximum local TMC UART channels"
+    depends on WANT_TMCUART_LOCAL
+    range 1 8
+    default 8
+
+config WANT_GPIO_LOCAL
+    bool "Firmware-local exclusive GPIO ownership"
+    depends on MACH_STM32H723 || MACH_STM32H743 || MACH_STM32H750 || MACH_STM32F207 || MACH_STM32F405 || MACH_STM32F407 || MACH_STM32F429 || MACH_STM32F765 || MACH_STM32G431 || MACH_STM32G474 || MACH_STM32G0B0 || MACH_STM32G0B1
+    default n
+    help
+        Optional driver API only, with no automatic MMU setup or
+        actuation. Boot-lifetime claims and normal pin reservations
+        still apply.
+
+# Optional local steppers queue their own generated step segments into
+# Klipper's existing step engine instead of a second edge interrupt.
+config WANT_STEPPER_LOCAL
+    bool "Support local MCU stepper segments"
+    default n
+    help
+        Let MCU-local code (klipper-mmu's rate core) queue its own step
+        segments into Klipper's stepper.c. Each local stepper owns a
+        private pool of move nodes, so its segments never consume the
+        host's shared move queue and host flow control stays true. This
+        is an MCU API only; it is not reachable from host commands.
+
+config STEPPER_LOCAL_COUNT
+    int
+    depends on WANT_STEPPER_LOCAL
+    default KLIPPER_MMU_LANE_COUNT
+    help
+        Local steppers in static storage (one per MMU lane).
+
+config STEPPER_LOCAL_MOVES
+    int
+    depends on WANT_STEPPER_LOCAL
+    range 1 255
+    default 224
+    help
+        Move nodes per local stepper: (2 + 2) x KM_STEP_SEGMENTS_MAX.

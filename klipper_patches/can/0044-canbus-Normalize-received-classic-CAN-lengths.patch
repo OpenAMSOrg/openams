@@ -1,0 +1,66 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 13:48:36 -0700
+Subject: [PATCH] canbus: Normalize received classic CAN lengths
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+CAN receive registers expose the complete four-bit DLC field, so a malformed or non-classical encoding can report values from 9 through 15.  struct canbus_msg reserves only eight payload bytes.  Existing copy sites bounded their memory access, but the raw DLC remained attached to the message and the USB bridge could advertise it in a fixed-size classic gs_usb frame.
+
+Clamp the DLC to eight at both hardware receive entry points before routing or queue publication.  Legal lengths, including an RTR frame’s requested length, remain unchanged.  Every later consumer now sees one canonical relationship between the stored payload and its declared size.
+
+This accepts the same physical classic-CAN traffic and changes no Klipper framing.  It prevents an impossible classic payload length from escaping to current clients or causing individual consumers to interpret the same frame differently.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/generic/canbus.c b/src/generic/canbus.c
+index 1be0ead5..9df1334a 100644
+--- a/src/generic/canbus.c
++++ b/src/generic/canbus.c
+@@ -32,5 +32,6 @@ canbus_notify_tx(void)
+ void
+ canbus_process_data(struct canbus_msg *msg)
+ {
++    canbus_normalize_msg(msg);
+     canserial_process_data(msg);
+ }
+diff --git a/src/generic/canbus.h b/src/generic/canbus.h
+index c280bf68..584ae72c 100644
+--- a/src/generic/canbus.h
++++ b/src/generic/canbus.h
+@@ -24,6 +24,22 @@ struct canbus_msg {
+ 
+ #define CANMSG_DATA_LEN(msg) ((msg)->dlc > 8 ? 8 : (msg)->dlc)
+ 
++static inline void
++canbus_normalize_msg(struct canbus_msg *msg)
++{
++    /*
++     * Classical CAN controllers expose a four-bit DLC field, including raw
++     * encodings 9 through 15, even though a classical frame never carries more
++     * than eight data bytes.  Klipper deliberately uses an eight-byte payload
++     * and the gs_usb classic-frame ABI requires its published can_dlc to be in
++     * the range 0..8.  Normalize once at each hardware receive boundary so the
++     * bounded storage length and the length advertised to every later layer
++     * can not disagree.  Keep a legal RTR DLC because it describes the amount
++     * of data requested even though no payload bytes accompany that frame.
++     */
++    msg->dlc = CANMSG_DATA_LEN(msg);
++}
++
+ struct canbus_status {
+     uint32_t rx_error, tx_error, tx_retries;
+     uint32_t bus_state;
+diff --git a/src/generic/usb_canbus.c b/src/generic/usb_canbus.c
+index 12794678..015c0c66 100644
+--- a/src/generic/usb_canbus.c
++++ b/src/generic/usb_canbus.c
+@@ -467,6 +467,7 @@ canbus_notify_tx(void)
+ void
+ canbus_process_data(struct canbus_msg *msg)
+ {
++    canbus_normalize_msg(msg);
+     // Add to admin command queue
+     uint32_t pushp = UsbCan.canhw_push_pos;
+     uint32_t pullp = readl(&UsbCan.canhw_pull_pos);

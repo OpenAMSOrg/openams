@@ -1,0 +1,30 @@
+{
+ "result": {
+  "system_info": {
+   "available_services": [
+    "klipper-mcu",
+    "moonraker",
+    "crowsnest",
+    "klipper"
+   ],
+   "service_state": {
+    "crowsnest": {
+     "active_state": "active",
+     "sub_state": "running"
+    },
+    "klipper": {
+     "active_state": "active",
+     "sub_state": "running"
+    },
+    "klipper-mcu": {
+     "active_state": "active",
+     "sub_state": "running"
+    },
+    "moonraker": {
+     "active_state": "active",
+     "sub_state": "running"
+    }
+   }
+  }
+ }
+}

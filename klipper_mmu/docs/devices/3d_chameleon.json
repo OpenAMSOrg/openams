@@ -1,0 +1,445 @@
+{
+  "schema": 1,
+  "source": {
+    "happy_hare": "c54c736",
+    "profile": "3d_chameleon",
+    "syms": {
+      "MMU_TYPE_3D_CHAMELEON_1_0": true,
+      "BOARD_TYPE_MMB_2_0": true,
+      "MMU_HAS_SENSOR_SHARED_EXIT": true
+    },
+    "layout": {
+      "mmu_pre_gate": -150.0,
+      "mmu_entry": -150.0,
+      "mmu_gate": 0.0,
+      "mmu_exit": 0.0,
+      "mmu_nfc": -80.0,
+      "mmu_shared_exit": 10.0,
+      "mmu_encoder": 20.0,
+      "extruder_entry": 700.0,
+      "extruder": 700.0,
+      "toolhead": 740.0,
+      "filament_compression": 700.0
+    }
+  },
+  "device": {
+    "vendor": "3DChameleon",
+    "gates": 4,
+    "selector_type": "RotarySelector",
+    "unit_profile": {
+      "variable_bowden_lengths": false,
+      "variable_rotation_distances": true,
+      "require_bowden_move": true,
+      "filament_always_gripped": false
+    }
+  },
+  "hardware": {
+    "mmu_toolhead default": {
+      "extruder_switch_pin": "",
+      "toolhead_switch_pin": "",
+      "register_toolhead_sensors": "1",
+      "toolhead_extruder_to_nozzle": "72",
+      "toolhead_sensor_to_nozzle": "62",
+      "toolhead_entry_to_extruder": "8",
+      "toolhead_residual_filament": "2",
+      "toolhead_ooze_reduction": "0"
+    },
+    "mmu_unit unit0": {
+      "vendor": "3DChameleon",
+      "version": "1.0",
+      "num_gates": "4",
+      "display_name": "3DChameleon-0",
+      "toolhead": "default",
+      "extruder_name": "extruder",
+      "selector_stepper": "unit0_selector",
+      "gear_stepper": "unit0_gear",
+      "selector_type": "RotarySelector",
+      "variable_bowden_lengths": "0",
+      "variable_rotation_distances": "1",
+      "require_bowden_move": "1",
+      "filament_always_gripped": "0",
+      "show_bypass": "0"
+    },
+    "mmu_stepper unit0_gear": {
+      "step_pin": "unit0:PD4",
+      "dir_pin": "unit0:PD3",
+      "enable_pin": "!unit0:PD5",
+      "rotation_distance": "22.7316868",
+      "gear_ratio": "1:1",
+      "microsteps": "16",
+      "full_steps_per_rotation": "200",
+      "extra_endstops": "",
+      "mmu_gear_touch=tmc2209_unit0_gear": "virtual_endstop"
+    },
+    "mmu_sensors unit0": {
+      "mmu_shared_exit_switch_pin": "^unit0:PA15",
+      "register_mmu_sensors": "1"
+    }
+  },
+  "parameters": {
+    "log_level": "1",
+    "log_file_level": "2",
+    "log_statistics": "1",
+    "log_visual": "1",
+    "log_startup_status": "1",
+    "log_m117_messages": "1",
+    "suppress_klipper_warnings": "0",
+    "extruder_load_speed": "16",
+    "extruder_unload_speed": "16",
+    "extruder_sync_load_speed": "18",
+    "extruder_sync_unload_speed": "18",
+    "extruder_homing_speed": "16",
+    "extruder_accel": "1500",
+    "macro_toolhead_max_accel": "0",
+    "macro_toolhead_min_cruise_ratio": "0.5",
+    "force_form_tip_standalone": "1",
+    "form_tip_macro": "_MMU_FORM_TIP",
+    "extruder_form_tip_current": "100",
+    "slicer_tip_park_pos": "0",
+    "force_purge_standalone": "1",
+    "purge_macro": "_MMU_PURGE",
+    "extruder_purge_current": "100",
+    "endless_spool_enabled": "0",
+    "endless_spool_on_load": "0",
+    "endless_spool_eject_gate": "-1",
+    "endless_spool_groups": "",
+    "spoolman_support": "off",
+    "spoolman_pending_id_timeout": "20",
+    "spoolman_led_segment": "gate_status",
+    "spoolman_nfc_auto_create": "0",
+    "t_macro_color": "slicer",
+    "console_stat_columns": "unload, load, post_load, total",
+    "console_stat_rows": "total, total_average, job, job_average, last",
+    "console_gate_stat": "emoticon",
+    "console_always_output_full": "1",
+    "console_show_colored_text": "1",
+    "console_show_filament_color": "1",
+    "timeout_pause": "72000",
+    "disable_heater": "600",
+    "default_extruder_temp": "200",
+    "extruder_temp_variance": "2",
+    "startup_reset_ttg_map": "0",
+    "show_error_dialog": "1",
+    "strict_filament_recovery": "0",
+    "filament_recovery_on_pause": "1",
+    "retry_tool_change_on_error": "0",
+    "bypass_autoload": "0",
+    "print_start_detection": "1",
+    "gcode_load_sequence": "0",
+    "gcode_unload_sequence": "0",
+    "drying_data": "{",
+    "'pla'": "(45, 300),",
+    "'pla+'": "(55, 300),",
+    "'petg'": "(60, 300),",
+    "'tpu'": "(55, 300),",
+    "'abs'": "(70, 300),",
+    "'abs+'": "(75, 300),",
+    "'asa'": "(65, 300),",
+    "'nylon'": "(75, 600),",
+    "'pc'": "(75, 600),",
+    "'pva'": "(75, 600),",
+    "'hips'": "(75, 600)",
+    "update_trsync": "0",
+    "update_bit_max_time": "1",
+    "update_aht10_commands": "0",
+    "pause_macro": "PAUSE",
+    "action_changed_macro": "_MMU_ACTION_CHANGED",
+    "print_state_changed_macro": "_MMU_PRINT_STATE_CHANGED",
+    "mmu_event_macro": "_MMU_EVENT",
+    "post_preload_macro": "_MMU_POST_PRELOAD",
+    "pre_unload_macro": "_MMU_PRE_UNLOAD",
+    "post_form_tip_macro": "_MMU_POST_FORM_TIP",
+    "post_unload_macro": "_MMU_POST_UNLOAD",
+    "pre_load_macro": "_MMU_PRE_LOAD",
+    "post_load_macro": "_MMU_POST_LOAD",
+    "unload_sequence_macro": "_MMU_UNLOAD_SEQUENCE",
+    "load_sequence_macro": "_MMU_LOAD_SEQUENCE",
+    "selector_move_speed": "200",
+    "selector_homing_speed": "60",
+    "selector_accel": "1200",
+    "selector_gate_directions": "1, 1, 0, 0",
+    "selector_release_gates": "2, 3, 0, 1",
+    "gear_load_speed": "100",
+    "gear_load_accel": "100",
+    "gear_unload_speed": "80",
+    "gear_unload_accel": "100",
+    "gear_homing_speed": "80",
+    "virtual_sensor_homing_speed": "15",
+    "gear_short_move_speed": "80",
+    "gear_short_move_accel": "400",
+    "gear_short_move_threshold": "70",
+    "gate_homing_endstop": "mmu_shared_exit",
+    "gate_homing_max": "500",
+    "gate_parking_distance": "-250",
+    "gate_preload_endstop": "",
+    "gate_preload_homing_max": "500",
+    "gate_preload_parking_distance": "-250",
+    "gate_preload_attempts": "2",
+    "gate_final_eject_distance": "20",
+    "bowden_homing_max": "2000",
+    "bowden_load_homing_buffer": "20",
+    "bowden_unload_homing_buffer": "40",
+    "extruder_homing_endstop": "none",
+    "extruder_homing_max": "100",
+    "extruder_collision_homing_current": "30",
+    "toolhead_unload_safety_margin": "10",
+    "toolhead_post_load_tighten": "60",
+    "toolhead_post_load_tension_adjust": "1",
+    "toolhead_entry_tension_test": "1",
+    "sync_to_extruder": "0",
+    "sync_gear_current": "100",
+    "sync_form_tip": "0",
+    "sync_purge": "0",
+    "autocal_bowden_length": "0",
+    "autotune_bowden_length": "0",
+    "skip_cal_rotation_distance": "1",
+    "autotune_rotation_distance": "0",
+    "startup_home_selector": "0"
+  },
+  "steps_per_mm": 140.77265924673924,
+  "operations": {
+    "preload": {
+      "moves": [
+        {
+          "label": "Initial homing to unit0:mmu_shared_exit sensor",
+          "dist": 500.0,
+          "motor": "gear",
+          "homing": 1,
+          "endstop": "unit0:mmu_shared_exit",
+          "endstop_pos": 10.0,
+          "speed": 80.0,
+          "accel": 100.0,
+          "actual": 50.0,
+          "homed": true,
+          "tip_before": -40.0,
+          "tip_after": 10.0
+        },
+        {
+          "label": "Final parking",
+          "dist": -250.0,
+          "motor": "gear",
+          "homing": 0,
+          "endstop": null,
+          "endstop_pos": null,
+          "speed": 80.0,
+          "accel": 100.0,
+          "actual": -250.0,
+          "homed": false,
+          "tip_before": 10.0,
+          "tip_after": -240.0
+        }
+      ],
+      "end": {
+        "tip": -240.0,
+        "sensor": "unit0:mmu_shared_exit",
+        "offset": -250.0,
+        "filament_pos": 0,
+        "gate_status": 1
+      },
+      "errors": []
+    },
+    "select": {
+      "moves": [],
+      "end": {
+        "tip": -240.0,
+        "sensor": null,
+        "offset": null,
+        "filament_pos": 0,
+        "gate_status": 1
+      },
+      "errors": []
+    },
+    "load": {
+      "moves": [
+        {
+          "label": "Initial homing to unit0:mmu_shared_exit sensor",
+          "dist": 500.0,
+          "motor": "gear",
+          "homing": 1,
+          "endstop": "unit0:mmu_shared_exit",
+          "endstop_pos": 10.0,
+          "speed": 80.0,
+          "accel": 100.0,
+          "actual": 250.0,
+          "homed": true,
+          "tip_before": -240.0,
+          "tip_after": 10.0
+        },
+        {
+          "label": "Fast loading move through bowden",
+          "dist": 700.0,
+          "motor": "gear",
+          "homing": 0,
+          "endstop": null,
+          "endstop_pos": null,
+          "speed": 100.0,
+          "accel": 100.0,
+          "actual": 700.0,
+          "homed": false,
+          "tip_before": 10.0,
+          "tip_after": 710.0
+        },
+        {
+          "label": "Slow move to extruder entrance",
+          "dist": 0.0,
+          "motor": "gear",
+          "homing": 0,
+          "endstop": null,
+          "endstop_pos": null,
+          "speed": 80.0,
+          "accel": 400.0,
+          "actual": 0.0,
+          "homed": false,
+          "tip_before": 710.0,
+          "tip_after": 710.0
+        },
+        {
+          "label": "Loading filament to nozzle",
+          "dist": 68.0,
+          "motor": "gear+extruder",
+          "homing": 0,
+          "endstop": null,
+          "endstop_pos": null,
+          "speed": 18.0,
+          "accel": 400.0,
+          "actual": 68.0,
+          "homed": false,
+          "tip_before": 710.0,
+          "tip_after": 778.0
+        }
+      ],
+      "end": {
+        "tip": 778.0,
+        "sensor": "unit0:mmu_shared_exit",
+        "offset": 768.0,
+        "filament_pos": 10,
+        "gate_status": 1
+      },
+      "errors": []
+    },
+    "unload": {
+      "moves": [
+        {
+          "label": "Unloading extruder",
+          "dist": -33.01,
+          "motor": "extruder",
+          "homing": 0,
+          "endstop": null,
+          "endstop_pos": null,
+          "speed": 16.0,
+          "accel": 1500.0,
+          "actual": -33.01,
+          "homed": false,
+          "tip_before": 733.0,
+          "tip_after": 699.99
+        },
+        {
+          "label": "Fast unloading move through bowden",
+          "dist": -660.0,
+          "motor": "gear",
+          "homing": 0,
+          "endstop": null,
+          "endstop_pos": null,
+          "speed": 80.0,
+          "accel": 100.0,
+          "actual": -660.0,
+          "homed": false,
+          "tip_before": 699.99,
+          "tip_after": 39.99000000000001
+        },
+        {
+          "label": "Reverse homing off unit0:mmu_shared_exit sensor",
+          "dist": -540.0,
+          "motor": "gear",
+          "homing": -1,
+          "endstop": "unit0:mmu_shared_exit",
+          "endstop_pos": 10.0,
+          "speed": 80.0,
+          "accel": 100.0,
+          "actual": -29.990001000000007,
+          "homed": true,
+          "tip_before": 39.99000000000001,
+          "tip_after": 9.999998999999999
+        },
+        {
+          "label": "Final parking",
+          "dist": -250.0,
+          "motor": "gear",
+          "homing": 0,
+          "endstop": null,
+          "endstop_pos": null,
+          "speed": 80.0,
+          "accel": 100.0,
+          "actual": -250.0,
+          "homed": false,
+          "tip_before": 9.999998999999999,
+          "tip_after": -240.000001
+        }
+      ],
+      "end": {
+        "tip": -240.000001,
+        "sensor": "unit0:mmu_shared_exit",
+        "offset": -250.000001,
+        "filament_pos": 0,
+        "gate_status": 2
+      },
+      "errors": []
+    },
+    "eject": {
+      "moves": [
+        {
+          "label": "Ejecting filament out of gate",
+          "dist": -20.0,
+          "motor": "gear",
+          "homing": 0,
+          "endstop": null,
+          "endstop_pos": null,
+          "speed": 80.0,
+          "accel": 400.0,
+          "actual": -20.0,
+          "homed": false,
+          "tip_before": -240.000001,
+          "tip_after": -260.0000010000001
+        }
+      ],
+      "end": {
+        "tip": -260.0000010000001,
+        "sensor": null,
+        "offset": null,
+        "filament_pos": 0,
+        "gate_status": 0
+      },
+      "errors": []
+    }
+  },
+  "decisions": [
+    {
+      "concept": "selector",
+      "note": "RotarySelector: one gear motor drives all four gates, reversed on two of them (`selector_gate_directions: 1, 1, 0, 0`), and 'release' is expressed as driving the carriage to the opposing gate's offset (`selector_release_gates: 2, 3, 0, 1`) -- the only profile where selecting a gate is not a bijection with a carriage position (Happy Hare's `test/hh/profiles.py:360-366`). Declared as `selector_stepper: unit0_selector`; no servo, and `filament_always_gripped: 0`. klipper-mmu drives it as a ROTARY selector (`KLIPPER_MMU_SELECTOR_KIND_ROTARY`) with the same per-gate gear directions and release gates (`KLIPPER_MMU_SELECTOR_GATE_DIRECTIONS`, `KLIPPER_MMU_SELECTOR_RELEASE_GATES`): the selector homes to its endstop before the first selection and after a fault, and starts from Happy Hare's quick-calibration positions `4.0,29.0,54.0,79.0` mm until `KLIPPER_MMU_CALIBRATE_SELECTOR` measures the real ones. Software candidate: it builds and passes the simulators, but has not run on real hardware."
+    },
+    {
+      "concept": "encoder",
+      "note": "No encoder is declared: `[mmu_unit unit0]` names no `encoder` and the trace has no `[mmu_encoder]` section, so klipper-mmu's optional encoder input (`KLIPPER_MMU_ENCODER`) stays off for this device."
+    },
+    {
+      "concept": "arrival",
+      "note": "LOAD's only homing move is the gear homing to `unit0:mmu_shared_exit` (`gate_homing_endstop: mmu_shared_exit`, `extruder_homing_endstop: none`); the last move is gear+extruder to the nozzle with no endstop, so toolhead arrival is dead-reckoned, not sensed. Arrival sensing is therefore the shared-exit switch only."
+    },
+    {
+      "concept": "buffer_type",
+      "note": "No `[mmu_buffer unit0]` section in the trace, so no switched or analog buffer pins: buffer following is not modelled by this dossier."
+    },
+    {
+      "concept": "preload_park",
+      "note": "PRELOAD reverse-homes onto `unit0:mmu_shared_exit`, then parks `operations.preload.end.tip = -240` = `gate_preload_parking_distance: -250` mm behind the switch."
+    },
+    {
+      "concept": "unload_park",
+      "note": "UNLOAD reverse-homes onto `unit0:mmu_shared_exit` and parks `operations.unload.end.tip = -240` = 250 mm behind it (`gate_parking_distance: -250`)."
+    },
+    {
+      "concept": "eject_extra",
+      "note": "EJECT retracts `gate_final_eject_distance: 20` mm from the -240 park to tip -260, with no endstop (homing=false)."
+    }
+  ]
+}

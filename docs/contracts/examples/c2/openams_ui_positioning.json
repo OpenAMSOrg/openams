@@ -1,0 +1,83 @@
+{
+  "v": 1,
+  "unit": "oams1",
+  "idx": 0,
+  "family": "ams1",
+  "serial": "000000000000000000000001",
+  "online": true,
+  "ready": true,
+  "cal": "c",
+  "lane": {
+    "id": "fps",
+    "ext": "extruder",
+    "op": "UNLOADED",
+    "group": null,
+    "bay": null,
+    "stage": null,
+    "runout": "idle",
+    "from": null,
+    "to": null,
+    "ms": false
+  },
+  "bays": [
+    {
+      "id": 0,
+      "s": "r",
+      "cal": "c",
+      "a": "ad",
+      "sp": {
+        "id": 12,
+        "src": "t"
+      }
+    },
+    {
+      "id": 1,
+      "s": "r",
+      "cal": "c",
+      "a": "ad",
+      "sp": {
+        "id": 15,
+        "src": "m"
+      }
+    },
+    {
+      "id": 2,
+      "s": "p",
+      "cal": "c",
+      "a": "a",
+      "sp": null
+    },
+    {
+      "id": 3,
+      "s": "e",
+      "cal": "c",
+      "a": "",
+      "sp": null
+    }
+  ],
+  "groups": [
+    {
+      "n": "T0",
+      "b": [
+        "oams1-0",
+        "oams1-1"
+      ],
+      "s": "rr"
+    },
+    {
+      "n": "T1",
+      "b": [
+        "oams1-2"
+      ],
+      "s": "p"
+    }
+  ],
+  "env": {
+    "t": 24,
+    "rh": 31
+  },
+  "dryer": null,
+  "fault": null,
+  "nf": 0,
+  "act": []
+}

@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 12:18:13 -0700
+Subject: [PATCH] can2040: Use unsigned CAN identifier flags
+
+The can2040 identifier enum formed its extended-frame flag with the signed expression 1 << 31.  That shift has no result representable as an int and is undefined by C, so optimizers are not required to retain the intended high-bit mask.
+
+Replace the identifier enum with unsigned macros.  This both matches the uint32_t message-id storage and avoids relying on enum values outside the range traditionally representable by int.  The resulting wire and API values remain unchanged.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/lib/can2040/can2040.h b/lib/can2040/can2040.h
+index 7dbee116..f6db59a1 100644
+--- a/lib/can2040/can2040.h
++++ b/lib/can2040/can2040.h
+@@ -12,10 +12,15 @@ struct can2040_msg {
+     };
+ };
+ 
+-enum {
+-    CAN2040_ID_RTR = 1<<30,
+-    CAN2040_ID_EFF = 1<<31,
+-};
++/*
++ * The identifier flags occupy the high bits of a uint32_t message id.  These
++ * must be unsigned constants: a signed `1 << 31` has no representable int
++ * result and is undefined by C, so it is not a reliable extended-frame mask.
++ * Use macros instead of enum members because the C enum value range is also
++ * traditionally limited to values representable as int.
++ */
++#define CAN2040_ID_RTR (1u<<30)
++#define CAN2040_ID_EFF (1u<<31)
+ 
+ enum {
+     CAN2040_NOTIFY_RX = 1<<20,

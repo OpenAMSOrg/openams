@@ -1,0 +1,118 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 13:47:47 -0700
+Subject: [PATCH] canbus: Publish interrupt queue ownership explicitly
+
+The canserial admin ring and USB bridge hardware-receive ring exchange slots between an interrupt producer and a task consumer.  Their data copies and index updates used ordinary C accesses, leaving correctness dependent on incidental compiler barriers in later wakeup calls.  An optimizer was not explicitly constrained from exposing a new producer index before the slot contents or returned consumer capacity before the final slot read.
+
+Use barriered readl() and writel() accesses at each cross-context ownership boundary.  The producer publishes push_pos only after copying a complete frame, and the consumer publishes pull_pos only after it has finished using that slot.  Producer-private and consumer-private index reads remain local.
+
+Document the single-producer/single-consumer invariant which makes these monotonic, rollover-safe rings lock-free.  No interrupt masking, queue depth, frame ordering, or wire representation changes are introduced.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/generic/canserial.c b/src/generic/canserial.c
+index fa45e2c2..9565cb75 100644
+--- a/src/generic/canserial.c
++++ b/src/generic/canserial.c
+@@ -59,6 +59,7 @@ static struct canbus_data {
+     // Rx data
+     struct task_wake rx_wake;
+     uint8_t receive_pos;
++    // Single-producer IRQ ring; publish indexes only after slot data is stable
+     uint32_t admin_pull_pos, admin_push_pos;
+ 
+     // Transfer buffers
+@@ -369,15 +370,22 @@ canserial_process_data(struct canbus_msg *msg)
+          * rollover, which is safe because that distance is bounded by this
+          * eight-entry queue.
+          */
+-        if (pushp - CanData.admin_pull_pos
+-            >= ARRAY_SIZE(CanData.admin_queue))
++        uint32_t pullp = readl(&CanData.admin_pull_pos);
++        if (pushp - pullp >= ARRAY_SIZE(CanData.admin_queue))
+             // No space - drop message
+             return;
+         uint32_t pos = pushp % ARRAY_SIZE(CanData.admin_queue);
+         memcpy(&CanData.admin_queue[pos], msg, sizeof(*msg));
+         if (is_query)
+             writeb(&CanData.query_queued, 1);
+-        CanData.admin_push_pos = pushp + 1;
++        /*
++         * The task treats push_pos as proof that the complete queue slot is
++         * readable.  Use the I/O accessor as a compiler release barrier so the
++         * structure copy can not move after that publication.  This is an SPSC
++         * ring: only this receive interrupt advances push_pos, while only the
++         * task advances pull_pos, so no read-modify-write lock is required.
++         */
++        writel(&CanData.admin_push_pos, pushp + 1);
+         canserial_notify_rx();
+     }
+ }
+@@ -430,7 +438,10 @@ canserial_rx_task(void)
+             if (msg->dlc && msg->data[0] == CANBUS_CMD_QUERY_UNASSIGNED)
+                 writeb(&CanData.query_queued, 0);
+         }
+-        CanData.admin_pull_pos = pullp + 1;
++        /*
++         * Return this slot only after task-side processing no longer uses it.
++         */
++        writel(&CanData.admin_pull_pos, pullp + 1);
+     }
+ 
+     /*
+diff --git a/src/generic/usb_canbus.c b/src/generic/usb_canbus.c
+index 034945d0..12794678 100644
+--- a/src/generic/usb_canbus.c
++++ b/src/generic/usb_canbus.c
+@@ -137,6 +137,7 @@ static struct usbcan_data {
+     struct gs_host_frame host_frames[16];
+ 
+     // Data from physical canbus interface
++    // Single-producer IRQ ring; indexes publish ownership across contexts
+     uint32_t canhw_pull_pos, canhw_push_pos;
+     struct canbus_msg canhw_queue[32];
+ } UsbCan = {
+@@ -198,7 +199,14 @@ drain_canhw_queue(void)
+             UsbCan.usb_send_busy = 1;
+             return;
+         }
+-        UsbCan.canhw_pull_pos = pull_pos = pull_pos + 1;
++        /*
++         * The CAN receive interrupt may reuse this slot after pull_pos changes.
++         * Publish returned capacity only after send_frame() has finished every
++         * read from the entry; the accessor supplies the compiler barrier for
++         * that task-to-interrupt ownership transfer.
++         */
++        pull_pos++;
++        writel(&UsbCan.canhw_pull_pos, pull_pos);
+     }
+ }
+ 
+@@ -461,7 +469,8 @@ canbus_process_data(struct canbus_msg *msg)
+ {
+     // Add to admin command queue
+     uint32_t pushp = UsbCan.canhw_push_pos;
+-    if (pushp - UsbCan.canhw_pull_pos >= ARRAY_SIZE(UsbCan.canhw_queue))
++    uint32_t pullp = readl(&UsbCan.canhw_pull_pos);
++    if (pushp - pullp >= ARRAY_SIZE(UsbCan.canhw_queue))
+         // No space - drop message
+         return;
+     if (UsbCan.assigned_id && (msg->id & ~1) == UsbCan.assigned_id)
+@@ -469,7 +478,15 @@ canbus_process_data(struct canbus_msg *msg)
+         return;
+     uint32_t pos = pushp % ARRAY_SIZE(UsbCan.canhw_queue);
+     memcpy(&UsbCan.canhw_queue[pos], msg, sizeof(*msg));
+-    UsbCan.canhw_push_pos = pushp + 1;
++    /*
++     * push_pos is the interrupt's publication record: once the task observes
++     * it, every byte in this slot must already be visible.  A barriered store
++     * records that ordering explicitly instead of relying on the following
++     * wake function to prevent compiler reordering.  This ring has one IRQ
++     * producer and one task consumer, so independent monotonic indexes retain
++     * lock-free operation and rollover-safe unsigned distance checks.
++     */
++    writel(&UsbCan.canhw_push_pos, pushp + 1);
+     wake_usbcan_task();
+ }
+ 

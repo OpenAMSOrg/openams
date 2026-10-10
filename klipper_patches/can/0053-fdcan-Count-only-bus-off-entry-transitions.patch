@@ -1,0 +1,140 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Fri, 4 Sep 2026 14:20:19 -0700
+Subject: [PATCH] fdcan: Count only bus-off entry transitions
+
+M_CAN sets IR.BO whenever PSR.BO changes, including when bus-off recovery
+completes.  Incrementing the diagnostic counter for every BO interrupt
+therefore reports two episodes for each recovered fault.
+
+Read PSR and count bus-off only when its BO state is set.  Handle BO and
+protocol-error interrupts together so the state check does not consume
+LEC before error accounting reads it.  Clearing INIT on entry still
+starts the controller's normal ISO CAN recovery sequence.
+
+Apply the same handling to STM32, ATSAM, and ATSAMD.  Native register
+harnesses cover entry, recovery, repeated faults, counter rollover, and
+simultaneous protocol errors, and reproduce the double count in the
+previous implementation.  Firmware builds pass for STM32H723, G0B1,
+G474, SAME70, SAME51, and SAMC21.  No wire format changes are made.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+(cherry picked from commit 8b540a8e3a98faaf3fea7ff0c741eea9b79dfcdb)
+
+diff --git a/src/atsam/fdcan.c b/src/atsam/fdcan.c
+index d5370dd4..2282eacd 100644
+--- a/src/atsam/fdcan.c
++++ b/src/atsam/fdcan.c
+@@ -294,25 +294,16 @@ CAN_IRQHandler(void)
+             canbus_notify_tx();
+         }
+     }
+-    if (ir & MCAN_IR_BO) {
+-        /*
+-         * The M_CAN core enters software-initialization mode by setting INIT
+-         * when its transmit error counter reaches bus-off.  In that mode it is
+-         * completely disconnected from the bus and will remain so even after
+-         * the wiring fault disappears; there is no automatic bus-off-management
+-         * option.  Clear INIT after acknowledging the event to start the ISO
+-         * CAN recovery sequence.  The controller still waits for the required
+-         * 129 occurrences of 11 recessive bits, so this does not bypass or
+-         * shorten the protocol's recovery safety interval.
+-         */
+-        CANx->MCAN_IR = MCAN_IR_BO;
+-        CAN_Errors.bus_off++;
+-        CANx->MCAN_CCCR &= ~MCAN_CCCR_INIT;
+-    }
+-    if (ir & (MCAN_IR_PED | MCAN_IR_PEA)) {
+-        // Bus error
++    if (ir & (MCAN_IR_BO | MCAN_IR_PED | MCAN_IR_PEA)) {
++        // PSR reads clear LEC; share one snapshot for state and error handling.
+         uint32_t psr = CANx->MCAN_PSR;
+-        CANx->MCAN_IR = MCAN_IR_PED | MCAN_IR_PEA;
++        CANx->MCAN_IR = ir & (MCAN_IR_BO | MCAN_IR_PED | MCAN_IR_PEA);
++        if ((ir & MCAN_IR_BO) && (psr & MCAN_PSR_BO)) {
++            // BO interrupts on entry and recovery.  Count only entry, and
++            // clear INIT to start the controller's ISO CAN recovery sequence.
++            CAN_Errors.bus_off++;
++            CANx->MCAN_CCCR &= ~MCAN_CCCR_INIT;
++        }
+         uint32_t lec = psr & MCAN_PSR_LEC_Msk;
+         if (lec && lec != 7) {
+             if (lec >= 3 && lec <= 5)
+diff --git a/src/atsamd/fdcan.c b/src/atsamd/fdcan.c
+index 0079d51e..71a1a0dd 100644
+--- a/src/atsamd/fdcan.c
++++ b/src/atsamd/fdcan.c
+@@ -310,25 +310,16 @@ CAN_IRQHandler(void)
+             canbus_notify_tx();
+         }
+     }
+-    if (ir & CAN_IR_BO) {
+-        /*
+-         * The M_CAN core enters software-initialization mode by setting INIT
+-         * when its transmit error counter reaches bus-off.  In that mode it is
+-         * completely disconnected from the bus and will remain so even after
+-         * the wiring fault disappears; there is no automatic bus-off-management
+-         * option.  Clear INIT after acknowledging the event to start the ISO
+-         * CAN recovery sequence.  The controller still waits for the required
+-         * 129 occurrences of 11 recessive bits, so this does not bypass or
+-         * shorten the protocol's recovery safety interval.
+-         */
+-        CANx->IR.reg = CAN_IR_BO;
+-        CAN_Errors.bus_off++;
+-        CANx->CCCR.reg &= ~CAN_CCCR_INIT;
+-    }
+-    if (ir & (CAN_IR_PED | CAN_IR_PEA)) {
+-        // Bus error
++    if (ir & (CAN_IR_BO | CAN_IR_PED | CAN_IR_PEA)) {
++        // PSR reads clear LEC; share one snapshot for state and error handling.
+         uint32_t psr = CANx->PSR.reg;
+-        CANx->IR.reg = CAN_IR_PED | CAN_IR_PEA;
++        CANx->IR.reg = ir & (CAN_IR_BO | CAN_IR_PED | CAN_IR_PEA);
++        if ((ir & CAN_IR_BO) && (psr & CAN_PSR_BO)) {
++            // BO interrupts on entry and recovery.  Count only entry, and
++            // clear INIT to start the controller's ISO CAN recovery sequence.
++            CAN_Errors.bus_off++;
++            CANx->CCCR.reg &= ~CAN_CCCR_INIT;
++        }
+         uint32_t lec = psr & CAN_PSR_LEC_Msk;
+         if (lec && lec != 7) {
+             if (lec >= 3 && lec <= 5)
+diff --git a/src/stm32/fdcan.c b/src/stm32/fdcan.c
+index 86de9d87..eeeb0c03 100644
+--- a/src/stm32/fdcan.c
++++ b/src/stm32/fdcan.c
+@@ -350,25 +350,16 @@ CAN_IRQHandler(void)
+             canbus_notify_tx();
+         }
+     }
+-    if (ir & FDCAN_IR_BO) {
+-        /*
+-         * The M_CAN core enters software-initialization mode by setting INIT
+-         * when its transmit error counter reaches bus-off.  In that mode it is
+-         * completely disconnected from the bus and will remain so even after
+-         * the wiring fault disappears; unlike bxCAN, there is no automatic
+-         * bus-off-management option.  Clear INIT after acknowledging the event
+-         * to start the ISO CAN recovery sequence.  The controller still waits
+-         * for the required 129 occurrences of 11 recessive bits, so this does
+-         * not bypass or shorten the protocol's recovery safety interval.
+-         */
+-        SOC_CAN->IR = FDCAN_IR_BO;
+-        CAN_Errors.bus_off++;
+-        SOC_CAN->CCCR &= ~FDCAN_CCCR_INIT;
+-    }
+-    if (ir & (FDCAN_IR_PED | FDCAN_IR_PEA)) {
+-        // Bus error
++    if (ir & (FDCAN_IR_BO | FDCAN_IR_PED | FDCAN_IR_PEA)) {
++        // PSR reads clear LEC; share one snapshot for state and error handling.
+         uint32_t psr = SOC_CAN->PSR;
+-        SOC_CAN->IR = FDCAN_IR_PED | FDCAN_IR_PEA;
++        SOC_CAN->IR = ir & (FDCAN_IR_BO | FDCAN_IR_PED | FDCAN_IR_PEA);
++        if ((ir & FDCAN_IR_BO) && (psr & FDCAN_PSR_BO)) {
++            // BO interrupts on entry and recovery.  Count only entry, and
++            // clear INIT to start the controller's ISO CAN recovery sequence.
++            CAN_Errors.bus_off++;
++            SOC_CAN->CCCR &= ~FDCAN_CCCR_INIT;
++        }
+         uint32_t lec = psr & FDCAN_PSR_LEC_Msk;
+         if (lec && lec != 7) {
+             if (lec >= 3 && lec <= 5)

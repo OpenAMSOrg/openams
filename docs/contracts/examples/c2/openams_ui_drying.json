@@ -1,0 +1,99 @@
+{
+  "v": 1,
+  "unit": "ams2",
+  "idx": 0,
+  "family": "ams2",
+  "serial": "000000000000000000000003",
+  "online": true,
+  "ready": true,
+  "cal": "c",
+  "lane": {
+    "id": "fps",
+    "ext": "extruder",
+    "op": "UNLOADED",
+    "group": null,
+    "bay": null,
+    "stage": null,
+    "runout": "idle",
+    "from": null,
+    "to": null,
+    "ms": true
+  },
+  "bays": [
+    {
+      "id": 0,
+      "s": "r",
+      "cal": "c",
+      "a": "lad",
+      "sp": {
+        "id": 50,
+        "src": "m"
+      }
+    },
+    {
+      "id": 1,
+      "s": "r",
+      "cal": "c",
+      "a": "lad",
+      "sp": {
+        "id": 40,
+        "src": "m"
+      }
+    },
+    {
+      "id": 2,
+      "s": "r",
+      "cal": "c",
+      "a": "lad",
+      "sp": {
+        "id": 41,
+        "src": "m"
+      }
+    },
+    {
+      "id": 3,
+      "s": "r",
+      "cal": "c",
+      "a": "la",
+      "sp": null
+    }
+  ],
+  "groups": [
+    {
+      "n": "T0",
+      "b": [
+        "ams2-0"
+      ],
+      "s": "r"
+    },
+    {
+      "n": "T1",
+      "b": [
+        "ams2-1",
+        "ams2-2"
+      ],
+      "s": "rr"
+    }
+  ],
+  "env": {
+    "t": 55,
+    "rh": 9
+  },
+  "dryer": {
+    "state": "timed_dry",
+    "target": 55,
+    "min": 179,
+    "heat": 60,
+    "fan": 40,
+    "fault": "none",
+    "adapter": null
+  },
+  "fault": null,
+  "nf": 0,
+  "act": [
+    "dryer_start",
+    "dryer_stop",
+    "clear_fault",
+    "rfid_scan"
+  ]
+}

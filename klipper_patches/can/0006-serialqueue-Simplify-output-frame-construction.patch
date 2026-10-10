@@ -1,0 +1,60 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 00:00:17 -0700
+Subject: [PATCH] serialqueue: Simplify output frame construction
+
+Serial output duplicated the message-block header, CRC, and sync layout
+instead of using the protocol helper.  The CAN fragmentation loop also
+reassigned an invariant identifier for each fragment and advanced a void
+pointer using a compiler extension.
+
+Finalize blocks through msgblock_finalize() so framing has one readable
+implementation.  Set the CAN identifier once and advance an explicit
+byte pointer between fragments.  This preserves the emitted bytes while
+removing duplicate protocol logic and invariant loop work.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/klippy/chelper/serialqueue.c b/klippy/chelper/serialqueue.c
+index 095b4a74..7062e54c 100644
+--- a/klippy/chelper/serialqueue.c
++++ b/klippy/chelper/serialqueue.c
+@@ -425,11 +425,12 @@ do_write(struct serialqueue *sq, void *buf, int buflen)
+     struct can_frame cf;
+     // Clear kernel-visible padding fields
+     memset(&cf, 0, sizeof(cf));
++    cf.can_id = sq->client_id;
++    uint8_t *data = buf;
+     while (buflen) {
+         int size = buflen > 8 ? 8 : buflen;
+-        cf.can_id = sq->client_id;
+         cf.can_dlc = size;
+-        memcpy(cf.data, buf, size);
++        memcpy(cf.data, data, size);
+         int ret = write(sq->serial_fd, &cf, sizeof(cf));
+         if (ret < 0) {
+             report_errno("can write", ret);
+@@ -443,7 +444,7 @@ do_write(struct serialqueue *sq, void *buf, int buflen)
+             return;
+         }
+         sq->last_write_fail_time = 0.0;
+-        buf += size;
++        data += size;
+         buflen -= size;
+     }
+ }
+@@ -537,12 +538,8 @@ build_and_send_command(struct serialqueue *sq, uint8_t *buf, int pending
+ 
+     // Fill header / trailer
+     len += MESSAGE_TRAILER_SIZE;
+-    buf[MESSAGE_POS_LEN] = len;
+-    buf[MESSAGE_POS_SEQ] = MESSAGE_DEST | (sq->send_seq & MESSAGE_SEQ_MASK);
+-    uint16_t crc = msgblock_crc16_ccitt(buf, len - MESSAGE_TRAILER_SIZE);
+-    buf[len - MESSAGE_TRAILER_CRC] = crc >> 8;
+-    buf[len - MESSAGE_TRAILER_CRC+1] = crc & 0xff;
+-    buf[len - MESSAGE_TRAILER_SYNC] = MESSAGE_SYNC;
++    msgblock_finalize(buf, len,
++                      MESSAGE_DEST | (sq->send_seq & MESSAGE_SEQ_MASK));
+ 
+     // Store message block
+     double idletime = eventtime > sq->idle_time ? eventtime : sq->idle_time;

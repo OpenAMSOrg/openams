@@ -1,0 +1,24 @@
+{
+  "device": {"gates": 5},
+  "hardware": {
+    "mmu_buffer unit0": {
+      "analog_pin": "unit0_gate0:PA3"
+    }
+  },
+  "operations": {
+    "load": {
+      "moves": [
+        {"homing": 1, "endstop": "mmu_exit_0"},
+        {"homing": 0, "endstop": null},
+        {"homing": 1, "endstop": "filament_compression"}
+      ]
+    },
+    "preload": {
+      "end": {"sensor": "mmu_exit_0", "offset": -1.0}
+    },
+    "unload": {
+      "end": {"sensor": "mmu_exit_0", "offset": -1.0}
+    }
+  },
+  "decisions": [{}, {}]
+}

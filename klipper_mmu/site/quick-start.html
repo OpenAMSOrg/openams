@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Quick start: BoxTurtle · klipper-mmu</title>
+<meta name="description" content="Bring up a BoxTurtle on an AFC Lite board with klipper-mmu and OpenAMS: build, flash, calibrate, commission and load.">
+<link rel="stylesheet" href="assets/site.css">
+<script>
+  try { var t = localStorage.getItem('kmmu-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</head>
+<body data-page="quick-start">
+
+<header class="bar" id="bar">
+  <a class="brand" href="./" aria-label="klipper-mmu home">
+    <svg class="brand-mark" viewBox="0 0 26 26" aria-hidden="true" fill="none" stroke-width="2.4" stroke-linecap="round">
+      <path d="M2 4 C 10 4, 12 13, 17 13" stroke="var(--lane-1)"/>
+      <path d="M2 10 C 9 10, 11 13, 17 13" stroke="var(--lane-2)"/>
+      <path d="M2 16 C 9 16, 11 13, 17 13" stroke="var(--lane-3)"/>
+      <path d="M2 22 C 10 22, 12 13, 17 13" stroke="var(--lane-4)"/>
+      <path d="M17 13 H 24" stroke="var(--ink)"/>
+    </svg>
+    klipper-mmu <small>docs</small>
+  </a>
+  <div class="bar-tools">
+    <button class="toc-toggle" id="toc-toggle" type="button" aria-expanded="false" aria-controls="toc">Contents</button>
+    <button class="theme-toggle" id="theme-toggle" type="button">Dark</button>
+  </div>
+  <div class="bar-progress" id="bar-progress" aria-hidden="true"><span id="bar-progress-fill"></span></div>
+</header>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<div class="page" id="page">
+  <nav class="toc" id="toc" aria-label="Manual"></nav>
+
+  <main class="content">
+<section class="hero" id="start" data-lane="1" data-station="overview">
+      <p class="eyebrow"><b>Quick start</b> &nbsp;/&nbsp; BoxTurtle, AFC Lite, OpenAMS</p>
+      <h1>From kit to <em>first load.</em></h1>
+      <p class="lede">This page takes a built BoxTurtle on an AFC Lite board to its first load through OpenAMS. Most new units fail at bring-up, not at the printer: a switch wired backwards, a floating input, a motor turning the wrong way, two lanes swapped. Step 7 finds those before any filament reaches the toolhead.</p>
+    </section>
+
+    <section id="need" data-lane="2" data-station="what you need">
+      <h2>1. What you need</h2>
+      <ul>
+        <li>A BoxTurtle with an AFC Lite board (STM32H723), wired as the <a href="https://raw.githubusercontent.com/xbst/AFC-Lite/refs/heads/master/Docs/AFC-Lite_Manual.pdf">AFC Lite manual</a> shows.</li>
+        <li>Klipper and the klipper-mmu package on the printer&#39;s host (usually a Raspberry Pi).</li>
+        <li>OpenAMS installed with Klipper, with its buffer in the filament path.</li>
+        <li>Mainsail or Fluidd, to type commands into the console.</li>
+      </ul>
+      <p>You build two firmware images, one after the other:</p>
+      <ul class="claims">
+        <li style="--mark: var(--lane-1)"><strong>Safe image first.</strong> Reads every switch and the buffer. Refuses to move any motor.</li>
+        <li style="--mark: var(--lane-2)"><strong>Motion image second.</strong> Same wiring, allowed to move motors. Build it only after the safe image passes steps 5 and 6.</li>
+      </ul>
+      <p>Each comes for USB or CAN; pick the one that matches how the board connects to the host.</p>
+    </section>
+
+    <section id="build" data-lane="3" data-station="build">
+      <h2>2. Build</h2>
+      <p>klipper-mmu is pinned to one Klipper version. Build in a separate Klipper checkout, not the one your printer runs:</p>
+      <pre><code class="language-sh">git clone https://github.com/Klipper3d/klipper /path/to/klipper
+cd /path/to/klipper
+git checkout ce7002bedf37e938bb483572949f3703ac6476cb</code></pre>
+      <p>From the klipper-mmu folder, add its build hooks and the small driver patch to that checkout:</p>
+      <pre><code class="language-sh">python3 tools/install.py install /path/to/klipper
+python3 tools/install.py install-driver-api /path/to/klipper</code></pre>
+      <p>Start from the tested settings for this board, then build:</p>
+      <pre><code class="language-sh">cd /path/to/klipper
+cp /path/to/klipper-mmu/configs/boxturtle-h723-usb-safe.config boxturtle.config
+make KCONFIG_CONFIG="$PWD/boxturtle.config" OUT=out-boxturtle/ olddefconfig
+make KCONFIG_CONFIG="$PWD/boxturtle.config" OUT=out-boxturtle/ -j4</code></pre>
+      <p>For CAN, use <code>boxturtle-h723-can-safe.config</code>. If your wiring differs from the AFC Lite layout, change pins, polarities and pulls under <strong>klipper-mmu &rsaquo; Device, board and lanes &rsaquo; Configure and reserve MMU pins</strong>:</p>
+      <pre><code class="language-sh">make KCONFIG_CONFIG="$PWD/boxturtle.config" OUT=out-boxturtle/ menuconfig</code></pre>
+      <p>For the motion image later, repeat this step with <code>boxturtle-h723-usb.config</code> (or <code>-can</code>).</p>
+    </section>
+
+    <section id="flash" data-lane="4" data-station="flash">
+      <h2>3. Flash</h2>
+      <p>Flash <code>out-boxturtle/klipper.bin</code> as you would any Klipper board: with <a href="https://www.klipper3d.org/Installation.html">DFU</a> or <a href="https://github.com/Arksine/katapult">Katapult</a>, over USB or CAN. klipper-mmu has no flashing tool of its own.</p>
+    </section>
+
+    <section id="host" data-lane="1" data-station="host">
+      <h2>4. Host</h2>
+      <p>Install the host module into the Klipper your printer runs:</p>
+      <pre><code class="language-sh">python3 tools/install.py install-host /path/to/real/klipper</code></pre>
+      <p>Add the smallest section to <code>printer.cfg</code>. With the safe image, it only turns on the buffer probe that step 5 uses:</p>
+      <pre><code class="language-ini">[klipper_mmu box]
+mcu: mcu
+diff_probe: True</code></pre>
+      <p><code>box</code> is the unit&#39;s name; every command here uses <code>MMU=box</code>. Later steps add:</p>
+      <ul>
+        <li>step 5: <code>diagnostic_startup</code> and <code>diff_calibration_file</code>;</li>
+        <li>step 7: the <code>openams_&hellip;</code> options;</li>
+        <li>step 8: <code>bowden_estimate_file</code>;</li>
+        <li>step 10 (optional, recommended): <code>path_reconciliation: True</code> and <code>driver_restart: True</code>.</li>
+      </ul>
+      <p>Restart Klipper after every change to <code>printer.cfg</code>.</p>
+    </section>
+
+    <section id="fps" data-lane="2" data-station="calibrate buffer">
+      <h2>5. Calibrate the buffer</h2>
+      <p>The OpenAMS buffer reports its position as two analog signals. klipper-mmu turns them into one number: 0 relaxed, 1000 fully compressed. While printing it holds near 500; during a load, passing 700 means the filament has arrived. The unit will not finish starting up until the buffer is calibrated.</p>
+      <p>Flash the safe image, switch off motor power, and check the unit is connected (<code>state=attached</code>, <code>connected=True</code>):</p>
+      <pre><code class="language-gcode">KLIPPER_MMU_QUERY MMU=box</code></pre>
+      <ol>
+        <li>Hold the buffer fully relaxed and read the sensor. Note <code>a_raw</code> and <code>b_raw</code>.
+          <pre><code class="language-gcode">KLIPPER_MMU_DIFF_PROBE MMU=box</code></pre></li>
+        <li>Repeat at 2 to 8 positions in order, relaxed to fully compressed. Include both ends.</li>
+        <li>Write the readings to a file such as <code>~/printer_data/config/box-diff-calibration.json</code>, replacing each capitalised word:
+          <pre><code class="language-json">{
+  "channel_map": "a_low_b_high",
+  "vref_mv": 3300,
+  "min_valid_mv": LOWEST_GOOD_MV,
+  "max_valid_mv": HIGHEST_GOOD_MV,
+  "path_tolerance_counts": TOLERANCE,
+  "points": [
+    { "a_raw": A_RELAXED,  "b_raw": B_RELAXED,  "position_permille": 0 },
+    { "a_raw": A_HALFWAY,  "b_raw": B_HALFWAY,  "position_permille": 500 },
+    { "a_raw": A_SQUASHED, "b_raw": B_SQUASHED, "position_permille": 1000 }
+  ]
+}</code></pre></li>
+        <li>Reset the board. In <code>printer.cfg</code>, replace <code>diff_probe: True</code> with:
+          <pre><code class="language-ini">diagnostic_startup: True
+diff_calibration_file: ~/printer_data/config/box-diff-calibration.json</code></pre></li>
+      </ol>
+      <p>The fields are explained on the <a href="calibration.html#buffer">Calibration</a> page. Use your own readings: another buffer&#39;s numbers describe another magnet.</p>
+    </section>
+
+    <section id="boot" data-lane="3" data-station="first boot">
+      <h2>6. First boot check</h2>
+      <pre><code class="language-gcode">KLIPPER_MMU_QUERY MMU=box
+KLIPPER_MMU_SENSORS MMU=box
+KLIPPER_MMU_DIAGNOSE MMU=box</code></pre>
+      <p>The query should show <code>startup_state=ready</code> and <code>startup_result=0</code>. The sensor list shows every switch. If all is well, diagnose prints:</p>
+      <pre><code class="language-log">klipper_mmu box: no problems found; state=idle path_occupied=False hub=open</code></pre>
+      <p>Anything else is a finding: which switch or condition, what it likely means, and what to change.</p>
+    </section>
+
+    <section id="commission" data-lane="4" data-station="commissioning">
+      <h2>7. Commissioning</h2>
+      <p><code>KLIPPER_MMU_COMMISSION</code> checks the switches, the buffer and each lane, and says what to fix. Run the three checks in order. After a menu change, build, flash and run the check again.</p>
+
+      <h3 id="c-switches" data-station="switches">Switches</h3>
+      <p>Remove all filament, then:</p>
+      <pre><code class="language-gcode">KLIPPER_MMU_COMMISSION MMU=box STEP=switches</code></pre>
+      <div class="table-wrap"><table>
+<thead><tr><th>Reading</th><th>Meaning</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td data-label="Reading"><code>open</code></td><td data-label="Meaning">Correct: nothing inserted.</td><td data-label="Fix"></td></tr>
+<tr><td data-label="Reading"><code>made</code></td><td data-label="Meaning">Reports filament when there is none.</td><td data-label="Fix">Remove leftover filament, or flip the switch&#39;s active level in the menu (like <code>!</code> in <code>printer.cfg</code>).</td></tr>
+<tr><td data-label="Reading"><code>unknown</code></td><td data-label="Meaning">The input is floating.</td><td data-label="Fix">Turn on its pull-up in the menu (like <code>^</code>), or check the connector.</td></tr>
+</tbody>
+</table></div>
+
+      <h3 id="c-fps" data-station="buffer check">Buffer</h3>
+      <p>Run this, then within about 10 seconds push the buffer fully in and release it:</p>
+      <pre><code class="language-gcode">KLIPPER_MMU_COMMISSION MMU=box STEP=fps</code></pre>
+      <div class="table-wrap"><table>
+<thead><tr><th>Complaint</th><th>Likely cause</th></tr></thead>
+<tbody>
+<tr><td data-label="Complaint">Never moved</td><td data-label="Likely cause">Buffer cable or wiring, or a displaced magnet.</td></tr>
+<tr><td data-label="Complaint">Did not reach 900</td><td data-label="Likely cause">Calibration is off, or the buffer lacks full travel.</td></tr>
+<tr><td data-label="Complaint">Did not return near its start</td><td data-label="Likely cause">The slide is sticking.</td></tr>
+<tr><td data-label="Complaint">High before you touched it</td><td data-label="Likely cause">The calibration is reversed. Calibrate again.</td></tr>
+</tbody>
+</table></div>
+
+      <h3 id="c-lanes" data-station="each lane">Each lane</h3>
+      <p>This check moves filament, so build and flash the motion image first. Add to <code>[klipper_mmu box]</code>:</p>
+      <pre><code class="language-ini">openams_motion: True
+openams_idx: 1
+openams_fps: fps0
+openams_family: boxturtle
+openams_bays: 4
+openams_path_length_mm: 842.5
+openams_host_watchdog_ms: 2000
+openams_lease_max_age_ms: 1000</code></pre>
+      <p>And for OpenAMS, anywhere in <code>printer.cfg</code>:</p>
+      <pre><code class="language-ini">[fps fps0]
+source_oams: klipper_mmu box
+extruder: extruder
+
+[oams_manager]
+
+[filament_group T0]
+group: box-0
+[filament_group T1]
+group: box-1
+[filament_group T2]
+group: box-2
+[filament_group T3]
+group: box-3</code></pre>
+      <ul>
+        <li><code>openams_host_watchdog_ms</code>: the unit stops everything after 2 s without hearing from Klipper. Keep <code>openams_lease_max_age_ms</code> below it.</li>
+        <li><code>openams_path_length_mm</code> is a placeholder until step 8 measures your tube.</li>
+        <li>The <code>filament_group</code> sections map tools T0&ndash;T3 to lanes 0&ndash;3.</li>
+      </ul>
+      <p>Restart Klipper, then check each lane <code>n</code> from 0 to 3. You have 60 seconds to push filament in until its BAY switch clicks:</p>
+      <pre><code class="language-gcode">KLIPPER_MMU_COMMISSION MMU=box STEP=lane LANE=n</code></pre>
+      <div class="table-wrap"><table>
+<thead><tr><th>What happens</th><th>What it means</th></tr></thead>
+<tbody>
+<tr><td data-label="What happens">A different lane&#39;s switch clicks first</td><td data-label="What it means">Those two lanes are swapped on the board. Nothing moves.</td></tr>
+<tr><td data-label="What happens">The preload fails</td><td data-label="What it means">The feeder turns the wrong way, does not grip, or the lane&#39;s LOAD switch is faulty.</td></tr>
+<tr><td data-label="What happens">The preload works</td><td data-label="What it means">The unit ejects the filament and asks whether the spool wound it back. Answer with <code>ANSWER=yes</code> or <code>ANSWER=no</code>.</td></tr>
+</tbody>
+</table></div>
+      <p>A spool that does not wind back usually has a respooler motor turning the wrong way, or slipping.</p>
+    </section>
+
+    <section id="bowden" data-lane="1" data-station="the tube">
+      <h2>8. Measure the Bowden tube</h2>
+      <p>LOAD is refused until the tube from the hub to the extruder has been measured. Add a file to keep the result, and restart Klipper:</p>
+      <pre><code class="language-ini">bowden_estimate_file: ~/printer_data/config/box-bowden.json</code></pre>
+      <p>With nothing past the hub, measure using any loaded lane:</p>
+      <pre><code class="language-gcode">KLIPPER_MMU_CALIBRATE MMU=box BAY=n</code></pre>
+      <p>The unit feeds that lane past the hub at crawl speed until the buffer sees arrival, and reports the length in millimetres. Put it in <code>openams_path_length_mm</code>. The path is shared, so one lane calibrates all of them. The result is used immediately and restored at every restart.</p>
+      <p>After that, a load must arrive within &plusmn;50&nbsp;mm of the measured length. Much earlier means an obstruction; much later means slipping or a loose tube. Either way the load stops and says which. Measure again after changing the tube, recalibrating the buffer or updating the firmware.</p>
+    </section>
+
+    <section id="load" data-lane="2" data-station="first load">
+      <h2>9. First load</h2>
+      <pre><code class="language-gcode">OAMSM_LOAD_TO_TOOLHEAD GROUP=T0</code></pre>
+      <p>The unit speeds up toward 200&nbsp;mm/s, slows to a 20&nbsp;mm/s crawl before the toolhead, and stops when the buffer sees arrival. A load gets up to three attempts within 240 s. Afterwards the log has one line per attempt:</p>
+      <pre><code class="language-log">klipper_mmu box: lane 2 LOAD failed after 3 attempts
+attempt 1, HUB to extruder: compressed at 312 mm past HUB (19% of the 1612 mm Bowden estimate), before the calibrated minimum: obstruction or kink in the Bowden, or a path shorter than calibrated (recalibrate); retract behind the HUB and retry
+attempt 2, lane to HUB: no HUB after 523 mm: tip catching at the hub entry, spool snag, tangle or filament not gripped; back off and retry at half speed
+attempt 3, HUB to extruder: no resistance within 1900 mm past HUB (118% of the 1612 mm Bowden estimate): lane drive slipping, PTFE disconnected between HUB and toolhead, FPS not responding (magnet, Hall or DiffA/DiffB wiring), or a path longer than the bound (recalibrate with KLIPPER_MMU_CALIBRATE)</code></pre>
+      <p>A first-try success is only logged. A retried or failed load also prints to the console.</p>
+    </section>
+
+    <section id="wrong" data-lane="3" data-station="when it breaks">
+      <h2>10. When something goes wrong</h2>
+      <p>On a fault the unit stops everything and waits. Recover in this order:</p>
+      <ol>
+        <li><code>KLIPPER_MMU_DIAGNOSE MMU=box</code>: what happened. It never moves anything.</li>
+        <li><code>KLIPPER_MMU_ACK_FAULT MMU=box</code>: acknowledge the fault.</li>
+        <li>If a driver failed, fix the cause (motor power, cable), then <code>KLIPPER_MMU_RESTART_DRIVER MMU=box LANE=n</code>.</li>
+        <li>Tell it where the filament is: <code>KLIPPER_MMU_RECONCILE_PATH MMU=box ACTION=CLEAR</code> if the shared tube is empty, or <code>ACTION=ADOPT LANE=n</code> if lane <code>n</code> is still in it.</li>
+        <li><code>KLIPPER_MMU_RECOVER_SESSION MMU=box</code>: start a clean connection.</li>
+      </ol>
+      <p>Step 4 also clears OpenAMS&#39;s record of the fault (<code>OpenAMS lane cleared</code>). <a href="troubleshooting.html">When things go wrong</a> has the symptom table.</p>
+    </section>
+
+    <section id="unqualified" data-lane="4" data-station="before you trust it">
+      <h2>11. Before you trust it</h2>
+      <div class="note" style="--note: var(--lane-3)">
+  <span class="note-label">Not tested on real hardware</span>
+  <p>BoxTurtle is finished in software and passes a whole-system simulation running the real firmware. <strong>It has not been tested on a real BoxTurtle.</strong> The motion settings are starting points from the AFC reference design, not measurements of your machine. Watch your first loads.</p>
+</div>
+      <p>The defaults you built with. The gearing is 200 steps per turn, 16 microsteps, a 50:10 gearbox and 22&nbsp;mm per output turn: 727.27 microsteps per millimetre.</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>Menu option</th></tr></thead>
+<tbody>
+<tr><td data-label="Setting">Feed and retract speed</td><td data-label="Default">26 mm/s</td><td data-label="Menu option"><code>KLIPPER_MMU_FEED_SPEED_MM_S</code>, <code>KLIPPER_MMU_RETRACT_SPEED_MM_S</code></td></tr>
+<tr><td data-label="Setting">Acceleration and braking</td><td data-label="Default">500 mm/s&sup2;</td><td data-label="Menu option"><code>KLIPPER_MMU_ACCELERATION_MM_S2</code>, <code>KLIPPER_MMU_DECELERATION_MM_S2</code></td></tr>
+<tr><td data-label="Setting">LOAD cruise ceiling</td><td data-label="Default">200 mm/s</td><td data-label="Menu option"><code>KLIPPER_MMU_LOAD_CRUISE_SPEED_MM_S</code></td></tr>
+<tr><td data-label="Setting">LOAD crawl before the toolhead</td><td data-label="Default">20 mm/s</td><td data-label="Menu option"><code>KLIPPER_MMU_LOAD_CRAWL_SPEED_MM_S</code></td></tr>
+<tr><td data-label="Setting">Time to reach the hub</td><td data-label="Default">20 s</td><td data-label="Menu option"></td></tr>
+<tr><td data-label="Setting">Time to reach the toolhead</td><td data-label="Default">118.75 s</td><td data-label="Menu option"></td></tr>
+<tr><td data-label="Setting">Time to retract</td><td data-label="Default">90 s</td><td data-label="Menu option"></td></tr>
+<tr><td data-label="Setting">Whole LOAD, all attempts</td><td data-label="Default">240 s</td><td data-label="Menu option"></td></tr>
+<tr><td data-label="Setting">Travel past the hub on unload</td><td data-label="Default">65 mm</td><td data-label="Menu option"></td></tr>
+<tr><td data-label="Setting">Arrival window before calibration</td><td data-label="Default">100&ndash;1900 mm past the hub</td><td data-label="Menu option"></td></tr>
+<tr><td data-label="Setting">Arrival window after calibration</td><td data-label="Default">&plusmn;50 mm of the measured length</td><td data-label="Menu option"><code>KLIPPER_MMU_LOAD_WINDOW_MM</code></td></tr>
+</tbody>
+</table></div>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <p>klipper-mmu is an optional add-on to Klipper, a separate project with its own authors and license (GPL-3.0). It builds on the work of the Happy Hare, AFC, BoxTurtle and OpenAMS projects.</p>
+  <p>Set in Bricolage Grotesque, Source Serif 4 and JetBrains Mono (SIL Open Font License), served from this site.</p>
+</footer>
+
+<script src="assets/site.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,259 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+menuconfig KLIPPER_MMU_PIN_CONFIG
+    bool "Configure and reserve MMU pins"
+    depends on MACH_STM32
+    default n
+    help
+        Reserve canonical pins for the selected STM32 and keep them out of
+        ordinary Klipper pin commands. Names are that target's standard
+        labels (PA1, PA2, and the other P[A-I][0-15] ports the selected
+        header actually provides). Optional board wiring presets fill known
+        connector defaults; every pin can be overridden, including preset-filled pins.
+        Polarity, bias and bridge choices stay in the applicable electrical
+        submenus. Package and target pin availability still apply. This menu
+        does not enable outputs and does not provide a physical GPIO, timer,
+        UART or ADC backend on every STM32. A complete peripheral plan,
+        driver setup and an explicit actuation gate remain required.
+
+        Use canonical uppercase names, without whitespace, aliases, inversion
+        or pull-up prefixes. Lane lists contain exactly one
+        pin per configured lane, separated by commas. Electrical polarity and
+        input bias are separate settings, not part of a pin name.
+
+if KLIPPER_MMU_PIN_CONFIG
+
+menu "Feeder pins and electrical settings"
+
+config KLIPPER_MMU_PINS_STEP
+    string "Feeder STEP pins, in lane order"
+    default "PD4,PC12,PE2,PD15" if KLIPPER_MMU_BOARD_AFC_LITE
+    default ""
+
+config KLIPPER_MMU_PINS_DIR
+    string "Feeder DIR pins, in lane order"
+    default "PD3,PC11,PE3,PD14" if KLIPPER_MMU_BOARD_AFC_LITE
+    default ""
+
+config KLIPPER_MMU_PINS_ENABLE
+    string "Feeder ENABLE pins, in lane order"
+    default "PD6,PD1,PE0,PC7" if KLIPPER_MMU_BOARD_AFC_LITE
+    default ""
+
+config KLIPPER_MMU_PINS_UART
+    string "Single-wire feeder TMC UART pins, in lane order"
+    depends on KLIPPER_MMU_GEAR_TMC_UART
+    default "PD5,PD0,PE1,PC6" if KLIPPER_MMU_BOARD_AFC_LITE
+    default ""
+    help
+        Unused (and unclaimed) without KLIPPER_MMU_GEAR_TMC_UART: a gear
+        with no TMC UART chip (plain STEP/DIR, drivers set in hardware --
+        Happy Hare's CHOICE_GEAR_TMC_NONE; e.g. QIDI Box, docs/devices/
+        qidi_box.md) has no such pin to assign.
+
+source "src/klipper_mmu/mcu/Kconfig.feeder"
+source "src/klipper_mmu/mcu/Kconfig.tmc"
+
+endmenu
+
+menu "Selector and servo pins and electrical settings"
+
+config KLIPPER_MMU_PINS_SELECTOR_STEP
+    string "Selector axis STEP pin"
+    depends on KLIPPER_MMU_SELECTOR_STEPPER
+    default ""
+
+config KLIPPER_MMU_PINS_SELECTOR_DIR
+    string "Selector axis DIR pin"
+    depends on KLIPPER_MMU_SELECTOR_STEPPER
+    default ""
+
+config KLIPPER_MMU_PINS_SELECTOR_ENABLE
+    string "Selector axis ENABLE pin"
+    depends on KLIPPER_MMU_SELECTOR_STEPPER
+    default ""
+
+config KLIPPER_MMU_SELECTOR_UART
+    bool "Selector driver has a single-wire TMC UART"
+    depends on KLIPPER_MMU_SELECTOR_STEPPER
+    default y if KLIPPER_MMU_DEVICE_ERCF_1_1 || KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0 || KLIPPER_MMU_DEVICE_TRADRACK || KLIPPER_MMU_DEVICE_CHAMELEON_3D || KLIPPER_MMU_DEVICE_MMX6 || KLIPPER_MMU_DEVICE_HTLF || KLIPPER_MMU_DEVICE_BTT_VIVID || KLIPPER_MMU_DEVICE_CLAYMORE
+    default n
+    help
+        Off drives the selector axis as a plain STEP/DIR driver with no
+        TMC2209 register access. The gear's own UART pin is unaffected.
+        Every selector-stepper device this catalogue supports defaults on:
+        Happy Hare's selector TMC choice defaults to TMC2209 with no
+        "None" option (installer/Kconfig.pins:149-176), and its hardware
+        template unconditionally emits a `[tmc2209 mmu_stepper
+        <unit>_selector]` section whenever a selector stepper exists
+        (config/base/mmu_hardware.cfg:391-409). Claymore has no Happy Hare
+        profile; AFC gives its selector driver its own UART
+        (templates/AFC_Claymore_1-AFC_Lite.cfg:45-46, M2_UART). Set this
+        to n only if your selector's driver board truly has no UART access
+        to it.
+
+config KLIPPER_MMU_PINS_SELECTOR_UART
+    string "Selector axis single-wire TMC UART pin"
+    depends on KLIPPER_MMU_SELECTOR_UART
+    default ""
+
+config KLIPPER_MMU_PINS_SELECTOR_ENDSTOP
+    string "Selector home endstop pin"
+    depends on KLIPPER_MMU_SELECTOR_HAS_ENDSTOP
+    default ""
+
+config KLIPPER_MMU_PINS_SELECTOR_GATE
+    string "Per-gate index switch pins, in gate order (INDEXED only)"
+    depends on KLIPPER_MMU_SELECTOR_KIND_INDEXED
+    default ""
+    help
+        One switch per lane (klipper_mmu/selector.h: KM_SELECTOR_INDEXED has
+        no gate position table -- a selection finds the target gate's own
+        switch instead). Sampled by mcu/switch_gpio.c and published with
+        km_core_set_selector_gate_switch_at, like KLIPPER_MMU_PINS_SELECTOR_
+        ENDSTOP above but one pin per lane instead of one shared pin.
+
+config KLIPPER_MMU_PINS_SERVO
+    string "Selector servo pin"
+    depends on KLIPPER_MMU_SERVO
+    default ""
+    help
+        Klipper's scheduled software PWM drives this pin directly; no
+        hardware PWM channel is required.
+
+endmenu
+
+menu "Presence, buffer pins and electrical settings"
+
+config KLIPPER_MMU_PINS_BAY
+    string "Bay/preparation sensor pins, in lane order"
+    depends on KLIPPER_MMU_BAY_SENSORS
+    default "PE13,PB0,PB1,PB2" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DIFF_BUFFER
+    default "PC5,PB0,PB1,PB2" if KLIPPER_MMU_BOARD_AFC_LITE
+    default ""
+    help
+        AFC Lite TRG1..4 defaults. The DiffB preset uses SW2/PC5 for analog
+        feedback and moves the first bay switch to SW12/PE13.
+
+config KLIPPER_MMU_PINS_LOAD
+    string "Physical LOAD sensor pins, in lane order"
+    depends on KLIPPER_MMU_LOAD_SENSORS
+    default "PE8,PE9,PE10,PE11" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default ""
+    help
+        One explicitly assigned local GPIO input per lane. No board wiring
+        is assumed; these inputs are distinct from BAY preparation switches.
+
+config KLIPPER_MMU_PINS_HUB
+    string "Local hub sensor pin"
+    depends on !KLIPPER_MMU_VIRTUAL_HUB
+    default "PE12" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DIFF_BUFFER
+    default "PC4" if KLIPPER_MMU_BOARD_AFC_LITE && !KLIPPER_MMU_VIRTUAL_HUB
+    default ""
+    help
+        The DiffA preset uses SW1/PC4 for analog feedback and moves the hub
+        switch to SW11/PE12. Override this when wired differently.
+
+config KLIPPER_MMU_PINS_TOOLHEAD
+    string "Local filament-arrival sensor pin (required)"
+    depends on KLIPPER_MMU_TOOLHEAD_SENSOR
+    default "PE7" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default ""
+    help
+        Wire the printer's filament-arrival sensor to AFC Lite SW6/PE7 for
+        this BoxTurtle preset, or override this pin with the actual local input.
+        Hidden only when FPS arrival is selected without a toolhead switch.
+
+config KLIPPER_MMU_PINS_BUFFER_A
+    string "Buffer advance switch or DiffA pin"
+    default "PC4" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DIFF_BUFFER
+    default "PE12" if KLIPPER_MMU_BOARD_AFC_LITE
+    default ""
+
+config KLIPPER_MMU_PINS_BUFFER_B
+    string "Buffer trailing switch or DiffB pin"
+    depends on !KLIPPER_MMU_BUFFER_SINGLE_SWITCH
+    default "PC5" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DIFF_BUFFER
+    default "PE13" if KLIPPER_MMU_BOARD_AFC_LITE
+    default ""
+    help
+        Unused (and unclaimed) with KLIPPER_MMU_BUFFER_SINGLE_SWITCH: a
+        tension-only buffer has no second physical switch.
+
+source "src/klipper_mmu/mcu/Kconfig.switch"
+source "src/klipper_mmu/mcu/Kconfig.adc"
+
+endmenu
+
+menu "Rewind pins and bridge settings"
+
+if KLIPPER_MMU_POWERED_REWIND
+config KLIPPER_MMU_PINS_REWIND_FORWARD
+    string "Rewind forward-drive pins, in lane order"
+    default "PA1,PA7,PB15,PD13" if KLIPPER_MMU_BOARD_AFC_LITE
+    default ""
+
+config KLIPPER_MMU_PINS_REWIND_REVERSE
+    string "Rewind reverse-drive pins, in lane order"
+    default "PA0,PA6,PB14,PD12" if KLIPPER_MMU_BOARD_AFC_LITE
+    default ""
+    help
+        On the STM32H723 each lane's forward and reverse pins are hardware
+        PWM: two channels of TIM2, TIM3, TIM4, TIM5 or TIM12 (TIM12
+        channels 1-2 only), and no timer may serve two lanes. The build
+        refuses a map that breaks this (tools/pin_plan_check.py).
+
+config KLIPPER_MMU_PINS_REWIND_ENABLE
+    string "Rewind ENABLE pins, in lane order"
+    default "PA2,PA5,PB13,PD11" if KLIPPER_MMU_BOARD_AFC_LITE
+    default ""
+endif
+
+source "src/klipper_mmu/mcu/Kconfig.rewind"
+
+endmenu
+
+if KLIPPER_MMU_ENCODER
+config KLIPPER_MMU_PINS_ENCODER_A
+    string "Shared-path encoder A pin"
+    default ""
+
+config KLIPPER_MMU_ENCODER_DUAL_PIN
+    bool "Second encoder pin (quadrature or a redundant B channel)"
+    default n
+    help
+        Happy Hare's own ERCF/Tradrack encoder is one wire into one MCU
+        pin (installer/Kconfig.encoder:128 "config PIN_ENCODER", singular);
+        every catalogue device here defaults to that shape. Turn this on
+        only for a genuine second wire. Leaving it off does not disable
+        counting -- it counts edges on the one pin you have (mcu/encoder.c).
+
+config KLIPPER_MMU_PINS_ENCODER_B
+    string "Shared-path encoder B pin"
+    depends on KLIPPER_MMU_ENCODER_DUAL_PIN
+    default ""
+
+config KLIPPER_MMU_ENCODER_PULL
+    int "Encoder input pull (-2=unset, -1=down, 0=none, 1=up)"
+    range -2 1
+    default -2
+    help
+        Applied to both encoder pins, the same shared electrical class as
+        the buffer A/B pair above. Confirm suitability for the connected
+        sensor (TCRT5000 opto or Binky vane wheel) and board; unset refuses
+        startup rather than assuming a pull.
+endif
+
+menu "Rewind current-sense pins"
+
+if KLIPPER_MMU_MEASURED_CURRENT
+config KLIPPER_MMU_PINS_CURRENT
+    string "Rewind current-sense pins, in lane order"
+    default ""
+    help
+        An explicit sensor connection is required for each configured lane.
+        Pin selection does not implement or qualify its ADC routing/calibration.
+endif
+
+endmenu
+
+endif

@@ -1,0 +1,1369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openams.org/contracts/oams_manager_status_v2.schema.json",
+  "title": "oams_manager status, schema_version 2 (C2)",
+  "description": "The Klipper `oams_manager` object as returned by get_status() and delivered by printer.objects.query/subscribe. Additive over this line's schema_version 1 (src/oams_manager.py:394-407) and over the legacy HelixScreen UI API v1 (api_version 1). Origins per field are in docs/contracts/C2_status.md. RESOLVED (review, global): `lanes` is the UI API v1 ARRAY (HelixScreen's shape, unchanged); the per-FPS object this line publishes today moves to `lanes_by_fps` (same shape, additive). P0.3b implements exactly this in openams.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "api_version",
+    "schema",
+    "ready",
+    "current_group",
+    "lanes",
+    "lanes_by_fps",
+    "topology",
+    "devices",
+    "settings",
+    "commands",
+    "units",
+    "groups"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {
+      "const": 2,
+      "description": "NEW-v2 value of an EXISTS-v1 key (was 1)."
+    },
+    "api_version": {
+      "const": 1,
+      "description": "UI-API-v1. HelixScreen requires exactly 1 (openams_api.h:29-31); v2 must not bump it."
+    },
+    "schema": {
+      "const": "openams.manager",
+      "description": "UI-API-v1 discovery discriminator."
+    },
+    "ready": {
+      "type": "boolean",
+      "description": "EXISTS-v1. False until the first hardware-snapshot resync (oams_manager.py:259-276)."
+    },
+    "current_group": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "EXISTS-v1 (and UI-API-v1). Group on the first LOADED lane (oams_manager.py:397-402)."
+    },
+    "lanes": {
+      "type": "array",
+      "description": "RESOLVED (review): UI-API-v1, unchanged shape (legacy:docs/UI_API.md). One entry per FPS lane, in the order legacy:src/oams_manager.py sorts them (today, the sole lane 'fps').",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/lane_v1"
+      }
+    },
+    "lanes_by_fps": {
+      "type": "object",
+      "description": "EXISTS-v1 (was published as `lanes`): one entry per FPS lane, keyed by the lane's short name. Renamed per the design review so the legacy UI-API-v1 array can keep the name `lanes`.",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/lane"
+      }
+    },
+    "topology": {
+      "$ref": "#/$defs/topology"
+    },
+    "devices": {
+      "type": "object",
+      "description": "EXISTS-v1: one entry per unit, keyed by unit short name. The EXISTS part is the unit driver's get_webhook_status(); its shape differs by unit kind (oams.py:408-445 vs follower.py:483-499).",
+      "additionalProperties": {
+        "$ref": "#/$defs/device"
+      }
+    },
+    "settings": {
+      "$ref": "#/$defs/settings"
+    },
+    "commands": {
+      "type": "object",
+      "description": "UI-API-v1. Logical operation -> advertised G-code command; a key is present only while its command is registered.",
+      "additionalProperties": false,
+      "properties": {
+        "load": {
+          "$ref": "#/$defs/gcode_word"
+        },
+        "unload": {
+          "$ref": "#/$defs/gcode_word"
+        },
+        "cancel": {
+          "$ref": "#/$defs/gcode_word"
+        },
+        "reset": {
+          "$ref": "#/$defs/gcode_word"
+        }
+      }
+    },
+    "units": {
+      "type": "array",
+      "description": "UI-API-v1. Units sorted by (oams_idx, name).",
+      "items": {
+        "$ref": "#/$defs/api_unit"
+      }
+    },
+    "groups": {
+      "type": "array",
+      "description": "UI-API-v1. Groups sorted by name; members as global slot ids.",
+      "items": {
+        "$ref": "#/$defs/api_group"
+      }
+    }
+  },
+  "$defs": {
+    "gcode_word": {
+      "type": "string",
+      "pattern": "^[A-Z_][A-Z0-9_]*$"
+    },
+    "unit_bay_pair": {
+      "description": "[oams_idx, bay] as the reducer holds it (a Python tuple, JSON-encoded as an array).",
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "integer",
+          "minimum": 0
+        }
+      ],
+      "items": false,
+      "minItems": 2
+    },
+    "bay_ref": {
+      "type": "string",
+      "pattern": "^\\S+-[0-9]+$",
+      "description": "'<unit>-<bay>', the filament_group config convention."
+    },
+    "lane_v1": {
+      "description": "UI-API-v1 lanes[] entry (legacy:docs/UI_API.md, legacy:src/oams_manager.py `_build_api_status`). Frozen field meanings; HelixScreen reads this shape verbatim (helix:src/printer/ams_backend_openams.cpp:327-345).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "current_group",
+        "current_slot",
+        "following",
+        "direction",
+        "message",
+        "pressure",
+        "set_point"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Hard-coded 'fps' today (one lane)."
+        },
+        "state": {
+          "type": "string",
+          "description": "Lower-case op name: unloaded, loading, loaded, unloading, calibrating. HelixScreen also understands error/paused, never emitted by either host line today."
+        },
+        "current_group": {
+          "type": ["string", "null"]
+        },
+        "current_slot": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Global slot id (units[].slots[].id) of the loaded spool, not a bay index."
+        },
+        "following": {
+          "type": "boolean"
+        },
+        "direction": {
+          "enum": [0, 1]
+        },
+        "message": {
+          "type": ["string", "null"],
+          "description": "Always null in the legacy line (legacy:src/oams_manager.py); this line may publish a real message (doc/code drift, noted in C2_status.md)."
+        },
+        "pressure": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "set_point": {
+          "type": ["number", "null"]
+        }
+      }
+    },
+    "lane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "op",
+        "group",
+        "unit",
+        "runout",
+        "following",
+        "since",
+        "message",
+        "state",
+        "current_slot",
+        "direction",
+        "stage",
+        "motion_stage",
+        "reload_target",
+        "runout_from",
+        "pressure",
+        "set_point",
+        "extruder",
+        "motion_settled"
+      ],
+      "properties": {
+        "op": {
+          "enum": [
+            "UNLOADED",
+            "LOADING",
+            "LOADED",
+            "UNLOADING",
+            "CALIBRATING"
+          ],
+          "description": "EXISTS-v1 (oams_state.py:56-60)."
+        },
+        "group": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "EXISTS-v1."
+        },
+        "unit": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/unit_bay_pair"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "EXISTS-v1. The bay the lane is loading/feeding from."
+        },
+        "runout": {
+          "enum": [
+            "idle",
+            "pausing",
+            "coasting",
+            "loading"
+          ],
+          "description": "EXISTS-v1 (oams_state.py:63-66). Meaningful only while op is LOADED."
+        },
+        "following": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "EXISTS-v1. null: a follower command failed and the follower state is unknown (oams_state.py:89-90)."
+        },
+        "since": {
+          "type": "number",
+          "description": "EXISTS-v1. Klipper reactor monotonic seconds of the last op transition."
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "EXISTS-v1. Last reducer message."
+        },
+        "state": {
+          "enum": ["unloaded", "loading", "loaded", "unloading", "calibrating"],
+          "description": "EXISTS-v1 (UI-API-v1 carryover, oams_manager.py _lane_status): lower-case op, the value lanes[].state is built from."
+        },
+        "current_slot": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "EXISTS-v1 (UI-API-v1 carryover, oams_manager.py _lane_status): the global slot id (units[].slots[].id) of unit, the value lanes[].current_slot is built from."
+        },
+        "direction": {
+          "enum": [
+            0,
+            1
+          ],
+          "description": "NEW-v2 here (UI-API-v1 lanes[].direction; LaneState.direction). 0 reverse, 1 forward."
+        },
+        "stage": {
+          "description": "NEW-v2 (H2). The operation plan the lane is running, or null when no stage is being reported. H1: the plan is drawn from the standard step names plus custom ones, carries a display label per labeled step, and the current step's detail.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "plan",
+                "index",
+                "failed",
+                "labels",
+                "detail"
+              ],
+              "properties": {
+                "plan": {
+                  "type": "array",
+                  "description": "The standard step names (cut, retract, feed, purge, calibrate, heat, home, clean) plus any custom name matching the pattern; 1 to 8 steps, no duplicates.",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,15}$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "uniqueItems": true
+                },
+                "index": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "0-based position in plan; null means announced but not started."
+                },
+                "failed": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Name of the plan step that failed, else null."
+                },
+                "labels": {
+                  "type": "object",
+                  "description": "Display label per labeled step, keyed by step name; {} when the plan carries none.",
+                  "propertyNames": {
+                    "pattern": "^[a-z][a-z0-9_]{0,15}$"
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 47
+                  },
+                  "maxProperties": 8
+                },
+                "detail": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 24,
+                  "description": "The current step's detail, else null. It belongs to the step it was given with: entering a later step clears it."
+                }
+              }
+            }
+          ]
+        },
+        "motion_stage": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "NEW-v2 (H2). The loaded or busy unit's firmware motion_stage name (C1 §3), or null; diagnostic only, never a plan step."
+        },
+        "reload_target": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/unit_bay_pair"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "NEW-v2 (H1). Exists in LaneState, not published today."
+        },
+        "runout_from": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/unit_bay_pair"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "NEW-v2 (H1). The bay that ran out."
+        },
+        "pressure": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "NEW-v2 here (UI-API-v1 lanes[].pressure). null when FPS feedback is unavailable."
+        },
+        "set_point": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "NEW-v2 here (UI-API-v1 lanes[].set_point)."
+        },
+        "pressure_band": {
+          "oneOf": [
+            {
+              "type": "array",
+              "prefixItems": [
+                {"type": "number", "minimum": 0, "maximum": 1},
+                {"type": "number", "minimum": 0, "maximum": 1}
+              ],
+              "items": false,
+              "minItems": 2
+            },
+            {"type": "null"}
+          ],
+          "description": "NEW-v2. [low, high]: the band the feeding unit's regulator keeps the pressure in (its fps_lower_threshold and fps_upper_threshold); null when no unit reports a valid pair. Informational: a reading outside it is not a fault by itself."
+        },
+        "extruder": {
+          "type": "string",
+          "description": "NEW-v2 (H1). The FPS's extruder; today only in the openams/status webhook."
+        },
+        "motion_settled": {
+          "type": "boolean",
+          "description": "NEW-v2 (H1). Published form of the motion-safety predicate (C2 §5.6): true iff op is UNLOADED or (LOADED with runout idle), following is exactly false, no fault of any severity on any unit of the lane, no follower_uncertain, all units connected. A UI uses this instead of re-deriving the predicate."
+        },
+        "motion_blocked_reason": {
+          "type": "string",
+          "description": "Additive and optional. Present only while `following` is null (follower state unknown after a restart or a failed follower command): the operator-readable reason motion_settled is false. Absent otherwise."
+        },
+        "filament_temp_c": {
+          "type": ["integer", "null"],
+          "minimum": 150,
+          "maximum": 400,
+          "description": "NEW-v2 (H2). The loaded bay's `devices.<unit>.bays[i].filament.temp_c`, so an unload can heat to the temperature of what is actually in the extruder (C2 §4.2). null when the lane holds nothing, or when that bay's temperature is unknown."
+        }
+      }
+    },
+    "topology": {
+      "type": "object",
+      "description": "EXISTS-v1 (oams_manager.py:379-392), unchanged in v2.",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "fps",
+        "oams",
+        "groups"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "fps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "oams": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "idx",
+              "lane",
+              "kind",
+              "family",
+              "bays",
+              "capabilities"
+            ],
+            "properties": {
+              "idx": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "lane": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "oams",
+                  "follower"
+                ]
+              },
+              "family": {
+                "description": "C2 \u00a74.3: the unit's registry family (src/ams_family.py FAMILIES). inline_follower is a kind, not a registry family, so it appears only here.",
+                "enum": [
+                  "ams1",
+                  "ams2",
+                  "ams_ht",
+                  "inline_follower",
+                  "boxturtle",
+                  "nightowl",
+                  "custom",
+                  "3d_chameleon",
+                  "3ms",
+                  "angry_beaver",
+                  "emu",
+                  "ercf_1_1",
+                  "ercf_2_0",
+                  "ercf_3_0",
+                  "htlf",
+                  "kms",
+                  "mmx",
+                  "mmx6",
+                  "quattrobox_1_0",
+                  "quattrobox_1_1",
+                  "quattrobox_2",
+                  "tradrack",
+                  "low_rider",
+                  "pico_mmu",
+                  "qidi_box",
+                  "btt_vivid",
+                  "claymore"
+                ]
+              },
+              "bays": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16
+              },
+              "capabilities": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "groups": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "lane",
+              "bays"
+            ],
+            "properties": {
+              "lane": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "null for an empty group."
+              },
+              "bays": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/bay_ref"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "connected",
+        "bays",
+        "supported_actions",
+        "identity",
+        "calibration",
+        "environment",
+        "dryer",
+        "faults",
+        "follower_uncertain"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "description": "EXISTS-v1 per-device version (oams.py:412); unchanged."
+        },
+        "current_spool": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "oams_idx": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "connected": {
+          "type": "boolean",
+          "description": "EXISTS-v1 for OAMS units (oams.py:290-293); NEW-v2 for followers."
+        },
+        "fps_value": {
+          "type": "number"
+        },
+        "f1s_hes_value": {
+          "type": "array",
+          "items": {
+            "type": ["integer", "boolean", "null"]
+          },
+          "description": "One entry per bay. An OpenAMS unit reports the sensor's integer reading (0 or 1 for presence); a klipper-mmu unit reports a boolean and exposes an unknown reading, such as a bay whose switch is not configured, as null (klipper_mmu/host/openams_device.py get_webhook_status: never a synthesized empty bay)."
+        },
+        "hub_hes_value": {
+          "type": "array",
+          "items": {
+            "type": ["integer", "boolean", "null"]
+          },
+          "description": "One entry per bay. An OpenAMS unit reports the sensor's integer reading (0 or 1 for presence); a klipper-mmu unit reports a boolean and exposes an unknown reading, such as a bay whose switch is not configured, as null (klipper_mmu/host/openams_device.py get_webhook_status: never a synthesized empty bay)."
+        },
+        "encoder_clicks": {
+          "type": "integer"
+        },
+        "protocol_version": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "gen_matched_protocol": {
+          "type": "boolean"
+        },
+        "family": {
+          "description": "C2 \u00a74.4: the device's registry family (src/ams_family.py FAMILIES). A follower's driver carries no OAMS family, so inline_follower is absent here.",
+          "enum": [
+            "ams1",
+            "ams2",
+            "ams_ht",
+            "boxturtle",
+            "nightowl",
+            "custom",
+            "3d_chameleon",
+            "3ms",
+            "angry_beaver",
+            "emu",
+            "ercf_1_1",
+            "ercf_2_0",
+            "ercf_3_0",
+            "htlf",
+            "kms",
+            "mmx",
+            "mmx6",
+            "quattrobox_1_0",
+            "quattrobox_1_1",
+            "quattrobox_2",
+            "tradrack",
+            "low_rider",
+            "pico_mmu",
+            "qidi_box",
+            "btt_vivid",
+            "claymore"
+          ]
+        },
+        "bay_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "capabilities": {
+          "type": "object"
+        },
+        "capability_warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "telemetry": {
+          "type": "object"
+        },
+        "bays": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/bay"
+          }
+        },
+        "supported_actions": {
+          "type": "array",
+          "description": "EXISTS-v1 for OAMS units (oams.py:358-406).",
+          "items": {
+            "enum": [
+              "clear_errors",
+              "load",
+              "unload",
+              "follower",
+              "configure_pid",
+              "calibrate_ptfe",
+              "calibrate_hub_hes",
+              "dryer_start",
+              "dryer_stop",
+              "clear_fault",
+              "rfid_scan",
+              "preload",
+              "unpreload",
+              "eject",
+              "home"
+            ]
+          }
+        },
+        "identity": {
+          "type": "object",
+          "description": "NEW-v2 (H1; serial needs F1).",
+          "additionalProperties": false,
+          "required": [
+            "serial",
+            "firmware",
+            "board"
+          ],
+          "properties": {
+            "serial": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The unit's identity (C1 \u00a72) as 24 hex digits, or the CAN UUID of a unit without an identity query; null when unknown."
+            },
+            "firmware": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Today capabilities.firmware_version (ams_family.py:172)."
+            },
+            "board": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Today capabilities.board_name (ams_family.py:171)."
+            }
+          }
+        },
+        "calibration": {
+          "type": "object",
+          "description": "NEW-v2 (D7, H1): the unit's shared ptfe_length.",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "path_length_mm"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/calibration_state"
+            },
+            "path_length_mm": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "environment": {
+          "description": "NEW-v2 (H1).",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "temp_c",
+                "rh_pct",
+                "source"
+              ],
+              "properties": {
+                "temp_c": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "rh_pct": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "source": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        },
+        "dryer": {
+          "description": "NEW-v2 (H1/H6). null only when capabilities.dryer is false. Before the first dryer telemetry frame: state 'unknown' and the numbers null.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "target_c",
+                "remaining_s",
+                "heater_pct",
+                "fan_pct",
+                "fault",
+                "adapter"
+              ],
+              "properties": {
+                "state": {
+                  "enum": ["off", "preheat", "hold", "timed_dry", "cooldown", "fault", "unknown"],
+                  "description": "RESOLVED (review, C2 12): the firmware's dryer state names (already the host's names today). The firmware owns the state; F2 exports exactly these six names and the host passes them through unchanged; `unknown` is the host's own value before the first dryer frame (or for a state number the host does not know)."
+                },
+                "target_c": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "remaining_s": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "heater_pct": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "fan_pct": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "fault": {
+                  "type": "string",
+                  "description": "Controller fault name, 'none' when clear (oams.py:1316-1344)."
+                },
+                "adapter": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ],
+                  "description": "Whether the dryer's power adapter is connected; null where the unit does not report it."
+                }
+              }
+            }
+          ]
+        },
+        "faults": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fault"
+          }
+        },
+        "follower_uncertain": {
+          "type": "boolean",
+          "description": "RESOLVED (review, C2 11): true iff this unit appears in any lane's LaneState.uncertain_follower_units (oams_state.py:93) -- a follower stop that was never confirmed. Safety-relevant; NEW-v2, H1."
+        }
+      }
+    },
+    "calibration_state": {
+      "enum": [
+        "configured",
+        "calibrating",
+        "uncalibrated"
+      ],
+      "description": "D7."
+    },
+    "bay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index",
+        "ready",
+        "loaded",
+        "calibrated",
+        "calibration_state",
+        "path_length_mm",
+        "spool_id",
+        "link_source",
+        "tag",
+        "spool_hint",
+        "supported_actions"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "EXISTS-v1."
+        },
+        "ready": {
+          "type": "boolean",
+          "description": "EXISTS-v1. F1S (bay) sensor."
+        },
+        "loaded": {
+          "type": "boolean",
+          "description": "EXISTS-v1. Hub HES."
+        },
+        "positioning": {
+          "type": "boolean",
+          "description": "NEW-v2 (H16). true while this bay is the subject of a firmware-autonomous insertion positioning sequence (the positioning motion state). A UI must not offer load, unload, or calibrate_ptfe on this bay while true; the firmware replies Busy. Omitted (treated as false) by implementations that pre-date H16."
+        },
+        "calibrated": {
+          "type": "boolean",
+          "description": "NEW-v2 (D7). true iff calibration_state is configured."
+        },
+        "calibration_state": {
+          "$ref": "#/$defs/calibration_state"
+        },
+        "path_length_mm": {
+          "type": "number",
+          "minimum": 0,
+          "description": "NEW-v2 (D7). Effective ptfe length for this bay in mm (clicks / 1.14)."
+        },
+        "spool_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "NEW-v2 (D2, H3). Spoolman spool id."
+        },
+        "link_source": {
+          "enum": [
+            "tag",
+            "manual",
+            "none"
+          ],
+          "description": "NEW-v2 (D2, H3)."
+        },
+        "tag": {
+          "description": "NEW-v2 (H1; decode exists for AMS 1, bambu_lab_tag_processor.py). The last successful read; null when no tag.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "uid",
+                "format",
+                "read_at",
+                "spoolman_id",
+                "bambu"
+              ],
+              "allOf": [
+                {"if": {"properties": {"format": {"const": "unit_summary"}}},
+                 "then": {"required": ["summary"], "properties": {"uid": {"type": "null"}, "bambu": {"type": "null"}}},
+                 "else": {"not": {"required": ["summary"]}, "properties": {"uid": {"type": "string"}}}}
+              ],
+              "properties": {
+                "uid": {
+                  "type": ["string", "null"],
+                  "pattern": "^[0-9a-f]{8,20}$",
+                  "description": "Lowercase hex, as the readers publish it (mfrc522.py:476, oams.py:2159-2160). null exactly for format unit_summary: a unit that decodes its own tags reports no UID."
+                },
+                "format": {
+                  "enum": [
+                    "bambu",
+                    "spoolman_link",
+                    "openspool",
+                    "unit_summary",
+                    "unknown"
+                  ]
+                },
+                "summary": {
+                  "description": "A tag decoded by the unit itself (C1 section 4.7.1): present exactly for format unit_summary.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["code", "material", "color_argb", "nozzle_min_c", "nozzle_max_c", "manufacturer"],
+                  "properties": {
+                    "code": {"type": ["string", "null"], "description": "The manufacturer's filament code, e.g. a Bambu code GFB60."},
+                    "material": {"type": ["string", "null"], "description": "The material name, e.g. ABS."},
+                    "color_argb": {"type": ["integer", "null"], "minimum": 0, "maximum": 4294967295, "description": "0xAARRGGBB, like bambu.color_argb; null when the unit reported no colour."},
+                    "nozzle_min_c": {"type": ["integer", "null"], "minimum": 1},
+                    "nozzle_max_c": {"type": ["integer", "null"], "minimum": 1},
+                    "manufacturer": {"enum": ["Bambu", null], "description": "Bambu when code starts with GF, as Bambu filament codes do; else null."}
+                  }
+                },
+                "read_at": {
+                  "type": "number",
+                  "description": "Reactor monotonic seconds."
+                },
+                "openspool": {
+                  "description": "OpenSpool NDEF record fields, verbatim; optional.",
+                  "oneOf": [{"type": "null"}, {"type": "object"}]
+                },
+                "spoolman_id": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1,
+                  "description": "From a Spoolman-link NDEF record."
+                },
+                "bambu": {
+                  "description": "bambu_lab_tag_processor.decode() output, keys verbatim (bambu_lab_tag_processor.py:68-87).",
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "manufacturer",
+                        "type",
+                        "detailed",
+                        "color_argb",
+                        "weight_g",
+                        "diameter_mm",
+                        "drying_temp_c",
+                        "drying_time_h",
+                        "bed_temp_c",
+                        "hotend_max_c",
+                        "hotend_min_c",
+                        "nozzle_diameter",
+                        "spool_width_mm",
+                        "length_m",
+                        "tray_uid",
+                        "production"
+                      ],
+                      "properties": {
+                        "manufacturer": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string"
+                        },
+                        "detailed": {
+                          "type": "string"
+                        },
+                        "color_argb": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 4294967295
+                        },
+                        "weight_g": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "diameter_mm": {
+                          "type": "number"
+                        },
+                        "drying_temp_c": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "drying_time_h": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "bed_temp_c": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "hotend_max_c": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "hotend_min_c": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "nozzle_diameter": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "spool_width_mm": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "length_m": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "tray_uid": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{32}$"
+                        },
+                        "production": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "spool_hint": {
+          "description": "NEW-v2 (D6, reserved; the firmware may ignore it). null until the component supplies one.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mass_g",
+                "outer_radius_mm",
+                "valid"
+              ],
+              "properties": {
+                "mass_g": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "outer_radius_mm": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "valid": {
+                  "type": "boolean"
+                }
+              }
+            }
+          ]
+        },
+        "supported_actions": {
+          "type": "array",
+          "description": "NEW-v2 (H1): what this bay allows now. Derivation in C2 \u00a75.4.",
+          "items": {
+            "enum": [
+              "load",
+              "unload",
+              "calibrate_ptfe",
+              "set_spool",
+              "clear_spool",
+              "preload",
+              "unpreload",
+              "eject"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "filament": {
+          "description": "NEW-v2 (H2, C2 \u00a74.5). The operating copy of this bay's filament that `openams_spoolman` pushes (material and working temperature); null when nothing was pushed, when it was cleared, or after a Klipper restart until the component pushes again. Memory only: it is never persisted, and Spoolman stays the store.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["material", "temp_c", "source"],
+              "properties": {
+                "material": {
+                  "type": ["string", "null"],
+                  "maxLength": 16,
+                  "description": "The filament's material as Spoolman has it, trimmed."
+                },
+                "temp_c": {
+                  "type": ["integer", "null"],
+                  "minimum": 150,
+                  "maximum": 400,
+                  "description": "The working temperature in \u00b0C: the spool's own settings_extruder_temp, else the material table's (C4 \u00a77.4). null when unknown."
+                },
+                "source": {
+                  "enum": ["spool", "table"],
+                  "description": "Where temp_c came from: the spool's own value, or the material table."
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "fault": {
+      "type": "object",
+      "description": "NEW-v2 (ARCHITECTURE \u00a78.1, H1).",
+      "additionalProperties": false,
+      "required": [
+        "severity",
+        "code",
+        "text",
+        "bay",
+        "actions",
+        "source"
+      ],
+      "properties": {
+        "severity": {
+          "enum": [
+            "stop",
+            "pause",
+            "info"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string"
+        },
+        "bay": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "null: unit-wide."
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "clear_errors",
+              "clear_fault",
+              "resume",
+              "retry_load"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "source": {
+          "enum": [
+            "firmware",
+            "lane",
+            "tag"
+          ]
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "description": "NEW-v2 (D3, H7). RESOLVED (review, C2 3): these exact key names are accepted.",
+      "additionalProperties": false,
+      "required": [
+        "read_tag_on_insertion",
+        "read_tags_at_startup",
+        "auto_reload_on_runout",
+        "auto_create_spoolman_spools",
+        "apply_pa_on_load"
+      ],
+      "properties": {
+        "read_tag_on_insertion": {
+          "type": "boolean"
+        },
+        "read_tags_at_startup": {
+          "type": "boolean"
+        },
+        "auto_reload_on_runout": {
+          "type": "boolean"
+        },
+        "auto_create_spoolman_spools": {
+          "type": "boolean"
+        },
+        "apply_pa_on_load": {
+          "type": "boolean"
+        },
+        "sync_unit_tray_info": {
+          "type": "boolean",
+          "description": "Additive (C4 §7.5): openams_spoolman keeps a unit's stored per-bay filament setting (capabilities.tray_write) in step with the bay's linked Spoolman spool. Default true. A host that predates it omits the key."
+        }
+      }
+    },
+    "api_unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "topology",
+        "lane",
+        "connected",
+        "slots"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "str(oams_idx)."
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "topology": {
+          "enum": [
+            "hub",
+            "linear",
+            "parallel",
+            "mixed"
+          ]
+        },
+        "lane": {
+          "type": "string"
+        },
+        "connected": {
+          "type": "boolean"
+        },
+        "slots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "bay",
+              "ready",
+              "loaded"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Global slot id, unique across the snapshot."
+              },
+              "bay": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "ready": {
+                "type": "boolean"
+              },
+              "loaded": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "api_group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "lane",
+        "slots"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "lane": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "slots": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "next_bay": {
+          "oneOf": [
+            {"$ref": "#/$defs/unit_bay_pair"},
+            {"type": "null"}
+          ],
+          "description": "NEW-v2 (H2). The bay a load of this group would take now, in the same [unit_idx, bay] shape `lanes_by_fps.<lane>.unit` uses; selected exactly as a load selects it (oams_state._group_candidates over the world a load is reduced against). null when no bay of the group is ready, or when the hardware snapshot cannot be built."
+        },
+        "next_filament_temp_c": {
+          "type": ["integer", "null"],
+          "minimum": 150,
+          "maximum": 400,
+          "description": "NEW-v2 (H2). `next_bay`'s `filament.temp_c`, so a load can heat to the temperature of the spool it is about to take (C2 §4.5). null when there is no next bay, or its temperature is unknown."
+        }
+      }
+    }
+  }
+}

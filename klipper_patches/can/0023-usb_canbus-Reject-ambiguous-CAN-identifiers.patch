@@ -1,0 +1,58 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 12:12:45 -0700
+Subject: [PATCH] usb_canbus: Reject ambiguous CAN identifiers
+
+The USB bridge routed host frames using the complete gs_usb can_id, while each hardware backend silently masked that value to the standard or extended identifier width during transmission.  SocketCAN error flags and other unknown high bits were also discarded by the transmit controllers.
+
+A non-canonical identifier could therefore select one route inside the bridge, be echoed as that value, and appear as a different identifier on the physical bus.  For example, standard can_id 0x800 compares as 0x800 in the bridge but is transmitted as identifier zero.
+
+Accept only the 11-bit or 29-bit identifier selected by CANMSG_ID_EFF together with the supported EFF and RTR flags.  Reject error frames and unknown flag bits that a physical CAN data-frame transmission cannot represent, keeping local routing, USB echo, and bus identity consistent.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/generic/usb_canbus.c b/src/generic/usb_canbus.c
+index 2f97c761..28fba4d4 100644
+--- a/src/generic/usb_canbus.c
++++ b/src/generic/usb_canbus.c
+@@ -97,6 +97,20 @@ struct gs_host_frame {
+     };
+ } __packed;
+ 
++#define GS_CAN_SFF_MASK 0x000007ff
++#define GS_CAN_EFF_MASK 0x1fffffff
++
++static int
++gs_can_id_is_valid(uint32_t id)
++{
++    uint32_t id_mask = (id & CANMSG_ID_EFF
++                        ? GS_CAN_EFF_MASK : GS_CAN_SFF_MASK);
++    uint32_t allowed = id_mask | CANMSG_ID_RTR;
++    if (id & CANMSG_ID_EFF)
++        allowed |= CANMSG_ID_EFF;
++    return !(id & ~allowed);
++}
++
+ 
+ /****************************************************************
+  * Main usbcan task (read requests from usb and send msgs to usb)
+@@ -236,6 +250,19 @@ drain_usb_host_messages(void)
+          */
+         if (gs->flags)
+             continue;
++        /*
++         * The routing code compares the complete can_id, but each hardware
++         * backend masks that value down to either 11 or 29 identifier bits
++         * when it creates the physical frame.  Without a canonical encoding,
++         * a value such as 0x800 without the extended-frame flag is routed as
++         * 0x800 inside the bridge but appears as standard identifier zero on
++         * the wire.  SocketCAN error and unknown flag bits are likewise not
++         * representable by the CAN transmit controllers and would be silently
++         * removed.  Reject those ambiguous encodings so local routing, the
++         * USB echo, and the physical bus all refer to the same CAN frame.
++         */
++        if (!gs_can_id_is_valid(gs->can_id))
++            continue;
+         UsbCan.host_push_pos = push_pos = push_pos + 1;
+     }
+ }

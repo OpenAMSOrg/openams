@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "source": {
+    "happy_hare": "c54c736",
+    "profile": "fixture",
+    "syms": {"MMU_TYPE_BOX_TURTLE_1_0": true},
+    "layout": {"mmu_entry": -150.0, "mmu_exit": 0.0, "mmu_shared_exit": 150.0}
+  },
+  "device": {
+    "vendor": "FixtureVendor",
+    "gates": 1,
+    "selector_type": "VirtualSelector",
+    "unit_profile": {"filament_always_gripped": false}
+  },
+  "hardware": {
+    "mmu_unit unit0": {"vendor": "FixtureVendor", "num_gates": "1"},
+    "mmu_buffer unit0": {"buffer_maxrange": "12", "tension_pin": "^unit0:PE13"}
+  },
+  "parameters": {"gear_load_speed": "100"},
+  "steps_per_mm": 703.86,
+  "operations": {
+    "preload": {
+      "moves": [
+        {"label": "Initial homing to mmu_exit_0 sensor", "dist": 200.0, "motor": "gear",
+         "homing": 1, "endstop": "mmu_exit_0", "endstop_pos": 0.0, "speed": 50.0,
+         "accel": 100.0, "actual": 40.0, "homed": true, "tip_before": -40.0, "tip_after": 0.0},
+        {"label": "Final parking", "dist": 10.0, "motor": "gear", "homing": 0,
+         "endstop": null, "endstop_pos": null, "speed": 80.0, "accel": 400.0,
+         "actual": 10.0, "homed": false, "tip_before": 0.0, "tip_after": 10.0}
+      ],
+      "end": {"tip": 10.0, "sensor": "mmu_exit_0", "offset": 10.0, "filament_pos": 0, "gate_status": 1},
+      "errors": []
+    },
+    "select": {
+      "moves": [],
+      "end": {"tip": 10.0, "sensor": null, "offset": null, "filament_pos": 0, "gate_status": 1},
+      "errors": []
+    }
+  },
+  "decisions": [{"concept": "preload_park", "note": "fixture note for the Decisions section"}]
+}

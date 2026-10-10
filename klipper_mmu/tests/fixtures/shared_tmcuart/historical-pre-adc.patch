@@ -1,0 +1,1343 @@
+--- a/src/tmcuart.c
++++ b/src/tmcuart.c
+@@ -6,11 +6,12 @@
+ 
+ #include <string.h> // memcpy
+ #include "board/gpio.h" // gpio_out_write
+-#include "board/irq.h" // irq_disable
++#include "board/irq.h" // irq_save, irq_restore, irq_disable, irq_enable
+ #include "board/misc.h" // timer_read_time
+ #include "basecmd.h" // oid_alloc
+ #include "command.h" // DECL_COMMAND
+ #include "sched.h" // DECL_SHUTDOWN
++#include "tmcuart.h"
+ 
+ struct tmcuart_s {
+     struct timer timer;
+@@ -24,10 +25,19 @@
+ 
+ enum {
+     TU_LINE_HIGH = 1<<0, TU_ACTIVE = 1<<1, TU_READ_SYNC = 1<<2,
+-    TU_REPORT = 1<<3, TU_PULLUP = 1<<4, TU_SINGLE_WIRE = 1<<5
++    TU_REPORT = 1<<3, TU_PULLUP = 1<<4, TU_SINGLE_WIRE = 1<<5,
++#if CONFIG_WANT_TMCUART_LOCAL
++    TU_LOCAL = 1<<6,
++#else
++    TU_LOCAL = 0,
++#endif
+ };
+ 
+ static struct task_wake tmcuart_wake;
++
++#if CONFIG_WANT_TMCUART_LOCAL
++static struct task_wake tmcuart_local_wake;
++#endif
+ 
+ // Restore uart line to normal "idle" mode
+ static void
+@@ -37,14 +47,50 @@
+         gpio_out_reset(t->tx_pin, 1);
+     else
+         gpio_out_write(t->tx_pin, 1);
+-    t->flags = (t->flags & (TU_PULLUP | TU_SINGLE_WIRE)) | TU_LINE_HIGH;
+-}
++    t->flags = (t->flags & (TU_PULLUP | TU_SINGLE_WIRE | TU_LOCAL)) | TU_LINE_HIGH;
++}
++
++#if CONFIG_WANT_TMCUART_LOCAL
++#ifndef CONFIG_TMCUART_LOCAL_MAX_CHANNELS
++#define CONFIG_TMCUART_LOCAL_MAX_CHANNELS 2
++#endif
++
++struct tmcuart_local {
++    struct tmcuart_s tmcuart;
++    tmcuart_local_completion_fn callback;
++    void *user_data;
++    uint32_t token;
++    uint32_t completion_tick;
++    int8_t completion_status;
++    uint8_t requested_read_len;
++    uint8_t completion_len;
++    uint8_t in_use;
++    uint8_t gpio_ready;
++    uint8_t pending_completion;
++    uint8_t is_shutdown;
++};
++
++static struct tmcuart_local local_channels[CONFIG_TMCUART_LOCAL_MAX_CHANNELS];
++static uint8_t tmcuart_local_shutdown_latched;
++#endif
+ 
+ // Helper function to end a transmission and schedule a response
+ static uint_fast8_t
+ tmcuart_finalize(struct tmcuart_s *t)
+ {
+     tmcuart_reset_line(t);
++#if CONFIG_WANT_TMCUART_LOCAL
++    if (t->flags & TU_LOCAL) {
++        struct tmcuart_local *tl = container_of(t, struct tmcuart_local, tmcuart);
++        tl->completion_tick = timer_read_time();
++        tl->completion_status = (tl->requested_read_len > 0 && t->read_count == 0)
++                                ? TMCUART_STATUS_TIMEOUT : TMCUART_STATUS_OK;
++        tl->completion_len = t->read_count / 8;
++        tl->pending_completion = 1;
++        sched_wake_task(&tmcuart_local_wake);
++        return SF_DONE;
++    }
++#endif
+     t->flags |= TU_REPORT;
+     sched_wake_task(&tmcuart_wake);
+     return SF_DONE;
+@@ -169,18 +215,45 @@
+     return SF_RESCHEDULE;
+ }
+ 
++static void
++tmcuart_init_channel(struct tmcuart_s *t, uint32_t rx_pin, uint32_t tx_pin
++                     , uint8_t pull_up, uint32_t bit_time, uint8_t extra_flags)
++{
++    t->rx_pin = gpio_in_setup(rx_pin, !!pull_up);
++    t->tx_pin = gpio_out_setup(tx_pin, 1);
++    t->cfg_bit_time = bit_time;
++    t->flags = (TU_LINE_HIGH | (pull_up ? TU_PULLUP : 0)
++                | (rx_pin == tx_pin ? TU_SINGLE_WIRE : 0)
++                | extra_flags);
++}
++
++static void
++tmcuart_submit_transfer(struct tmcuart_s *t, const uint8_t *write
++                        , uint8_t write_len, uint8_t read_len)
++{
++    memcpy(t->data, write, write_len);
++    t->pos = 0;
++    t->flags = (t->flags & (TU_LINE_HIGH|TU_PULLUP|TU_SINGLE_WIRE|TU_LOCAL)) | TU_ACTIVE;
++    t->write_count = write_len * 8;
++    t->read_count = read_len * 8;
++    if (write_len >= 1 && (t->data[0] & 0x3f) == 0x2a) {
++        t->timer.func = tmcuart_send_sync_event;
++    } else {
++        t->bit_time = t->cfg_bit_time;
++        t->timer.func = tmcuart_send_event;
++    }
++    irqstatus_t flag = irq_save();
++    t->timer.waketime = timer_read_time() + timer_from_us(200);
++    sched_add_timer(&t->timer);
++    irq_restore(flag);
++}
++
+ void
+ command_config_tmcuart(uint32_t *args)
+ {
+     struct tmcuart_s *t = oid_alloc(args[0], command_config_tmcuart
+                                     , sizeof(*t));
+-    uint8_t pull_up = args[2];
+-    uint32_t rx_pin = args[1], tx_pin = args[3];
+-    t->rx_pin = gpio_in_setup(rx_pin, !!pull_up);
+-    t->tx_pin = gpio_out_setup(tx_pin, 1);
+-    t->cfg_bit_time = args[4];
+-    t->flags = (TU_LINE_HIGH | (pull_up ? TU_PULLUP : 0)
+-                | (rx_pin == tx_pin ? TU_SINGLE_WIRE : 0));
++    tmcuart_init_channel(t, args[1], args[3], args[2], args[4], 0);
+ }
+ DECL_COMMAND(command_config_tmcuart,
+              "config_tmcuart oid=%c rx_pin=%u pull_up=%c"
+@@ -199,21 +272,7 @@
+     uint8_t read_len = args[3];
+     if (write_len > sizeof(t->data) || read_len > sizeof(t->data))
+         shutdown("tmcuart data too large");
+-    memcpy(t->data, write, write_len);
+-    t->pos = 0;
+-    t->flags = (t->flags & (TU_LINE_HIGH|TU_PULLUP|TU_SINGLE_WIRE)) | TU_ACTIVE;
+-    t->write_count = write_len * 8;
+-    t->read_count = read_len * 8;
+-    if (write_len >= 1 && (t->data[0] & 0x3f) == 0x2a) {
+-        t->timer.func = tmcuart_send_sync_event;
+-    } else {
+-        t->bit_time = t->cfg_bit_time;
+-        t->timer.func = tmcuart_send_event;
+-    }
+-    irq_disable();
+-    t->timer.waketime = timer_read_time() + timer_from_us(200);
+-    sched_add_timer(&t->timer);
+-    irq_enable();
++    tmcuart_submit_transfer(t, write, write_len, read_len);
+ }
+ DECL_COMMAND(command_tmcuart_send, "tmcuart_send oid=%c write=%*s read=%c");
+ 
+@@ -237,6 +296,10 @@
+ }
+ DECL_TASK(tmcuart_task);
+ 
++#if CONFIG_WANT_TMCUART_LOCAL
++static void tmcuart_local_shutdown(void);
++#endif
++
+ void
+ tmcuart_shutdown(void)
+ {
+@@ -245,5 +308,269 @@
+     foreach_oid(i, t, command_config_tmcuart) {
+         tmcuart_reset_line(t);
+     }
++#if CONFIG_WANT_TMCUART_LOCAL
++    tmcuart_local_shutdown();
++#endif
+ }
+ DECL_SHUTDOWN(tmcuart_shutdown);
++
++#if CONFIG_WANT_TMCUART_LOCAL
++
++static int
++tmcuart_local_is_shutdown(void)
++{
++    if (tmcuart_local_shutdown_latched || sched_is_shutdown()) {
++        tmcuart_local_shutdown_latched = 1;
++        return 1;
++    }
++    return 0;
++}
++
++// Bounded lookup helper shared by public methods.
++// Pointer equality is verified before any member dereference.
++static struct tmcuart_local *
++tmcuart_local_lookup(const struct tmcuart_local *tl)
++{
++    if (!tl)
++        return NULL;
++    uint8_t i;
++    for (i = 0; i < ARRAY_SIZE(local_channels); i++) {
++        if (tl == &local_channels[i]) {
++            if (local_channels[i].in_use && local_channels[i].gpio_ready)
++                return &local_channels[i];
++            return NULL;
++        }
++    }
++    return NULL;
++}
++
++struct tmcuart_local *
++tmcuart_local_setup(uint32_t rx_pin, uint32_t tx_pin,
++                    uint8_t pull_up, uint32_t bit_time,
++                    tmcuart_local_completion_fn callback,
++                    void *user_data)
++{
++    // Task-context API: reject when entered with IRQs disabled, preserving state
++    irqstatus_t irq_flag = irq_save();
++    irq_restore(irq_flag);
++    if (irq_flag)
++        return NULL;
++
++    if (tmcuart_local_is_shutdown())
++        return NULL;
++
++    // Reject missing callback before claiming storage or touching GPIO
++    if (!callback)
++        return NULL;
++
++    // Validate bounded bit period before mutation using uint64_t arithmetic
++    if (bit_time < 16)
++        return NULL;
++    if ((uint64_t)256 * bit_time + timer_from_us(200) >= (uint64_t)INT32_MAX)
++        return NULL;
++
++    irqstatus_t flag = irq_save();
++    // Recheck shutdown under lock
++    if (tmcuart_local_is_shutdown()) {
++        irq_restore(flag);
++        return NULL;
++    }
++    struct tmcuart_local *tl = NULL;
++    uint8_t i;
++    for (i = 0; i < ARRAY_SIZE(local_channels); i++) {
++        if (!local_channels[i].in_use) {
++            tl = &local_channels[i];
++            memset(tl, 0, sizeof(*tl));
++            tl->in_use = 1;
++            break;
++        }
++    }
++    irq_restore(flag);
++    if (!tl)
++        return NULL;
++
++    // GPIO setup performed with IRQs unmasked
++    tmcuart_init_channel(&tl->tmcuart, rx_pin, tx_pin, pull_up, bit_time, TU_LOCAL);
++
++    flag = irq_save();
++    // Observe shutdown occurring during GPIO setup before publishing handle
++    if (tmcuart_local_is_shutdown() || tl->is_shutdown) {
++        tmcuart_reset_line(&tl->tmcuart);
++        tl->is_shutdown = 1;
++        irq_restore(flag);
++        return NULL;
++    }
++    tl->gpio_ready = 1;
++    tl->callback = callback;
++    tl->user_data = user_data;
++    irq_restore(flag);
++
++    return tl;
++}
++
++int
++tmcuart_local_submit(struct tmcuart_local *tl, uint32_t token,
++                     const uint8_t *write, uint8_t write_len,
++                     uint8_t read_len)
++{
++    // Task-context API: reject when entered with IRQs disabled, preserving state
++    irqstatus_t irq_flag = irq_save();
++    irq_restore(irq_flag);
++    if (irq_flag)
++        return TMCUART_ERR_INVAL;
++
++    // Handle must match an allocated member of local_channels before dereference
++    struct tmcuart_local *chan = tmcuart_local_lookup(tl);
++    if (!chan)
++        return TMCUART_ERR_INVAL;
++
++    if (tmcuart_local_is_shutdown() || chan->is_shutdown)
++        return TMCUART_ERR_SHUTDOWN;
++
++    // Reject zero-length write (read-only submission not supported by engine)
++    if (write_len == 0 || !write)
++        return TMCUART_ERR_INVAL;
++    if (write_len > sizeof(chan->tmcuart.data) || read_len > sizeof(chan->tmcuart.data))
++        return TMCUART_ERR_INVAL;
++
++    irqstatus_t flag = irq_save();
++    // Recheck shutdown under lock
++    if (tmcuart_local_is_shutdown() || chan->is_shutdown) {
++        irq_restore(flag);
++        return TMCUART_ERR_SHUTDOWN;
++    }
++
++    // Retain busy rejection during both active and pending completion
++    if ((chan->tmcuart.flags & TU_ACTIVE) || chan->pending_completion) {
++        irq_restore(flag);
++        return TMCUART_ERR_BUSY;
++    }
++
++    chan->token = token;
++    chan->requested_read_len = read_len;
++    chan->completion_status = 0;
++    chan->completion_len = 0;
++    chan->completion_tick = 0;
++
++    tmcuart_submit_transfer(&chan->tmcuart, write, write_len, read_len);
++    irq_restore(flag);
++
++    return TMCUART_OK;
++}
++
++int
++tmcuart_local_cancel(struct tmcuart_local *tl)
++{
++    // Task-context API: reject when entered with IRQs disabled, preserving state
++    irqstatus_t irq_flag = irq_save();
++    irq_restore(irq_flag);
++    if (irq_flag)
++        return TMCUART_ERR_INVAL;
++
++    // Handle must match an allocated member of local_channels before dereference
++    struct tmcuart_local *chan = tmcuart_local_lookup(tl);
++    if (!chan)
++        return TMCUART_ERR_INVAL;
++
++    if (tmcuart_local_is_shutdown() || chan->is_shutdown)
++        return TMCUART_ERR_SHUTDOWN;
++
++    irqstatus_t flag = irq_save();
++    // Recheck shutdown under lock
++    if (tmcuart_local_is_shutdown() || chan->is_shutdown) {
++        irq_restore(flag);
++        return TMCUART_ERR_SHUTDOWN;
++    }
++
++    if (chan->tmcuart.flags & TU_ACTIVE) {
++        sched_del_timer(&chan->tmcuart.timer);
++        tmcuart_reset_line(&chan->tmcuart);
++    }
++    chan->pending_completion = 0;
++    chan->token = 0;
++    irq_restore(flag);
++
++    return TMCUART_OK;
++}
++
++int
++tmcuart_local_is_busy(const struct tmcuart_local *tl)
++{
++    struct tmcuart_local *chan = tmcuart_local_lookup(tl);
++    if (!chan)
++        return 0;
++    irqstatus_t flag = irq_save();
++    int busy = (chan->tmcuart.flags & TU_ACTIVE) || chan->pending_completion;
++    irq_restore(flag);
++    return busy;
++}
++
++void
++tmcuart_local_task(void)
++{
++    if (!sched_check_wake(&tmcuart_local_wake))
++        return;
++    uint8_t i;
++    for (i = 0; i < ARRAY_SIZE(local_channels); i++) {
++        struct tmcuart_local *tl = &local_channels[i];
++        irqstatus_t flag = irq_save();
++        if (!tl->in_use || !tl->gpio_ready || !tl->pending_completion) {
++            irq_restore(flag);
++            continue;
++        }
++        if (tmcuart_local_is_shutdown() || tl->is_shutdown) {
++            tl->pending_completion = 0;
++            irq_restore(flag);
++            continue;
++        }
++
++        uint32_t token = tl->token;
++        int status = tl->completion_status;
++        uint8_t len = tl->completion_len;
++        if (len > TMCUART_MAX_MSG_SIZE)
++            len = TMCUART_MAX_MSG_SIZE;
++        uint32_t completion_tick = tl->completion_tick;
++        uint8_t data[TMCUART_MAX_MSG_SIZE];
++        memcpy(data, tl->tmcuart.data, len);
++
++        tmcuart_local_completion_fn cb = tl->callback;
++        void *user_data = tl->user_data;
++
++        // Clear old pending bookkeeping BEFORE invoking fixed callback
++        tl->pending_completion = 0;
++        tl->token = 0;
++        tl->completion_status = 0;
++        tl->completion_len = 0;
++        tl->completion_tick = 0;
++        irq_restore(flag);
++
++        if (cb)
++            cb(user_data, token, status, data, len, completion_tick);
++    }
++}
++DECL_TASK(tmcuart_local_task);
++
++static void
++tmcuart_local_shutdown(void)
++{
++    tmcuart_local_shutdown_latched = 1;
++    uint8_t i;
++    for (i = 0; i < ARRAY_SIZE(local_channels); i++) {
++        struct tmcuart_local *tl = &local_channels[i];
++        if (!tl->in_use)
++            continue;
++        irqstatus_t flag = irq_save();
++        if (tl->gpio_ready) {
++            if (tl->tmcuart.flags & TU_ACTIVE) {
++                sched_del_timer(&tl->tmcuart.timer);
++            }
++            tmcuart_reset_line(&tl->tmcuart);
++        }
++        tl->pending_completion = 0;
++        tl->token = 0;
++        tl->is_shutdown = 1;
++        irq_restore(flag);
++    }
++}
++
++#endif // CONFIG_WANT_TMCUART_LOCAL
+--- /dev/null
++++ b/src/tmcuart.h
+@@ -0,0 +1,116 @@
++#ifndef __TMCUART_H
++#define __TMCUART_H
++
++#include "autoconf.h"
++#include <stdint.h>
++#include <stddef.h>
++
++// Status codes for local TMCUART requests and callbacks
++enum {
++    TMCUART_OK = 0,
++    TMCUART_ERR_BUSY = -1,
++    TMCUART_ERR_INVAL = -2,
++    TMCUART_ERR_SHUTDOWN = -3,
++};
++
++enum {
++    TMCUART_STATUS_OK = 0,
++    TMCUART_STATUS_TIMEOUT = 1,
++};
++
++#define TMCUART_MAX_MSG_SIZE 10
++
++// Opaque struct for local channel handle.
++// Handles returned by tmcuart_local_setup are immutable and remain reserved
++// until MCU reset. Runtime slot reuse and deletion are not supported.
++struct tmcuart_local;
++
++// Callback signature for local TMCUART completion.
++// Invoked exclusively in task context with interrupts enabled.
++// - user_data: caller context pointer fixed at setup
++// - token: identity token provided at submission
++// - status: TMCUART_STATUS_OK (success) or TMCUART_STATUS_TIMEOUT (sync timeout)
++// - data: pointer to stable snapshot buffer of received UART bits (at most 10 bytes;
++//         valid throughout callback; not overwritten by new requests submitted in cb)
++// - len: length in bytes of received data
++// - completion_tick: MCU clock tick captured when engine finalized in timer ISR
++//
++// Callbacks are never invoked from timer ISR, cancellation, or shutdown.
++typedef void (*tmcuart_local_completion_fn)(void *user_data, uint32_t token,
++                                            int status, const uint8_t *data,
++                                            uint8_t len, uint32_t completion_tick);
++
++#if CONFIG_WANT_TMCUART_LOCAL
++
++// Configure a local MCU TMC UART channel.
++//
++// Contract and preconditions:
++// - Task-context API: must be entered with interrupts enabled. Entering with
++//   interrupts disabled is rejected with NULL while preserving the entry IRQ state.
++// - Pin validity, GPIO allocation, and board resource ownership are caller and
++//   board-driver preconditions; this prototype does not validate MCU pin encodings.
++// - Missing callback is rejected before claiming storage or touching GPIO.
++// - Immutable callback and user_data: the callback and context pointer supplied
++//   here are fixed for the lifetime of the channel.
++// - Arithmetic bit period bounds: bit_time must be >= 16 ticks, and
++//   (uint64_t)256 * bit_time + timer_from_us(200) must be strictly below INT32_MAX.
++//   This is an arithmetic timer bound to prevent signed 32-bit overflow, not a
++//   physical baud qualification.
++// - Configured or partially configured slots remain reserved until reset.
++// - Permanent global shutdown latch prevents setup after shutdown even across
++//   scheduler shutdown resets.
++//
++// Returns handle on success, or NULL on error (pool exhausted, invalid params,
++// missing callback, or shutdown).
++struct tmcuart_local *tmcuart_local_setup(uint32_t rx_pin, uint32_t tx_pin,
++                                          uint8_t pull_up, uint32_t bit_time,
++                                          tmcuart_local_completion_fn callback,
++                                          void *user_data);
++
++// Submit a transmission and optional reception request on a local channel.
++//
++// Contract and preconditions:
++// - Task-context API: must be entered with interrupts enabled. Entering with
++//   interrupts disabled returns TMCUART_ERR_INVAL while preserving entry IRQ state.
++// - The handle must match an allocated member of local_channels before dereference.
++// - Rejects requests if channel is busy (active timer transfer or pending completion).
++// - Rejects requests if MCU or local channel is in shutdown.
++// - Wire format: input buffer contains upstream PACKED bits, not raw TMC datagrams.
++// - Write data is copied into channel storage before timer scheduling.
++// - Reject zero-length write: write_len must be > 0 and write != NULL. Read-only
++//   submissions are not supported by the underlying bit engine.
++// - Write-only transactions (read_len == 0) are supported.
++// - Maximum write_len and read_len are TMCUART_MAX_MSG_SIZE (10 bytes).
++// - The fixed setup callback and user_data are used; no per-request callback plumbing.
++//
++// Returns TMCUART_OK on success, or negative error code:
++//   TMCUART_ERR_BUSY: channel busy (active transfer or pending completion)
++//   TMCUART_ERR_INVAL: invalid handle, IRQs disabled, NULL/zero write, or invalid len
++//   TMCUART_ERR_SHUTDOWN: MCU or channel in shutdown
++int tmcuart_local_submit(struct tmcuart_local *tl, uint32_t token,
++                         const uint8_t *write, uint8_t write_len,
++                         uint8_t read_len);
++
++// Synchronously cancel any active transfer or pending completion on the local channel.
++//
++// Contract and preconditions:
++// - Task-context API: must be entered with interrupts enabled. Entering with
++//   interrupts disabled returns TMCUART_ERR_INVAL while preserving entry IRQ state.
++// - The handle must match an allocated member of local_channels before dereference.
++// - Synchronously removes scheduled timer, restores GPIO line to idle, and discards
++//   pending completion and token bookkeeping.
++// - Does NOT invoke any completion callback.
++// - Rejects if MCU or channel is in shutdown.
++//
++// Returns TMCUART_OK on success, or negative error code:
++//   TMCUART_ERR_INVAL: invalid handle or entered with IRQs disabled
++//   TMCUART_ERR_SHUTDOWN: MCU or channel in shutdown
++int tmcuart_local_cancel(struct tmcuart_local *tl);
++
++// Check if channel is busy (active transfer or pending completion).
++// Returns 1 if busy, 0 if idle or invalid handle.
++int tmcuart_local_is_busy(const struct tmcuart_local *tl);
++
++#endif // CONFIG_WANT_TMCUART_LOCAL
++
++#endif // __TMCUART_H
+--- a/src/stm32/hard_pwm.c
++++ b/src/stm32/hard_pwm.c
+@@ -6,8 +6,12 @@
+ 
+ #include "autoconf.h" // CONFIG_MACH_STM32H7
+ #include "board/irq.h" // irq_save
++#if CONFIG_WANT_HARD_PWM_LOCAL_PAIR
++#include "board/io.h" // readl, writel
++#endif
+ #include "command.h" // shutdown
+ #include "gpio.h" // gpio_pwm_write
++#include "pwm.h" // gpio_pwm_get_route
+ #include "internal.h" // GPIO
+ #include "sched.h" // sched_shutdown
+ 
+@@ -312,21 +316,39 @@
+ #endif
+ };
+ 
+-struct gpio_pwm
+-gpio_pwm_setup(uint8_t pin, uint32_t cycle_time, uint32_t val)
+-{
+-    // Find pin in pwm_regs table
+-    const struct gpio_pwm_info* p = pwm_regs;
+-    for (;; p++) {
+-        if (p >= &pwm_regs[ARRAY_SIZE(pwm_regs)])
+-            shutdown("Not a valid PWM pin");
++// Shared first-match lookup; querying a route never initializes hardware.
++static const struct gpio_pwm_info *
++gpio_pwm_find(uint32_t pin)
++{
++    const struct gpio_pwm_info *p;
++    for (p = pwm_regs; p < &pwm_regs[ARRAY_SIZE(pwm_regs)]; p++)
+         if (p->pin == pin)
+-            break;
+-    }
+-    gpio_peripheral(p->pin, p->function, 0);
+-
++            return p;
++    return NULL;
++}
++
++#if CONFIG_WANT_HARD_PWM_QUERY
++int
++gpio_pwm_get_route(uint32_t pin, struct gpio_pwm_route *out)
++{
++    if (!out)
++        return 0;
++    const struct gpio_pwm_info *p = gpio_pwm_find(pin);
++    if (!p)
++        return 0;
++    out->timer_id = (uintptr_t)p->timer;
++    out->channel = p->channel;
++    return 1;
++}
++#endif
++
++// Shared helper for mapping cycle_time to timer ticks and prescaler
++static void
++gpio_pwm_calc_period(TIM_TypeDef *timer, uint32_t cycle_time,
++                     uint32_t *out_ticks, uint32_t *out_prescaler)
++{
+     // Map cycle_time to pwm clock divisor
+-    uint32_t pclk = get_pclock_frequency((uint32_t)p->timer);
++    uint32_t pclk = get_pclock_frequency((uint32_t)timer);
+     uint32_t pclock_div = CONFIG_CLOCK_FREQ / pclk;
+     if (pclock_div > 1)
+         pclock_div /= 2; // Timers run at twice the normal pclock frequency
+@@ -346,6 +368,35 @@
+     }
+     if (hwpwm_ticks < 2)
+         hwpwm_ticks = 2;
++
++    *out_ticks = hwpwm_ticks;
++    *out_prescaler = prescaler;
++}
++
++static inline uint32_t
++gpio_pwm_calc_ccr(uint32_t val, uint32_t hwpwm_ticks)
++{
++    return DIV_ROUND_CLOSEST(val * hwpwm_ticks, MAX_PWM);
++}
++
++#if CONFIG_WANT_HARD_PWM_LOCAL_PAIR
++static int timer_is_locally_owned(TIM_TypeDef *timer);
++#endif
++
++struct gpio_pwm
++gpio_pwm_setup(uint8_t pin, uint32_t cycle_time, uint32_t val)
++{
++    const struct gpio_pwm_info *p = gpio_pwm_find(pin);
++    if (!p)
++        shutdown("Not a valid PWM pin");
++#if CONFIG_WANT_HARD_PWM_LOCAL_PAIR
++    if (timer_is_locally_owned(p->timer))
++        shutdown("PWM timer locally owned");
++#endif
++    gpio_peripheral(p->pin, p->function, 0);
++
++    uint32_t hwpwm_ticks, prescaler;
++    gpio_pwm_calc_period(p->timer, cycle_time, &hwpwm_ticks, &prescaler);
+ 
+     // Enable requested pwm hardware block
+     if (!is_enabled_pclock((uint32_t) p->timer)) {
+@@ -424,6 +475,535 @@
+ 
+ void
+ gpio_pwm_write(struct gpio_pwm g, uint32_t val) {
+-    uint32_t r = DIV_ROUND_CLOSEST(val * g.hwpwm_ticks, MAX_PWM);
++    uint32_t r = gpio_pwm_calc_ccr(val, g.hwpwm_ticks);
+     *(volatile uint32_t*) g.reg = r;
+ }
++
++#if CONFIG_WANT_HARD_PWM_LOCAL_PAIR
++
++#ifndef CONFIG_HARD_PWM_LOCAL_MAX_PAIRS
++#define CONFIG_HARD_PWM_LOCAL_MAX_PAIRS 8
++#endif
++#define GPIO_PWM_PAIR_MAX_INTERNAL CONFIG_HARD_PWM_LOCAL_MAX_PAIRS
++
++#ifndef TIM_SR_UIF
++#define TIM_SR_UIF (1U << 0)
++#endif
++#ifndef TIM_CCER_CC1P
++#define TIM_CCER_CC1P (1U << 1)
++#endif
++struct gpio_pwm_pair {
++    uint8_t claimed;
++    uint8_t is_ready;
++    uint8_t raw_off;
++    uint8_t failed;
++    uint8_t same_timer;
++    uint8_t fwd_clocked;
++    uint8_t rev_clocked;
++    uint8_t fwd_channel;
++    uint8_t rev_channel;
++    uint8_t fwd_active_low;
++    uint8_t rev_active_low;
++    uint8_t fwd_function;
++    uint8_t rev_function;
++    uint32_t fwd_pin;
++    uint32_t rev_pin;
++    TIM_TypeDef *fwd_timer;
++    TIM_TypeDef *rev_timer;
++    volatile uint32_t *fwd_ccr;
++    volatile uint32_t *rev_ccr;
++    uint32_t hwpwm_ticks;
++    uint32_t prescaler;
++    uint32_t rev_ticks;
++    uint32_t rev_prescaler;
++    uint32_t confirmed_fwd_ccr;
++    uint32_t confirmed_rev_ccr;
++    void (*raw_force_off)(void *context);
++    void *raw_force_off_context;
++};
++
++static struct gpio_pwm_pair local_pairs[GPIO_PWM_PAIR_MAX_INTERNAL];
++static uint8_t global_shutdown_latched;
++
++static inline void
++tim_writel(volatile uint32_t *reg, uint32_t val)
++{
++    writel((void *)(uintptr_t)reg, val);
++}
++
++static inline uint32_t
++tim_readl(const volatile uint32_t *reg)
++{
++    return readl((const void *)(uintptr_t)reg);
++}
++
++static int
++timer_is_locally_owned(TIM_TypeDef *timer)
++{
++    for (int i = 0; i < GPIO_PWM_PAIR_MAX_INTERNAL; ++i) {
++        if (local_pairs[i].claimed) {
++            if (local_pairs[i].fwd_timer == timer || local_pairs[i].rev_timer == timer)
++                return 1;
++        }
++    }
++    return 0;
++}
++
++static inline int
++is_valid_pair_ptr(const struct gpio_pwm_pair *pair)
++{
++    if (!pair)
++        return 0;
++    uintptr_t address = (uintptr_t)pair;
++    uintptr_t first = (uintptr_t)&local_pairs[0];
++    uintptr_t last = (uintptr_t)&local_pairs[GPIO_PWM_PAIR_MAX_INTERNAL];
++    if (address < first || address >= last)
++        return 0;
++    uintptr_t offset = address - first;
++    if (offset % sizeof(local_pairs[0]) != 0)
++        return 0;
++    return pair->claimed;
++}
++
++static inline int
++is_supported_timer(TIM_TypeDef *timer)
++{
++    return (timer == TIM2 || timer == TIM3 || timer == TIM4 ||
++            timer == TIM5 || timer == TIM12);
++}
++
++static volatile uint32_t *
++gpio_pwm_channel_ccr(TIM_TypeDef *timer, uint8_t channel)
++{
++    switch (channel) {
++    case 1: return &timer->CCR1;
++    case 2: return &timer->CCR2;
++    case 3: return &timer->CCR3;
++    case 4: return &timer->CCR4;
++    default: return NULL;
++    }
++}
++
++static void
++gpio_pwm_config_channel(TIM_TypeDef *timer, uint8_t channel, uint8_t active_low)
++{
++    // Channels 1/2 use CCMR1, 3/4 use CCMR2.  TIM12 only reaches 1/2.
++    volatile uint32_t *ccmr = channel <= 2 ? &timer->CCMR1 : &timer->CCMR2;
++    uint32_t mode_shift = (channel & 1) ? 0 : 8;
++    uint32_t ccer_shift = (channel - 1) * 4;
++    uint32_t ccer = tim_readl(&timer->CCER)
++        & ~((TIM_CCER_CC1E | TIM_CCER_CC1P) << ccer_shift);
++    tim_writel(&timer->CCER, ccer);
++    uint32_t mode = tim_readl(ccmr)
++        & ~((TIM_CCMR1_OC1M | TIM_CCMR1_CC1S) << mode_shift);
++    mode |= (TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1M_2
++             | TIM_CCMR1_OC1PE) << mode_shift;
++    tim_writel(ccmr, mode);
++    tim_writel(&timer->CCER, ccer | (TIM_CCER_CC1E << ccer_shift)
++               | (active_low ? (TIM_CCER_CC1P << ccer_shift) : 0));
++}
++
++static int
++timer_commit_update(TIM_TypeDef *timer)
++{
++    tim_writel(&timer->SR, 0);
++    if (tim_readl(&timer->SR) & TIM_SR_UIF)
++        return -1;
++    tim_writel(&timer->EGR, TIM_EGR_UG);
++    int confirmed = 0;
++    for (int i = 0; i < 64; ++i) {
++        if (tim_readl(&timer->SR) & TIM_SR_UIF) {
++            confirmed = 1;
++            break;
++        }
++    }
++    if (!confirmed)
++        return -1;
++    tim_writel(&timer->SR, 0);
++    return 0;
++}
++
++// The local API never rounds duty above the requested value.  In particular,
++// a small period must not turn a sub-tick request into a larger pulse.
++static uint32_t
++pair_ccr(uint32_t val, uint32_t ticks)
++{
++    return (uint32_t)(((uint64_t)val * ticks) / MAX_PWM);
++}
++
++static uint32_t
++pair_effective_val(uint32_t ccr, uint32_t ticks)
++{
++    return (uint32_t)(((uint64_t)ccr * MAX_PWM) / ticks);
++}
++
++static void
++latch_pair_off(struct gpio_pwm_pair *pair)
++{
++    int already_off = pair->raw_off;
++    pair->raw_off = 1;
++    pair->failed = 1;
++    pair->is_ready = 0;
++    if (!already_off)
++        pair->raw_force_off(pair->raw_force_off_context);
++    // Clock flags are set only after enable_pclock returns.  A shutdown
++    // reentered from raw_force_off during setup must not touch an unclocked TIM.
++    if (pair->fwd_clocked) {
++        tim_writel(&pair->fwd_timer->CR1, tim_readl(&pair->fwd_timer->CR1) & ~TIM_CR1_CEN);
++        tim_writel(&pair->fwd_timer->CCER, tim_readl(&pair->fwd_timer->CCER)
++                   & ~(1U << ((pair->fwd_channel - 1) * 4))
++                   & ~(pair->same_timer ? (1U << ((pair->rev_channel - 1) * 4)) : 0));
++        if (pair->fwd_ccr)
++            tim_writel(pair->fwd_ccr, 0);
++        if (pair->same_timer && pair->rev_ccr)
++            tim_writel(pair->rev_ccr, 0);
++    }
++    if (!pair->same_timer && pair->rev_clocked) {
++        tim_writel(&pair->rev_timer->CR1, tim_readl(&pair->rev_timer->CR1) & ~TIM_CR1_CEN);
++        tim_writel(&pair->rev_timer->CCER, tim_readl(&pair->rev_timer->CCER)
++                   & ~(1U << ((pair->rev_channel - 1) * 4)));
++        if (pair->rev_ccr)
++            tim_writel(pair->rev_ccr, 0);
++    }
++}
++
++int
++gpio_pwm_pair_setup(const struct gpio_pwm_pair_config *config,
++                    struct gpio_pwm_pair **out_pair)
++{
++    if (!config || !out_pair || !config->raw_force_off)
++        return GPIO_PWM_PAIR_ERR_INVALID;
++
++    if (global_shutdown_latched || sched_is_shutdown())
++        return GPIO_PWM_PAIR_ERR_SHUTDOWN;
++
++    if (config->forward_pin == config->reverse_pin)
++        return GPIO_PWM_PAIR_ERR_INVALID;
++    if (config->forward_pin > 0xFF || config->reverse_pin > 0xFF)
++        return GPIO_PWM_PAIR_ERR_INVALID;
++
++    if (config->forward_active_low > 1 || config->reverse_active_low > 1)
++        return GPIO_PWM_PAIR_ERR_INVALID;
++
++    if (config->cycle_time == 0)
++        return GPIO_PWM_PAIR_ERR_INVALID;
++
++    const struct gpio_pwm_info *fwd_info = gpio_pwm_find(config->forward_pin);
++    const struct gpio_pwm_info *rev_info = gpio_pwm_find(config->reverse_pin);
++    if (!fwd_info || !rev_info)
++        return GPIO_PWM_PAIR_ERR_INVALID;
++
++    if (!is_supported_timer(fwd_info->timer) || !is_supported_timer(rev_info->timer))
++        return GPIO_PWM_PAIR_ERR_NOT_SUPPORTED;
++
++    if (fwd_info->timer == rev_info->timer && fwd_info->channel == rev_info->channel)
++        return GPIO_PWM_PAIR_ERR_INVALID;
++
++    if (fwd_info->timer == TIM12 && fwd_info->channel > 2)
++        return GPIO_PWM_PAIR_ERR_NOT_SUPPORTED;
++    if (rev_info->timer == TIM12 && rev_info->channel > 2)
++        return GPIO_PWM_PAIR_ERR_NOT_SUPPORTED;
++
++    uint32_t fwd_ticks, fwd_psc;
++    gpio_pwm_calc_period(fwd_info->timer, config->cycle_time, &fwd_ticks, &fwd_psc);
++    uint32_t rev_ticks = fwd_ticks, rev_psc = fwd_psc;
++    if (fwd_info->timer != rev_info->timer) {
++        gpio_pwm_calc_period(rev_info->timer, config->cycle_time, &rev_ticks, &rev_psc);
++    }
++
++    // Serialize claim, setup callbacks, and physical handoff with shutdown.
++    // irq_restore preserves an already-disabled caller's interrupt state.
++    irqstatus_t flag = irq_save();
++    if (global_shutdown_latched || sched_is_shutdown()) {
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_SHUTDOWN;
++    }
++    if (timer_is_locally_owned(fwd_info->timer) || timer_is_locally_owned(rev_info->timer)
++        || is_enabled_pclock((uint32_t)fwd_info->timer)
++        || is_enabled_pclock((uint32_t)rev_info->timer)) {
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_BUSY;
++    }
++    int slot = -1;
++    for (int i = 0; i < GPIO_PWM_PAIR_MAX_INTERNAL; ++i)
++        if (!local_pairs[i].claimed) {
++            slot = i;
++            break;
++        }
++    if (slot < 0) {
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_BUSY;
++    }
++
++    struct gpio_pwm_pair *pair = &local_pairs[slot];
++    pair->claimed = 1;
++    pair->is_ready = 0;
++    pair->raw_off = 0;
++    pair->failed = 0;
++    pair->fwd_clocked = 0;
++    pair->rev_clocked = 0;
++    pair->same_timer = (fwd_info->timer == rev_info->timer);
++    pair->fwd_pin = config->forward_pin;
++    pair->rev_pin = config->reverse_pin;
++    pair->fwd_channel = fwd_info->channel;
++    pair->rev_channel = rev_info->channel;
++    pair->fwd_function = fwd_info->function;
++    pair->rev_function = rev_info->function;
++    pair->fwd_active_low = config->forward_active_low;
++    pair->rev_active_low = config->reverse_active_low;
++    pair->fwd_timer = fwd_info->timer;
++    pair->rev_timer = rev_info->timer;
++    pair->fwd_ccr = gpio_pwm_channel_ccr(pair->fwd_timer, pair->fwd_channel);
++    pair->rev_ccr = gpio_pwm_channel_ccr(pair->rev_timer, pair->rev_channel);
++    pair->hwpwm_ticks = fwd_ticks;
++    pair->prescaler = fwd_psc;
++    pair->rev_ticks = rev_ticks;
++    pair->rev_prescaler = rev_psc;
++    pair->confirmed_fwd_ccr = 0;
++    pair->confirmed_rev_ccr = 0;
++    pair->raw_force_off = config->raw_force_off;
++    pair->raw_force_off_context = config->raw_force_off_context;
++
++    pair->raw_force_off(pair->raw_force_off_context);
++    if (global_shutdown_latched || sched_is_shutdown() || pair->raw_off) {
++        latch_pair_off(pair);
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_SHUTDOWN;
++    }
++
++    gpio_out_setup(pair->fwd_pin, pair->fwd_active_low ? 1 : 0);
++    if (global_shutdown_latched || sched_is_shutdown() || pair->raw_off) {
++        latch_pair_off(pair);
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_SHUTDOWN;
++    }
++    gpio_out_setup(pair->rev_pin, pair->rev_active_low ? 1 : 0);
++    if (global_shutdown_latched || sched_is_shutdown() || pair->raw_off) {
++        latch_pair_off(pair);
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_SHUTDOWN;
++    }
++
++    enable_pclock((uint32_t)pair->fwd_timer);
++    pair->fwd_clocked = 1;
++    if (global_shutdown_latched || sched_is_shutdown() || pair->raw_off) {
++        latch_pair_off(pair);
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_SHUTDOWN;
++    }
++    if (!pair->same_timer) {
++        enable_pclock((uint32_t)pair->rev_timer);
++        pair->rev_clocked = 1;
++    }
++    if (global_shutdown_latched || sched_is_shutdown() || pair->raw_off) {
++        latch_pair_off(pair);
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_SHUTDOWN;
++    }
++
++    tim_writel(&pair->fwd_timer->DIER, 0);
++    tim_writel(&pair->fwd_timer->PSC, fwd_psc - 1);
++    tim_writel(&pair->fwd_timer->ARR, fwd_ticks - 1);
++    gpio_pwm_config_channel(pair->fwd_timer, pair->fwd_channel, pair->fwd_active_low);
++
++    if (pair->same_timer) {
++        gpio_pwm_config_channel(pair->fwd_timer, pair->rev_channel, pair->rev_active_low);
++    } else {
++        tim_writel(&pair->rev_timer->DIER, 0);
++        tim_writel(&pair->rev_timer->PSC, rev_psc - 1);
++        tim_writel(&pair->rev_timer->ARR, rev_ticks - 1);
++        gpio_pwm_config_channel(pair->rev_timer, pair->rev_channel, pair->rev_active_low);
++    }
++
++    tim_writel(pair->fwd_ccr, 0);
++    tim_writel(pair->rev_ccr, 0);
++    if (timer_commit_update(pair->fwd_timer) != 0) {
++        latch_pair_off(pair);
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_HARDWARE;
++    }
++    if (!pair->same_timer) {
++        if (timer_commit_update(pair->rev_timer) != 0) {
++            latch_pair_off(pair);
++            irq_restore(flag);
++            return GPIO_PWM_PAIR_ERR_HARDWARE;
++        }
++    }
++
++    if (global_shutdown_latched || sched_is_shutdown() || pair->raw_off) {
++        latch_pair_off(pair);
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_SHUTDOWN;
++    }
++
++    tim_writel(&pair->fwd_timer->CR1, tim_readl(&pair->fwd_timer->CR1) | TIM_CR1_CEN);
++    if (!pair->same_timer) {
++        tim_writel(&pair->rev_timer->CR1, tim_readl(&pair->rev_timer->CR1) | TIM_CR1_CEN);
++    }
++
++    if (global_shutdown_latched || sched_is_shutdown() || pair->raw_off) {
++        latch_pair_off(pair);
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_SHUTDOWN;
++    }
++
++    gpio_peripheral(pair->fwd_pin, pair->fwd_function, 0);
++    if (global_shutdown_latched || sched_is_shutdown() || pair->raw_off) {
++        latch_pair_off(pair);
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_SHUTDOWN;
++    }
++    gpio_peripheral(pair->rev_pin, pair->rev_function, 0);
++    if (global_shutdown_latched || sched_is_shutdown() || pair->raw_off) {
++        latch_pair_off(pair);
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_SHUTDOWN;
++    }
++
++    pair->is_ready = 1;
++    *out_pair = pair;
++    irq_restore(flag);
++    return GPIO_PWM_PAIR_OK;
++}
++
++int
++gpio_pwm_pair_update(struct gpio_pwm_pair *pair,
++                     uint32_t forward_val, uint32_t reverse_val)
++{
++    if (!is_valid_pair_ptr(pair) || forward_val > MAX_PWM
++        || reverse_val > MAX_PWM || (forward_val && reverse_val))
++        return GPIO_PWM_PAIR_ERR_INVALID;
++
++    irqstatus_t flag = irq_save();
++    if (global_shutdown_latched || sched_is_shutdown() || pair->raw_off) {
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_SHUTDOWN;
++    }
++    if (pair->failed || !pair->is_ready) {
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_HARDWARE;
++    }
++    // Policy deadtime belongs to the portable consumer.  Require a separate
++    // acknowledged zero before either direction may become positive.
++    if ((pair->confirmed_fwd_ccr && reverse_val)
++        || (pair->confirmed_rev_ccr && forward_val)) {
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_INVALID;
++    }
++
++    uint32_t f_ccr = pair_ccr(forward_val, pair->hwpwm_ticks);
++    uint32_t r_ccr = pair_ccr(reverse_val, pair->rev_ticks);
++    int f_change = f_ccr != pair->confirmed_fwd_ccr;
++    int r_change = r_ccr != pair->confirmed_rev_ccr;
++    if (!f_change && !r_change) {
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_OK;
++    }
++
++    if (f_change)
++        tim_writel(pair->fwd_ccr, f_ccr);
++    if (global_shutdown_latched || pair->raw_off)
++        goto update_shutdown;
++    if (r_change)
++        tim_writel(pair->rev_ccr, r_ccr);
++    if (global_shutdown_latched || pair->raw_off)
++        goto update_shutdown;
++    if ((f_change || (r_change && pair->same_timer))
++        && timer_commit_update(pair->fwd_timer))
++        goto update_hardware_error;
++    if (global_shutdown_latched || pair->raw_off)
++        goto update_shutdown;
++    if (r_change && !pair->same_timer
++        && timer_commit_update(pair->rev_timer))
++        goto update_hardware_error;
++    if (global_shutdown_latched || pair->raw_off)
++        goto update_shutdown;
++
++    pair->confirmed_fwd_ccr = f_ccr;
++    pair->confirmed_rev_ccr = r_ccr;
++    irq_restore(flag);
++    return GPIO_PWM_PAIR_OK;
++
++update_hardware_error:
++    latch_pair_off(pair);
++    irq_restore(flag);
++    return GPIO_PWM_PAIR_ERR_HARDWARE;
++update_shutdown:
++    latch_pair_off(pair);
++    irq_restore(flag);
++    return GPIO_PWM_PAIR_ERR_SHUTDOWN;
++}
++
++void
++gpio_pwm_pair_raw_disable(struct gpio_pwm_pair *pair)
++{
++    if (!is_valid_pair_ptr(pair))
++        return;
++    irqstatus_t flag = irq_save();
++    latch_pair_off(pair);
++    irq_restore(flag);
++}
++
++int
++gpio_pwm_pair_is_ready(const struct gpio_pwm_pair *pair)
++{
++    irqstatus_t flag = irq_save();
++    if (!is_valid_pair_ptr(pair))
++    {
++        irq_restore(flag);
++        return 0;
++    }
++    int ready = !global_shutdown_latched && !sched_is_shutdown()
++        && !pair->raw_off && !pair->failed && pair->is_ready;
++    irq_restore(flag);
++    return ready;
++}
++
++int
++gpio_pwm_pair_get_info(const struct gpio_pwm_pair *pair,
++                       struct gpio_pwm_pair_info *out_info)
++{
++    irqstatus_t flag = irq_save();
++    if (!is_valid_pair_ptr(pair) || !out_info)
++    {
++        irq_restore(flag);
++        return GPIO_PWM_PAIR_ERR_INVALID;
++    }
++    out_info->hwpwm_ticks = pair->hwpwm_ticks;
++    out_info->prescaler = pair->prescaler;
++    out_info->reverse_hwpwm_ticks = pair->rev_ticks;
++    out_info->reverse_prescaler = pair->rev_prescaler;
++    out_info->confirmed_forward_val = pair_effective_val(
++        pair->confirmed_fwd_ccr, pair->hwpwm_ticks);
++    out_info->confirmed_reverse_val = pair_effective_val(
++        pair->confirmed_rev_ccr, pair->rev_ticks);
++    out_info->confirmed_forward_counts = pair->confirmed_fwd_ccr;
++    out_info->confirmed_reverse_counts = pair->confirmed_rev_ccr;
++    out_info->forward_channel = pair->fwd_channel;
++    out_info->reverse_channel = pair->rev_channel;
++    out_info->same_timer = pair->same_timer;
++    out_info->is_ready = !global_shutdown_latched && !sched_is_shutdown()
++        && !pair->raw_off && !pair->failed && pair->is_ready;
++    irq_restore(flag);
++    return GPIO_PWM_PAIR_OK;
++}
++
++void
++gpio_pwm_pair_shutdown(void)
++{
++    irqstatus_t flag = irq_save();
++    if (global_shutdown_latched) {
++        irq_restore(flag);
++        return;
++    }
++    global_shutdown_latched = 1;
++    for (int i = 0; i < GPIO_PWM_PAIR_MAX_INTERNAL; ++i) {
++        struct gpio_pwm_pair *pair = &local_pairs[i];
++        if (pair->claimed)
++            latch_pair_off(pair);
++    }
++    irq_restore(flag);
++}
++DECL_SHUTDOWN(gpio_pwm_pair_shutdown);
++
++#endif // CONFIG_WANT_HARD_PWM_LOCAL_PAIR
+--- /dev/null
++++ b/src/stm32/pwm.h
+@@ -0,0 +1,95 @@
++// Optional read-only STM32 hardware PWM route query and local paired-PWM API.
++// SPDX-License-Identifier: GPL-3.0-only
++#ifndef __STM32_PWM_H
++#define __STM32_PWM_H
++#include <stdint.h>
++#include "autoconf.h"
++
++struct gpio_pwm_route {
++    // Opaque identity within this MCU build. Compare for equality; do not
++    // dereference, narrow, persist across builds or expose it as a timer number.
++    uintptr_t timer_id;
++    uint8_t channel; // 1-based channel selected by gpio_pwm_setup().
++};
++
++// Available only with CONFIG_WANT_HARD_PWM_QUERY. No I/O, allocation or claim.
++// Returns 1 on success, 0 on invalid/unsupported pin or NULL output. Failure
++// preserves *out. A route does not imply that its peripheral is available.
++int gpio_pwm_get_route(uint32_t pin, struct gpio_pwm_route *out);
++
++#if CONFIG_WANT_HARD_PWM_LOCAL_PAIR
++
++// Opaque paired PWM driver handle.
++struct gpio_pwm_pair;
++
++// Result / status codes.
++enum {
++    GPIO_PWM_PAIR_OK = 0,
++    GPIO_PWM_PAIR_ERR_INVALID = -1,        // invalid input, opposing positive duties, or direct reversal
++    GPIO_PWM_PAIR_ERR_BUSY = -2,           // capacity full or timer already claimed / active
++    GPIO_PWM_PAIR_ERR_NOT_SUPPORTED = -3,  // unsupported timer (not TIM2/3/4/5/12) or channel layout
++    GPIO_PWM_PAIR_ERR_HARDWARE = -4,       // hardware update timeout, stuck flag, or unclocked access
++    GPIO_PWM_PAIR_ERR_SHUTDOWN = -5,       // global shutdown active or emergency off latched
++};
++
++// Configuration input for local pair preparation.
++struct gpio_pwm_pair_config {
++    uint32_t forward_pin;
++    uint32_t reverse_pin;
++    uint8_t forward_active_low; // 0 = active high, 1 = active low
++    uint8_t reverse_active_low; // 0 = active high, 1 = active low
++    uint32_t cycle_time;
++    // Mandatory immutable fail-disabled path for the separate motor ENABLE.
++    // It must be safe to call with IRQs disabled; it never enables the motor.
++    void (*raw_force_off)(void *context);
++    void *raw_force_off_context;
++};
++
++// Configured timing, quantization, and status query output.
++struct gpio_pwm_pair_info {
++    uint32_t hwpwm_ticks;         // forward timer; ARR + 1
++    uint32_t prescaler;           // forward timer; PSC + 1
++    uint32_t reverse_hwpwm_ticks; // reverse timer; equals forward for same timer
++    uint32_t reverse_prescaler;
++    uint32_t confirmed_forward_val; // last acknowledged effective duty, 0..32768
++    uint32_t confirmed_reverse_val;
++    uint32_t confirmed_forward_counts; // exact acknowledged CCR counts
++    uint32_t confirmed_reverse_counts;
++    uint8_t forward_channel;
++    uint8_t reverse_channel;
++    uint8_t same_timer;
++    uint8_t is_ready;
++};
++
++// Prepare and claim a local PWM pair.
++// Validates pointers, capacity, pins, routes, timers, alias channels, periods,
++// and polarities before any hardware mutation. raw_force_off is required.
++// Once physical mutation begins, claims remain immutable even on partial
++// failure. On error, *out_pair is unchanged.
++int gpio_pwm_pair_setup(const struct gpio_pwm_pair_config *config,
++                        struct gpio_pwm_pair **out_pair);
++
++// Confirmed synchronous update of duty (0..32768, where 32768 = PWM_MAX).
++// Opposing positive duties and direct reversal are rejected. A separate
++// confirmed zero update is required before energizing the opposite direction.
++// Values are rounded down to timer counts; get_info reports effective duty.
++int gpio_pwm_pair_update(struct gpio_pwm_pair *pair,
++                         uint32_t forward_val, uint32_t reverse_val);
++
++// Immediate raw emergency disable. Invokes raw_force_off callback, stops CEN,
++// zeroes CCRs, and permanently latches pair disabled without waiting or clock reads.
++void gpio_pwm_pair_raw_disable(struct gpio_pwm_pair *pair);
++
++// Check if pair is operational (not failed, not raw-off, not in shutdown).
++int gpio_pwm_pair_is_ready(const struct gpio_pwm_pair *pair);
++
++// Query configured timing, quantization, and status.
++int gpio_pwm_pair_get_info(const struct gpio_pwm_pair *pair,
++                           struct gpio_pwm_pair_info *out_info);
++
++// Global emergency shutdown for all local PWM pairs.
++void gpio_pwm_pair_shutdown(void);
++
++#endif // CONFIG_WANT_HARD_PWM_LOCAL_PAIR
++
++#endif
+--- a/src/Kconfig
++++ b/src/Kconfig
+@@ -112,6 +112,19 @@
+     bool
+     depends on HAVE_GPIO_HARD_PWM
+     default y
++config WANT_HARD_PWM_QUERY
++    bool "Expose hardware PWM routes to local MCU modules"
++    depends on MACH_STM32 && WANT_HARD_PWM
++    default n
++config WANT_HARD_PWM_LOCAL_PAIR
++    bool "Support local paired PWM channels"
++    depends on MACH_STM32H723 && WANT_HARD_PWM
++    default n
++config HARD_PWM_LOCAL_MAX_PAIRS
++    int "Maximum local PWM pairs"
++    depends on WANT_HARD_PWM_LOCAL_PAIR
++    range 1 8
++    default 8
+ config WANT_BUTTONS
+     bool
+     depends on HAVE_GPIO
+@@ -358,3 +371,15 @@
+     bool
+ config HAVE_SOFTWARE_DIVIDE_REQUIRED
+     bool
++
++# Optional MCU callers share the existing TMC UART driver.
++config WANT_TMCUART_LOCAL
++    bool "Support local MCU TMC UART callers"
++    depends on WANT_TMCUART && MACH_STM32H723
++    default n
++
++config TMCUART_LOCAL_MAX_CHANNELS
++    int "Maximum local TMC UART channels"
++    depends on WANT_TMCUART_LOCAL
++    range 1 8
++    default 8

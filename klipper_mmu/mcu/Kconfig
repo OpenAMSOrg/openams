@@ -1,0 +1,442 @@
+# Kconfig settings for klipper-mmu add-on
+
+source "src/klipper_mmu/mcu/Kconfig.driver_api"
+
+menuconfig KLIPPER_MMU
+    bool "klipper-mmu"
+    default n
+    depends on ((MACH_STM32 && !HAVE_LIMITED_CODE_SIZE && FLASH_SIZE >= 0x20000) || MACH_SIMU) && CLOCK_FREQ >= 1000000
+    # mcu/Makefile compiles stepdir_gpio.c (STEP/DIR motion, stepper_local_*)
+    # whenever MACH_STM32H723 or any of the other machines' boot gates is
+    # selected; WANT_STEPPER_LOCAL must follow the same condition, not just
+    # KLIPPER_MMU_PIN_CONFIG (H723 compiles it before pin config is done).
+    select WANT_STEPPER_LOCAL if MACH_STM32H723 || KLIPPER_MMU_F207_BOOT_GATES || KLIPPER_MMU_F4X5_BOOT_GATES || KLIPPER_MMU_F765_BOOT_GATES || KLIPPER_MMU_G4_BOOT_GATES || KLIPPER_MMU_H743_H750_BOOT_GATES || KLIPPER_MMU_G0B_BOOT_GATES
+    help
+        Enable the klipper-mmu add-on package.
+
+        In Klipper menuconfig, select the MCU first, then the MMU mechanism,
+        an optional editable wiring preset, and every supported signal role.
+        Use canonical pin names such as PA1 and PA2. Polarity and pulls are
+        separate settings. Manual pin mapping is the default; AFC Lite is an
+        optional STM32H723 wiring preset, and saved overrides are preserved.
+
+        A GPIO port is accepted when that MCU's headers define it (GPIOA
+        through GPIOI, as upstream enumerates them). Port existence is not
+        board or package pad availability.
+
+        Common-core configuration and manual pin reservations apply on
+        MACH_STM32. Physical GPIO/UART startup is available only through
+        explicit target/profile gates; H723 PWM/ADC remain separately gated.
+        The product still advertises ACTUATION=0 unless the separate
+        experimental actuator gate is selected.
+
+comment "This add-on requires at least 128KiB flash. This is a minimum; actual selected features and bootloader space are still checked by the normal linker."
+    depends on MACH_STM32 && (HAVE_LIMITED_CODE_SIZE || FLASH_SIZE < 0x20000)
+
+if KLIPPER_MMU
+
+# Extend Klipper's existing reservation; do not create a private MCU stack.
+config STACK_SIZE
+    int "MMU stack reservation (bytes)" if MACH_STM32
+    range 4096 32768 if MACH_STM32
+    help
+        Reserve at least 4 KiB for nested local control/planning calls and
+        interrupt preemption. The upstream linker reserves this space before
+        the dynamic allocation region. Increasing it can make small targets
+        fail the normal RAM-size check. With the add-on disabled, upstream's
+        ordinary stack configuration is unchanged.
+
+# Promptless: true only on this add-on's smallest supported flash tier
+# (0x20000/128 KiB is KLIPPER_MMU's own minimum, line 8 above -- G0B0, G0B1,
+# G431/G474 and H750 today). mcu/Makefile turns this into -Os for klipper-mmu's
+# own objects only (never upstream files, never H723) on those images.
+config KLIPPER_MMU_SIZE_OPT_BUILD
+    bool
+    default y if MACH_STM32 && FLASH_SIZE <= 0x20000
+
+menu "Device, board and lanes"
+
+source "src/klipper_mmu/mcu/Kconfig.devices"
+
+choice
+    prompt "Wiring preset (all pins editable)"
+    default KLIPPER_MMU_BOARD_SIMULATION if MACH_SIMU
+    default KLIPPER_MMU_BOARD_CUSTOM
+    help
+        Select defaults for the separate physical pin configuration menu.
+        Saved user overrides take precedence. Selection does not claim hardware
+        qualification or activate physical pins.
+
+config KLIPPER_MMU_BOARD_AFC_LITE
+    bool "AFC Lite wiring preset (STM32H723)"
+    depends on MACH_STM32H723
+    help
+        Known AFC Lite pin assignments seed the optional pin menu.
+        Peripheral routing and hardware qualification remain separate; selecting
+        this board alone does not reserve pins or enable an output.
+
+config KLIPPER_MMU_BOARD_SIMULATION
+    bool "Host simulation (MACH_SIMU)"
+    depends on MACH_SIMU
+    help
+        Logical mapping for host simulation testing.
+
+config KLIPPER_MMU_BOARD_CUSTOM
+    bool "Manual pin configuration"
+    help
+        Assign every pin explicitly for the MCU selected in Klipper.
+        Presets only supply editable wiring defaults; they do not select an MCU.
+
+endchoice
+
+config KLIPPER_MMU_BOARD_ID
+    int
+    default 1 if KLIPPER_MMU_BOARD_AFC_LITE
+    default 2 if KLIPPER_MMU_BOARD_SIMULATION
+    default 3 if KLIPPER_MMU_BOARD_CUSTOM
+    default 0
+
+# The reference BoxTurtle image has to compile the backends begin(NULL, 0)
+# requires. Selecting them only for this preset leaves other devices alone.
+config KLIPPER_MMU_BOXTURTLE_BOOT_GATES
+    bool
+    default y
+    depends on MACH_STM32H723 && KLIPPER_MMU_DEVICE_BOXTURTLE && KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_PIN_CONFIG
+    select WANT_GPIO_LOCAL
+    select WANT_TMCUART_LOCAL
+    select WANT_HARD_PWM_LOCAL_PAIR
+    select WANT_HARD_PWM_QUERY
+    select KLIPPER_MMU_TMC_UART_SHARED
+
+# Compile gates for the software-only EMU candidate. Passive rewind has no PWM.
+config KLIPPER_MMU_EMU_BOOT_GATES
+    bool
+    default y
+    depends on MACH_STM32H723 && KLIPPER_MMU_DEVICE_EMU && KLIPPER_MMU_BOARD_CUSTOM && KLIPPER_MMU_PIN_CONFIG
+    select WANT_GPIO_LOCAL
+    select WANT_TMCUART_LOCAL
+    select KLIPPER_MMU_TMC_UART_SHARED
+
+# NightOwl uses the shared H723 startup with a manually editable pin map.
+# This enables driver compilation only; hosted startup and actuation remain
+# separate experimental menu choices below.
+config KLIPPER_MMU_NIGHTOWL_BOOT_GATES
+    bool
+    default y
+    depends on MACH_STM32H723 && KLIPPER_MMU_DEVICE_NIGHTOWL && KLIPPER_MMU_BOARD_CUSTOM && KLIPPER_MMU_PIN_CONFIG
+    select WANT_GPIO_LOCAL
+    select WANT_TMCUART_LOCAL
+    select KLIPPER_MMU_TMC_UART_SHARED
+
+# Shared compile gate for the passive/independent-feeder software candidates
+# (KMS, Angry Beaver, 3MS, QuattroBox 1.0/1.1/2): same four-lane, no-PWM,
+# no-ADC shape as NightOwl, so one gate covers all of them instead of six.
+config KLIPPER_MMU_PASSIVE_FEEDER_BOOT_GATES
+    bool
+    default y
+    depends on MACH_STM32H723 && KLIPPER_MMU_BOARD_CUSTOM && KLIPPER_MMU_PIN_CONFIG
+    depends on KLIPPER_MMU_DEVICE_KMS || KLIPPER_MMU_DEVICE_ANGRY_BEAVER || KLIPPER_MMU_DEVICE_THREE_MS || KLIPPER_MMU_DEVICE_QUATTROBOX_1_0 || KLIPPER_MMU_DEVICE_QUATTROBOX_1_1 || KLIPPER_MMU_DEVICE_QUATTROBOX_2
+    select WANT_GPIO_LOCAL
+    select WANT_TMCUART_LOCAL
+    select KLIPPER_MMU_TMC_UART_SHARED
+
+# QIDI Box shares the passive/independent-feeder shape (four lanes, no PWM,
+# no ADC) but its gear has no TMC UART chip (KLIPPER_MMU_GEAR_TMC_UART
+# defaults off for it, mcu/Kconfig.control): selecting WANT_TMCUART_LOCAL/
+# KLIPPER_MMU_TMC_UART_SHARED here would send board startup down the TMC
+# confirmation path this device can never satisfy, so this gate selects
+# local GPIO only. mcu/board_startup.c then binds its gear as plain
+# STEP/DIR (KM_HAS_TMC_UART_SUPPORT false).
+config KLIPPER_MMU_QIDI_BOOT_GATES
+    bool
+    default y
+    depends on MACH_STM32H723 && KLIPPER_MMU_DEVICE_QIDI_BOX && KLIPPER_MMU_BOARD_CUSTOM && KLIPPER_MMU_PIN_CONFIG
+    select WANT_GPIO_LOCAL
+
+# Selector machines on H723 use the same local GPIO and shared TMC UART
+# backends for their one gear, selector stepper, endstop and servo. One with
+# per-lane powered rewind (Claymore) also needs BoxTurtle's PWM pair backend.
+config KLIPPER_MMU_SELECTOR_BOOT_GATES
+    bool
+    default y
+    depends on MACH_STM32H723 && KLIPPER_MMU_BOARD_CUSTOM && KLIPPER_MMU_PIN_CONFIG
+    depends on KLIPPER_MMU_SELECTOR_STEPPER || KLIPPER_MMU_SERVO
+    select WANT_GPIO_LOCAL
+    select WANT_TMCUART_LOCAL
+    select KLIPPER_MMU_TMC_UART_SHARED
+    select WANT_HARD_PWM_LOCAL_PAIR if KLIPPER_MMU_POWERED_REWIND
+    select WANT_HARD_PWM_QUERY if KLIPPER_MMU_POWERED_REWIND
+
+# F405/F407 passive profiles use the shared upstream stepper UART/GPIO paths.
+# This only enables compilation; diagnostic startup remains separately gated.
+config KLIPPER_MMU_F4X5_BOOT_GATES
+    bool
+    default y
+    depends on (MACH_STM32F405 || MACH_STM32F407 || MACH_STM32F429) && KLIPPER_MMU_BOARD_CUSTOM && KLIPPER_MMU_PIN_CONFIG && !KLIPPER_MMU_POWERED_REWIND && !KLIPPER_MMU_DIFF_BUFFER && (KLIPPER_MMU_BOOT_IDENTITY_F4X5 || KLIPPER_MMU_BOOT_IDENTITY_HOST)
+    depends on (KLIPPER_MMU_DEVICE_CUSTOM && KLIPPER_MMU_LANE_COUNT = 1) || (KLIPPER_MMU_DEVICE_NIGHTOWL && KLIPPER_MMU_LANE_COUNT = 4)
+    select WANT_GPIO_LOCAL
+    select WANT_TMCUART_LOCAL
+    select KLIPPER_MMU_TMC_UART_SHARED
+    help
+        Compile the shared GPIO and TMC UART backends for the constrained F4x5
+        passive profiles. This does not configure pins or enable motion.
+
+config KLIPPER_MMU_F765_BOOT_GATES
+    bool
+    default y
+    depends on MACH_STM32F765 && KLIPPER_MMU_BOARD_CUSTOM && KLIPPER_MMU_PIN_CONFIG && !KLIPPER_MMU_POWERED_REWIND && !KLIPPER_MMU_DIFF_BUFFER && (KLIPPER_MMU_BOOT_IDENTITY_F765 || KLIPPER_MMU_BOOT_IDENTITY_HOST)
+    depends on (KLIPPER_MMU_DEVICE_CUSTOM && KLIPPER_MMU_LANE_COUNT = 1) || (KLIPPER_MMU_DEVICE_NIGHTOWL && KLIPPER_MMU_LANE_COUNT = 4)
+    select WANT_GPIO_LOCAL
+    select WANT_TMCUART_LOCAL
+    select KLIPPER_MMU_TMC_UART_SHARED
+    help
+        Compile the shared GPIO and TMC UART backends for constrained F765
+        passive profiles. Pin setup and motion remain separately gated.
+
+config KLIPPER_MMU_F207_BOOT_GATES
+    bool
+    default y
+    depends on MACH_STM32F207 && KLIPPER_MMU_BOARD_CUSTOM && KLIPPER_MMU_PIN_CONFIG && !KLIPPER_MMU_POWERED_REWIND && !KLIPPER_MMU_DIFF_BUFFER && (KLIPPER_MMU_BOOT_IDENTITY_F207 || KLIPPER_MMU_BOOT_IDENTITY_HOST)
+    depends on (KLIPPER_MMU_DEVICE_CUSTOM && KLIPPER_MMU_LANE_COUNT = 1) || (KLIPPER_MMU_DEVICE_NIGHTOWL && KLIPPER_MMU_LANE_COUNT = 4)
+    select WANT_GPIO_LOCAL
+    select WANT_TMCUART_LOCAL
+    select KLIPPER_MMU_TMC_UART_SHARED
+    help
+        Compile the shared GPIO and TMC UART backends for constrained F207
+        passive profiles. Pin setup and motion remain separately gated.
+
+config KLIPPER_MMU_G4_BOOT_GATES
+    bool
+    default y
+    depends on (MACH_STM32G431 || MACH_STM32G474) && KLIPPER_MMU_BOARD_CUSTOM && KLIPPER_MMU_PIN_CONFIG && !KLIPPER_MMU_POWERED_REWIND && !KLIPPER_MMU_DIFF_BUFFER && (KLIPPER_MMU_BOOT_IDENTITY_G4 || KLIPPER_MMU_BOOT_IDENTITY_HOST)
+    depends on (KLIPPER_MMU_DEVICE_CUSTOM && KLIPPER_MMU_LANE_COUNT = 1) || (KLIPPER_MMU_DEVICE_NIGHTOWL && KLIPPER_MMU_LANE_COUNT = 4)
+    select WANT_GPIO_LOCAL
+    select WANT_TMCUART_LOCAL
+    select KLIPPER_MMU_TMC_UART_SHARED
+    help
+        Compile shared GPIO and TMC UART for passive G431/G474 profiles.
+        Diagnostic startup and motion remain separately gated.
+
+config KLIPPER_MMU_H743_H750_BOOT_GATES
+    bool
+    default y
+    depends on (MACH_STM32H743 || MACH_STM32H750) && KLIPPER_MMU_BOARD_CUSTOM && KLIPPER_MMU_PIN_CONFIG && !KLIPPER_MMU_POWERED_REWIND && !KLIPPER_MMU_DIFF_BUFFER && (KLIPPER_MMU_BOOT_IDENTITY_H743_H750 || KLIPPER_MMU_BOOT_IDENTITY_HOST)
+    depends on (KLIPPER_MMU_DEVICE_CUSTOM && KLIPPER_MMU_LANE_COUNT = 1) || (KLIPPER_MMU_DEVICE_NIGHTOWL && KLIPPER_MMU_LANE_COUNT = 4)
+    select WANT_GPIO_LOCAL
+    select WANT_TMCUART_LOCAL
+    select KLIPPER_MMU_TMC_UART_SHARED
+    help
+        Compile shared GPIO and TMC UART for passive H743/H750 profiles.
+        PWM and ADC remain H723-only; startup and motion are separately gated.
+
+config KLIPPER_MMU_G0B_BOOT_GATES
+    bool
+    default y
+    depends on (MACH_STM32G0B0 || MACH_STM32G0B1) && USBSERIAL && STM32_USB_PA11_PA12 && CLOCK_FREQ = 64000000
+    depends on KLIPPER_MMU_BOARD_CUSTOM && KLIPPER_MMU_PIN_CONFIG && !KLIPPER_MMU_POWERED_REWIND && !KLIPPER_MMU_DIFF_BUFFER
+    depends on (KLIPPER_MMU_DEVICE_CUSTOM && KLIPPER_MMU_LANE_COUNT = 1) || (KLIPPER_MMU_DEVICE_NIGHTOWL && KLIPPER_MMU_LANE_COUNT = 4) || (KLIPPER_MMU_DEVICE_ANGRY_BEAVER && KLIPPER_MMU_LANE_COUNT = 4) || ((KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0) && KLIPPER_MMU_LANE_COUNT = 8)
+    depends on KLIPPER_MMU_BOOT_IDENTITY_HOST
+    select WANT_GPIO_LOCAL
+    select WANT_TMCUART_LOCAL
+    select KLIPPER_MMU_TMC_UART_SHARED
+    help
+        Compile shared GPIO, TMC UART, and hosted diagnostic startup for
+        passive G0B0/G0B1 profiles. No MCU RNG provider is used; motion remains
+        separately gated.
+
+        Happy Hare's own default board for ERCF 2.0/3.0 (installer/mmu_types/
+        Kconfig.ercf:198,242) and Angry Beaver (installer/mmu_types/
+        Kconfig.angry_beaver:35) is BOARD_TYPE_MMB_2_0, an STM32G0B1 board
+        (installer/boards/Kconfig.mmb_2_0) -- their real hardware, not H723.
+        Powered rewind and the DiffA/DiffB buffer stay excluded above
+        (!KLIPPER_MMU_POWERED_REWIND && !KLIPPER_MMU_DIFF_BUFFER); none of the
+        three devices admitted here use them.
+
+        All three fit this part's 128 KiB flash with KLIPPER_MMU_SIZE_OPT_
+        BUILD's -Os (mcu/Kconfig above); measured margins and history are in
+        docs/plan/device-and-stm32-rollout.md.
+
+config KLIPPER_MMU_LANE_COUNT
+    int "Lane count override"
+    range 1 12
+    default 5 if KLIPPER_MMU_DEVICE_EMU
+    default 9 if KLIPPER_MMU_DEVICE_ERCF_1_1
+    default 8 if KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0
+    default 10 if KLIPPER_MMU_DEVICE_TRADRACK
+    default 6 if KLIPPER_MMU_DEVICE_MMX6 || KLIPPER_MMU_DEVICE_LOW_RIDER
+    default 4
+    help
+        Configured number of MMU lanes (range 1 to 12; the common control
+        core's own KM_MAX_LANES ceiling may be narrower on a given build).
+        Defaults to 4; select 4 or 8 for the BoxTurtle installation variant.
+        Catalogue entries do not imply implemented mechanisms or qualified wiring.
+        Used by the common control profile. Does not establish connected hardware.
+
+        ERCF 1.1 defaults to 9 gates, ERCF 2.0/3.0 to 8, and Tradrack to 10.
+        MMX6 and Low Rider default to 6 gates, each its dossier's num_gates
+        (docs/devices/). 3D Chameleon, MMX, HTLF, Pico MMU and BTT ViViD all
+        take the unoverridden 4-lane fallback (ViViD's own PARAM_NUM_GATES
+        default is also 4, installer/mmu_types/Kconfig.vvd:78-79, fixed
+        hardware -- DISABLE_NUM_GATES_OPTION, Kconfig.vvd:18). Claymore also
+        takes it unoverridden: its AFC template wires exactly four AFC_lane
+        sections (templates/AFC_Claymore_1-AFC_Lite.cfg lane1..4).
+
+endmenu
+
+source "src/klipper_mmu/mcu/Kconfig.control"
+source "src/klipper_mmu/mcu/Kconfig.selector"
+source "src/klipper_mmu/mcu/Kconfig.pins"
+
+config KLIPPER_MMU_PROTOCOL_VERSION
+    int
+    default 1
+
+config KLIPPER_MMU_INTEGRATION_VERSION
+    int
+    default 1
+
+config KLIPPER_MMU_BOOT_IDENTITY_H723
+    bool "Experimental STM32H723 hardware boot identity"
+    default y if KLIPPER_MMU_BOXTURTLE_BOOT_GATES && !KLIPPER_MMU_DIFF_BUFFER
+    default n
+    depends on MACH_STM32H723
+    help
+        Experimental hardware boot identity only. No motion.
+        Defaults on for the ordinary BoxTurtle/AFC Lite switched-buffer preset.
+        Requires hardware qualification. Preserves USB's HSI48.
+
+config KLIPPER_MMU_BOOT_IDENTITY_F4X5
+    bool "Experimental STM32F405/F407/F429 per-reset boot identity (USB, 168 MHz only)"
+    default n
+    depends on (MACH_STM32F405 || MACH_STM32F407 || MACH_STM32F429) && USBSERIAL && !STM32_USB_PB14_PB15 && (!MACH_STM32F429 || STM32_USB_PA11_PA12) && CLOCK_FREQ = 168000000
+    help
+        Experimental F405/F407/F429 RNG identity using Klipper's verified USB clock
+        setup on PA11/PA12: its F4x5 clock path configures PLLQ=48 MHz at
+        168 MHz. The provider verifies PLL configuration at runtime, owns
+        the AHB2 RNG clock only when initially off, and fails closed on
+        RNG health or continuous-test errors. USB PA11/PA12 remain Klipper-owned.
+        The F429 uses the same pinned F4x5 PLLQ route. This does not qualify
+        hardware or enable motion.
+
+config KLIPPER_MMU_BOOT_IDENTITY_F765
+    bool "Experimental STM32F765 per-reset boot identity (USB, 216 MHz only)"
+    default n
+    depends on MACH_STM32F765 && USBSERIAL && STM32_USB_PA11_PA12 && CLOCK_FREQ = 216000000
+    help
+        Uses the F765 RNG after checking Klipper's PLLSAIP 48 MHz clock route.
+        The AHB2 RNG clock must be unowned. This does not qualify hardware
+        or enable motion.
+
+config KLIPPER_MMU_BOOT_IDENTITY_F207
+    bool "Experimental STM32F207 per-reset boot identity (USB, 120 MHz only)"
+    default n
+    depends on MACH_STM32F207 && USBSERIAL && STM32_USB_PA11_PA12 && CLOCK_FREQ = 120000000
+    help
+        Uses the F207 RNG after checking Klipper's 48 MHz PLLQ clock route.
+        The AHB2 RNG clock must be unowned. This does not qualify hardware
+        or enable motion.
+
+config KLIPPER_MMU_BOOT_IDENTITY_G4
+    bool "Experimental STM32G431/G474 per-reset boot identity (USB, 170 MHz only)"
+    default n
+    depends on (MACH_STM32G431 || MACH_STM32G474) && USBSERIAL && STM32_USB_PA11_PA12 && CLOCK_FREQ = 170000000 && !STM32_CLOCK_REF_25M
+    help
+        Experimental G4 RNG identity using Klipper's USB HSI48 clock. Only the
+        internal or another supported non-25 MHz PLL reference is admitted.
+        Does not qualify hardware or enable motion.
+
+config KLIPPER_MMU_BOOT_IDENTITY_H743_H750
+    bool "Experimental STM32H743/H750 per-reset boot identity (USB PA11/PA12, crystal)"
+    default n
+    depends on (MACH_STM32H743 || MACH_STM32H750) && USBSERIAL && STM32_USB_PA11_PA12 && !STM32_CLOCK_REF_INTERNAL
+    depends on (MACH_STM32H743 && CLOCK_FREQ = 400000000) || (MACH_STM32H750 && CLOCK_FREQ = 480000000)
+    help
+        Uses the classic H743/H750 RNG on the HSI48 kernel clock selected by
+        Klipper for USB. The provider verifies crystal PLL1, bus prescalers,
+        HSI48 readiness and RNG/USB selectors without writing them. The AHB2
+        RNG clock must be unowned. This does not qualify hardware or enable motion.
+
+config KLIPPER_MMU_BOOT_IDENTITY_HOST
+    bool "Experimental Klipper-established reset epoch (no MCU RNG)"
+    default n
+    depends on MACH_STM32
+    depends on !(KLIPPER_MMU_BOOT_IDENTITY_H723 || KLIPPER_MMU_BOOT_IDENTITY_F4X5 || KLIPPER_MMU_BOOT_IDENTITY_F765 || KLIPPER_MMU_BOOT_IDENTITY_F207 || KLIPPER_MMU_BOOT_IDENTITY_G4 || KLIPPER_MMU_BOOT_IDENTITY_H743_H750)
+    help
+        Hosted diagnostic startup binds one nonzero 64-bit epoch that the
+        Klipper host generates after each MCU connect/config cycle. The first
+        epoch binds for the MCU lifetime; later epochs are ignored until reset.
+        This is a lifetime discriminator, not MCU entropy or authentication,
+        and it cannot detect a reset invisible to Klipper's link lifecycle.
+        Mutually exclusive with the hardware identity providers above. It
+        does not select pins, drivers, or a board profile, and does not enable
+        motion; the existing target profile gates must still match.
+
+config KLIPPER_MMU_DIAGNOSTIC_STARTUP
+    bool "Experimental hosted diagnostic startup"
+    default y if KLIPPER_MMU_BOXTURTLE_BOOT_GATES && !KLIPPER_MMU_DIFF_BUFFER
+    default n
+    depends on ((MACH_STM32H723 && KLIPPER_MMU_BOOT_IDENTITY_H723) || ((MACH_STM32F405 || MACH_STM32F407 || MACH_STM32F429) && KLIPPER_MMU_BOOT_IDENTITY_F4X5) || (MACH_STM32F765 && KLIPPER_MMU_BOOT_IDENTITY_F765) || (MACH_STM32F207 && KLIPPER_MMU_BOOT_IDENTITY_F207) || ((MACH_STM32G431 || MACH_STM32G474) && KLIPPER_MMU_BOOT_IDENTITY_G4) || ((MACH_STM32H743 || MACH_STM32H750) && KLIPPER_MMU_BOOT_IDENTITY_H743_H750) || (KLIPPER_MMU_BOOT_IDENTITY_HOST && (MACH_STM32H723 || MACH_STM32F207 || MACH_STM32F405 || MACH_STM32F407 || MACH_STM32F429 || MACH_STM32F765 || MACH_STM32G431 || MACH_STM32G474 || MACH_STM32H743 || MACH_STM32H750 || MACH_STM32G0B0 || MACH_STM32G0B1))) && KLIPPER_MMU_PIN_CONFIG && WANT_GPIO_LOCAL && (KLIPPER_MMU_TMC_UART_SHARED || KLIPPER_MMU_QIDI_BOOT_GATES)
+    depends on !KLIPPER_MMU_DIFF_BUFFER || (WANT_ADC && WANT_ADC_LOCAL)
+    depends on !(MACH_STM32F405 || MACH_STM32F407 || MACH_STM32F429) || KLIPPER_MMU_F4X5_BOOT_GATES
+    depends on !MACH_STM32F765 || KLIPPER_MMU_F765_BOOT_GATES
+    depends on !MACH_STM32F207 || KLIPPER_MMU_F207_BOOT_GATES
+    depends on !(MACH_STM32G431 || MACH_STM32G474) || KLIPPER_MMU_G4_BOOT_GATES
+    depends on !(MACH_STM32H743 || MACH_STM32H750) || KLIPPER_MMU_H743_H750_BOOT_GATES
+    depends on !(MACH_STM32G0B0 || MACH_STM32G0B1) || KLIPPER_MMU_G0B_BOOT_GATES
+    help
+        Firmware-owned hosted diagnostic startup for H723 or the explicitly
+        constrained F207/F405/F407/F429/F765/G431/G474/H743/H750/G0B0/G0B1
+        passive profiles. Default off except for the ordinary BoxTurtle/AFC Lite
+        switched-buffer preset. Does not select manual pins or boot identity.
+        The target profile gate selects local GPIO and
+        shared TMC UART driver support only when its full profile matches.
+
+        A gear with no shared TMC UART (QIDI Box's own KLIPPER_MMU_
+        QIDI_BOOT_GATES, mcu/Kconfig) also admits this menu: mcu/board_startup.c
+        runs that gear as plain STEP/DIR instead of waiting on a TMC
+        confirmation this hardware can never send.
+
+        Pin configuration and driver initialization run only after the host
+        sends km_diagnostic_start (or km_diagnostic_start_host with a nonzero
+        epoch in host-epoch builds), and only after normal Klipper configuration.
+        The intended host path is add_config_cmd(..., is_init=True) once that
+        host has finished RESERVE_PINS, alias, and BUS_PINS checks. This MCU
+        option does not census Klipper clients and does not add authorization.
+
+        Outputs stay inactive. km_start is rejected unless the separate
+        experimental actuator gate is selected and startup reaches READY.
+        Hardware qualification is still pending. DiffA/DiffB requires a
+        validated calibration object and H723 local ADC support; missing
+        calibration faults before board setup. Unsupported saved factories
+        still fail honestly. ACTUATION remains 0 by default.
+
+if KLIPPER_MMU_DIAGNOSTIC_STARTUP
+
+config KLIPPER_MMU_ACTUATION_OPT_IN
+    bool "Experimental actuator START permission (requires physical qualification)"
+    default n
+    depends on !KLIPPER_MMU_POWERED_REWIND || WANT_HARD_PWM_LOCAL_PAIR
+    help
+        Build permission for autonomous MMU START after the hosted startup
+        reaches READY. This is a software opt-in, not hardware qualification.
+        Do not flash or use this option until the physical pin routing,
+        inactive output levels, current and pulse limits, safe-off, and fault
+        response have been measured on the exact board and mechanism.
+        A failed startup or shutdown cannot grant START.
+        Paired analog feedback also requires validated calibration delivered
+        before diagnostic startup by the host.
+
+config KLIPPER_MMU_DIAGNOSTIC_TIMEOUT_US
+    int "Hosted diagnostic startup deadline (microseconds)"
+    range 1000 1000000
+    default 1000000
+    help
+        One total deadline, counted from the first km_diagnostic_start.
+        Includes clock and identity wait plus asynchronous board setup.
+        1000000 us stays inside the H723 raw-tick half horizon (2^31 ticks)
+        at 520 MHz. Firmware rejects an invalid timeout or tick conversion
+        at compile time; the menu range is not the only check.
+
+endif
+
+endif

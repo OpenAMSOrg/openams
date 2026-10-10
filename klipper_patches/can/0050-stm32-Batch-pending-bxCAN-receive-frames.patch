@@ -1,0 +1,46 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 14:07:40 -0700
+Subject: [PATCH] stm32: Batch pending bxCAN receive frames
+
+bxCAN FIFO 0 can hold three complete frames, but the interrupt handler consumed only one entry per invocation.  When a burst filled multiple slots, the still-asserted receive source forced the Cortex-M through another exception return and entry for each remaining frame and repeated transmit and error-status checks which were unrelated to that receive batch.
+
+Interpret FMP0 as the entry-time FIFO occupancy and consume that many records before continuing through the rest of the handler.  This amortizes interrupt prologue, epilogue, and shared-vector work across up to three frames while preserving FIFO order and returning scarce receive slots earlier.
+
+Deliberately snapshot the occupancy instead of polling the live FIFO until it becomes empty.  A busy bus may refill capacity while the handler runs; following that moving target would make interrupt residency unbounded and could delay scheduler and timer work.  Later arrivals leave the level-sensitive source asserted for a subsequent bounded invocation.
+
+No filter, identifier, payload, acknowledgement, or client-visible wire behavior changes.  The affected STM32F072 bxCAN configuration compiles and links with the bounded batch path.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/stm32/can.c b/src/stm32/can.c
+index f62fe542..eb224c95 100644
+--- a/src/stm32/can.c
++++ b/src/stm32/can.c
+@@ -230,7 +230,25 @@ CAN_IRQHandler(void)
+         SOC_CAN->RF0R = CAN_RF0R_FOVR0;
+         CAN_Errors.rx_overflows++;
+     }
+-    if (rf0r & CAN_RF0R_FMP0) {
++    /*
++     * FMP0 is the number of complete frames already resident in the three-slot
++     * FIFO, not merely a boolean pending flag.  Processing one entry and
++     * returning leaves the interrupt asserted for the next entry, forcing the
++     * Cortex-M to repeat exception return and entry plus every unrelated status
++     * check below.  Snapshot the count and process that arrival batch in one
++     * invocation so the fixed interrupt cost is paid once for up to three CAN
++     * frames.
++     *
++     * Use the entry snapshot instead of polling FMP0 until empty.  A
++     * continuously busy bus can refill a slot after RFOM0 returns it; chasing
++     * that live level would make interrupt residency traffic-dependent and
++     * could postpone higher-level scheduler work indefinitely.  Any frame
++     * arriving after the snapshot leaves FMP0 asserted and causes the normal
++     * next interrupt, while this invocation remains strictly bounded by the
++     * hardware FIFO depth.
++     */
++    uint32_t pending = rf0r & CAN_RF0R_FMP0;
++    while (pending--) {
+         // Read and ack data packet
+         CAN_FIFOMailBox_TypeDef *mb = &SOC_CAN->sFIFOMailBox[0];
+         uint32_t rir = mb->RIR;

@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 12:11:22 -0700
+Subject: [PATCH] usb_canbus: Reject unsupported host channels
+
+The bridge reports a single gs_usb CAN channel, numbered zero, but accepted bulk frames carrying any channel value.  It then ignored that selector while transmitting the frame and echoed the invalid value unchanged.
+
+The Linux gs_usb receive path treats an echoed channel outside the advertised range as a broken device and detaches the network interface.  Thus one malformed host frame could be reflected into a device-level failure instead of being contained at the USB boundary.
+
+Discard bulk frames for channels the bridge does not advertise before they enter the routing queue.  A detailed source comment records both the gs_usb invariant and the otherwise non-obvious Linux failure mode.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/generic/usb_canbus.c b/src/generic/usb_canbus.c
+index 7816b08f..ef707b6b 100644
+--- a/src/generic/usb_canbus.c
++++ b/src/generic/usb_canbus.c
+@@ -211,6 +211,18 @@ drain_usb_host_messages(void)
+          */
+         if (ret != sizeof(*gs) || gs->can_dlc > sizeof(gs->data))
+             continue;
++        /*
++         * device_config.icount advertises one CAN channel, so channel zero is
++         * the only value the gs_usb protocol permits for this interface.  The
++         * bridge echoes the host frame before routing it, including this field.
++         * Linux treats an echoed channel outside the advertised range as a
++         * broken device and detaches the CAN network interface.  Discard such
++         * a frame here so malformed USB output cannot be reflected back as an
++         * apparently fatal device response or be transmitted on the physical
++         * bus under a channel selector the firmware silently ignored.
++         */
++        if (gs->channel)
++            continue;
+         UsbCan.host_push_pos = push_pos = push_pos + 1;
+     }
+ }

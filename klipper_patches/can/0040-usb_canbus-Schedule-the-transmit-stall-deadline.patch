@@ -1,0 +1,114 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 13:43:59 -0700
+Subject: [PATCH] usb_canbus: Schedule the transmit stall deadline
+
+The bridge recorded a 50ms deadline after a physical CAN transmit first blocked, but it checked that timestamp only when usbcan_task happened to run again.  If a wedged controller produced no transmit completion and the USB endpoints were otherwise idle, nothing woke the task and the nominal timeout could remain unenforced indefinitely.
+
+Install a scheduler timer when the bridge enters the blocking state.  Its interrupt callback only publishes expiration and wakes usbcan_task; the task continues to own CAN retry, discard-state transitions, and USB status reporting.  Cancel the timer when transmit capacity returns before the deadline.
+
+This makes the existing stall policy independent of incidental traffic without changing its 50ms threshold, gs_usb records, routing decisions, or usb_canbus_state interface.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/generic/usb_canbus.c b/src/generic/usb_canbus.c
+index e480a2f8..034945d0 100644
+--- a/src/generic/usb_canbus.c
++++ b/src/generic/usb_canbus.c
+@@ -117,6 +117,8 @@ gs_can_id_is_valid(uint32_t id)
+  * Main usbcan task (read requests from usb and send msgs to usb)
+  ****************************************************************/
+ 
++static uint_fast8_t usbcan_stall_event(struct timer *timer);
++
+ // Global storage
+ static struct usbcan_data {
+     struct task_wake wake;
+@@ -126,8 +128,8 @@ static struct usbcan_data {
+     uint32_t assigned_id;
+ 
+     // State tracking for messages to be sent from host to canbus
+-    uint32_t bus_send_discard_time;
+-    uint8_t bus_send_state;
++    struct timer bus_send_timer;
++    uint8_t bus_send_state, bus_send_timed_out;
+ 
+     // Canbus data from host
+     uint8_t host_status;
+@@ -137,7 +139,9 @@ static struct usbcan_data {
+     // Data from physical canbus interface
+     uint32_t canhw_pull_pos, canhw_push_pos;
+     struct canbus_msg canhw_queue[32];
+-} UsbCan;
++} UsbCan = {
++    .bus_send_timer.func = usbcan_stall_event,
++};
+ 
+ enum {
+     BSS_READY = 0, BSS_BLOCKING, BSS_DISCARDING
+@@ -286,13 +290,29 @@ note_discard_state(uint32_t discard)
+     sendf("usb_canbus_state discard=%u", discard);
+ }
+ 
++// Wake the routing task when a blocked hardware transmit reaches its deadline
++static uint_fast8_t
++usbcan_stall_event(struct timer *timer)
++{
++    /*
++     * This callback runs from the timer interrupt and therefore must not route
++     * the frame or emit usb_canbus_state directly.  Publish only the expired
++     * condition and wake the normal task, which owns bus_send_state and all USB
++     * operations.  Keeping the callback this small also bounds timer-interrupt
++     * latency while CAN traffic and step generation are active together.
++     */
++    writeb(&UsbCan.bus_send_timed_out, 1);
++    sched_wake_task(&UsbCan.wake);
++    return SF_DONE;
++}
++
+ // Check if canbus queue has gotten stuck
+ static int
+ check_need_discard(void)
+ {
+     if (UsbCan.bus_send_state != BSS_BLOCKING)
+         return 0;
+-    return timer_is_before(UsbCan.bus_send_discard_time, timer_read_time());
++    return readb(&UsbCan.bus_send_timed_out);
+ }
+ 
+ // Attempt to send a message on the canbus
+@@ -302,9 +322,12 @@ try_canmsg_send(struct canbus_msg *msg)
+     int ret = canhw_send(msg);
+     if (ret >= 0) {
+         // Success
++        if (UsbCan.bus_send_state == BSS_BLOCKING)
++            sched_del_timer(&UsbCan.bus_send_timer);
+         if (UsbCan.bus_send_state == BSS_DISCARDING)
+             note_discard_state(0);
+         UsbCan.bus_send_state = BSS_READY;
++        writeb(&UsbCan.bus_send_timed_out, 0);
+         return ret;
+     }
+ 
+@@ -318,9 +341,19 @@ try_canmsg_send(struct canbus_msg *msg)
+         // Queue is stalled - just discard the message
+         return 0;
+     if (UsbCan.bus_send_state == BSS_READY) {
+-        // Just starting to block - setup stall detection after 50ms
++        /*
++         * A stored deadline alone can not guarantee progress: the routing task
++         * checks it only when woken, and a wedged controller may provide no
++         * transmit-completion interrupt to cause that wakeup.  Install a real
++         * scheduler timer so the 50ms policy is enforced even when the host is
++         * otherwise idle and the missing hardware notification is the reason
++         * this frame remains blocked.
++         */
+         UsbCan.bus_send_state = BSS_BLOCKING;
+-        UsbCan.bus_send_discard_time = timer_read_time() + timer_from_us(50000);
++        writeb(&UsbCan.bus_send_timed_out, 0);
++        UsbCan.bus_send_timer.waketime = (timer_read_time()
++                                          + timer_from_us(50000));
++        sched_add_timer(&UsbCan.bus_send_timer);
+     }
+     return ret;
+ }

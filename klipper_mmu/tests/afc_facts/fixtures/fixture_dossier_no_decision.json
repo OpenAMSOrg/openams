@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "source": {
+    "happy_hare": "test",
+    "profile": "synth",
+    "syms": {},
+    "layout": {"mmu_entry": -50.0, "mmu_exit": 0.0}
+  },
+  "device": {
+    "vendor": "Synth",
+    "gates": 2,
+    "selector_type": "VirtualSelector",
+    "unit_profile": {}
+  },
+  "hardware": {
+    "mmu_sensors unit0": {
+      "mmu_entry_switch_pin_0": "^!unit0:PB0",
+      "mmu_exit_switch_pin_0": "^unit0:PB1"
+    },
+    "mmu_buffer unit0": {
+      "compression_pin": "unit0:PB5",
+      "tension_pin": "unit0:PB6"
+    }
+  },
+  "parameters": {
+    "gear_load_speed": "100",
+    "gear_load_accel": "50",
+    "gear_short_move_speed": "80",
+    "gear_short_move_accel": "80",
+    "gate_final_eject_distance": "100",
+    "bowden_homing_max": "500"
+  },
+  "steps_per_mm": 100.0,
+  "operations": {
+    "preload": {
+      "moves": [],
+      "end": {"tip": -10.0, "sensor": "mmu_exit_0", "offset": -10.0},
+      "errors": []
+    },
+    "select": {"moves": [], "end": {}, "errors": []},
+    "load": {
+      "moves": [{"label": "home to exit", "dist": 600.0, "motor": "gear",
+                 "homing": 1, "endstop": "mmu_exit_0", "speed": 80.0, "accel": 100.0,
+                 "actual": 10.0, "homed": true}],
+      "end": {"tip": 700.0},
+      "errors": []
+    },
+    "unload": {
+      "moves": [],
+      "end": {"tip": -1.0, "sensor": "mmu_exit_0", "offset": -1.0},
+      "errors": []
+    },
+    "eject": {
+      "moves": [],
+      "end": {"tip": -100.0, "sensor": "mmu_entry", "offset": -50.0},
+      "errors": []
+    }
+  },
+  "decisions": []
+}

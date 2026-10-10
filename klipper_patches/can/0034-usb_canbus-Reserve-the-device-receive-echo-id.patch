@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 12:29:13 -0700
+Subject: [PATCH] usb_canbus: Reserve the device receive echo id
+
+The gs_usb echo_id value 0xffffffff marks frames received by the device from the physical CAN bus.  The bridge also accepted that value in a host transmit frame and echoed it unchanged.
+
+Linux interprets the reflected marker as new bus input instead of a transmit completion.  It can therefore report a false received frame while leaving the actual transmit context allocated; repeated missing completions eventually stop the SocketCAN transmit queue.
+
+Name the receive marker and reject it on host output before the frame enters the routing queue.  Continue using the marker only when packaging device-originated CAN traffic for the host.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/generic/usb_canbus.c b/src/generic/usb_canbus.c
+index 28fba4d4..e480a2f8 100644
+--- a/src/generic/usb_canbus.c
++++ b/src/generic/usb_canbus.c
+@@ -99,6 +99,7 @@ struct gs_host_frame {
+ 
+ #define GS_CAN_SFF_MASK 0x000007ff
+ #define GS_CAN_EFF_MASK 0x1fffffff
++#define GS_HOST_FRAME_ECHO_ID_RX 0xffffffff
+ 
+ static int
+ gs_can_id_is_valid(uint32_t id)
+@@ -153,7 +154,7 @@ static int
+ send_frame(struct canbus_msg *msg)
+ {
+     struct gs_host_frame gs = {};
+-    gs.echo_id = 0xffffffff;
++    gs.echo_id = GS_HOST_FRAME_ECHO_ID_RX;
+     gs.can_id = msg->id;
+     gs.can_dlc = msg->dlc;
+     /*
+@@ -263,6 +264,17 @@ drain_usb_host_messages(void)
+          */
+         if (!gs_can_id_is_valid(gs->can_id))
+             continue;
++        /*
++         * GS_HOST_FRAME_ECHO_ID_RX distinguishes a device-originated receive
++         * frame from the echo which completes a host transmit request.  If the
++         * host is allowed to supply that reserved value, reflecting the frame
++         * makes Linux inject its own transmission as bus input and skip the
++         * transmit-context completion.  Besides reporting false receive data,
++         * enough missing completions stop the SocketCAN transmit queue.  Only
++         * the device-to-host path may create the receive marker.
++         */
++        if (gs->echo_id == GS_HOST_FRAME_ECHO_ID_RX)
++            continue;
+         UsbCan.host_push_pos = push_pos = push_pos + 1;
+     }
+ }

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openams.org/contracts/openams_spoolman_status_v1.schema.json",
+  "title": "openams_spoolman component status, version 1 (C4)",
+  "description": "TO ADD (H4). The Moonraker component's status object (ARCHITECTURE §5 C4: {bays: {unit-bay: {spool_id, source, pending_confirmation}}, spoolman_online}), plus the per-bay linker state (§3), the offline write-queue depth (§6), and the spool summary. RESOLVED (review, C2 4/7): the spool summary (material, color, vendor, remaining) lives HERE, not in oams_manager/openams_ui, since the host never talks HTTP and Spoolman owns the facts; the display merges openams_ui with this object. Served by a Moonraker endpoint and pushed as a notification (C4 §8).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "spoolman_online", "queued_writes", "bays"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "spoolman_online": {"type": "boolean"},
+    "edit": {"const": true, "description": "Capability flag (C4 §9): present and true when the component serves the edit endpoint. Additive; a component without it omits the key."},
+    "stop": {"const": true, "description": "Capability flag (C3, C4 §9.1): present and true when the component serves the stop route (POST /server/openams/stop), which stops the whole running load, unload or toolchange sequence. Additive; a component without it omits the key."},
+    "queued_writes": {"type": "integer", "minimum": 0, "description": "Spoolman writes waiting for Spoolman to come back (C4 §6)."},
+    "bays": {
+      "type": "object",
+      "propertyNames": {"pattern": "^\\S+-[0-9]+$"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["state", "spool_id", "source", "pending_confirmation", "error", "spool"],
+        "properties": {
+          "state": {"enum": ["unlinked", "resolving", "linked", "pending_confirmation"]},
+          "spool_id": {"type": ["integer", "null"], "minimum": 1},
+          "source": {"enum": ["tag", "manual", "none"]},
+          "pending_confirmation": {"type": "boolean"},
+          "error": {"type": ["string", "null"]},
+          "tray_sync": {
+            "description": "Additive (C4 §7.5): present only on a linked bay whose unit stores a per-bay filament setting and is kept in step with the spool. in_sync: the unit holds the spool's filament; pending: a write waits or was just sent; kept: the unit holds another setting that is left alone, since it decided the link or the spool has not changed since it was last in step; failed: the writes for the spool's latest change did not take (error says why).",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["state", "error"],
+            "properties": {
+              "state": {"enum": ["in_sync", "pending", "kept", "failed"]},
+              "error": {"type": ["string", "null"]}
+            }
+          },
+          "suggestions": {
+            "description": "Additive (C4 §4.1): present only on an unlinked bay whose unit-decoded tag matches several Spoolman spools. The candidates a UI can offer; the component never picks one itself.",
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["spool_id", "material", "color_hex", "vendor", "remaining_g", "location"],
+              "properties": {
+                "spool_id": {"type": "integer", "minimum": 1},
+                "material": {"type": ["string", "null"]},
+                "color_hex": {"type": ["string", "null"], "pattern": "^[0-9A-F]{6}$"},
+                "vendor": {"type": ["string", "null"]},
+                "remaining_g": {"type": ["number", "null"], "minimum": 0},
+                "location": {"type": "string"}
+              }
+            }
+          },
+          "spool": {
+            "description": "The linked spool's summary, as last read from Spoolman (or the offline cache, C4 §6). null when unlinked/resolving or not yet known.",
+            "oneOf": [
+              {"type": "null"},
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["material", "color_hex", "vendor", "remaining_g", "remaining_pct"],
+                "properties": {
+                  "material": {"type": ["string", "null"]},
+                  "color_hex": {"type": ["string", "null"], "pattern": "^[0-9A-F]{6}$"},
+                  "vendor": {"type": ["string", "null"]},
+                  "remaining_g": {"type": ["number", "null"], "minimum": 0},
+                  "remaining_pct": {"type": ["integer", "null"], "minimum": 0, "maximum": 100},
+                  "initial_g": {"type": ["number", "null"], "minimum": 0, "description": "The spool's initial_weight, else the filament's nominal weight, else null. Additive: a UI prefills the edit form's initial weight from it (C4 §8)."},
+                  "flow_k": {"type": ["number", "null"], "minimum": 0, "maximum": 2, "description": "The spool's extra.flow_k pressure advance, or null when unset or not a number (C4 §7.2). Additive."}
+                }
+              }
+            ]
+          }
+        },
+        "allOf": [
+          {"if": {"properties": {"state": {"const": "pending_confirmation"}}}, "then": {"properties": {"pending_confirmation": {"const": true}, "spool_id": {"type": "integer"}}}, "else": {"properties": {"pending_confirmation": {"const": false}}}},
+          {"if": {"properties": {"state": {"const": "linked"}}}, "then": {"properties": {"spool_id": {"type": "integer"}, "source": {"enum": ["tag", "manual"]}}}},
+          {"if": {"properties": {"state": {"enum": ["unlinked", "resolving"]}}}, "then": {"properties": {"spool_id": {"type": "null"}, "source": {"const": "none"}}}}
+        ]
+      }
+    }
+  }
+}

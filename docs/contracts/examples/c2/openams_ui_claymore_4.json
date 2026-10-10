@@ -1,0 +1,82 @@
+{
+  "v": 1,
+  "unit": "clay",
+  "idx": 0,
+  "family": "claymore",
+  "serial": "000000000000000000000006",
+  "online": true,
+  "ready": true,
+  "cal": "c",
+  "lane": {
+    "id": "fps",
+    "ext": "extruder",
+    "op": "UNLOADED",
+    "group": null,
+    "bay": null,
+    "stage": null,
+    "runout": "idle",
+    "from": null,
+    "to": null,
+    "ms": true
+  },
+  "bays": [
+    {
+      "id": 0,
+      "s": "r",
+      "cal": "c",
+      "a": "ladpqe",
+      "sp": {
+        "id": 12,
+        "src": "t"
+      }
+    },
+    {
+      "id": 1,
+      "s": "r",
+      "cal": "c",
+      "a": "lapqe",
+      "sp": null
+    },
+    {
+      "id": 2,
+      "s": "r",
+      "cal": "c",
+      "a": "ladpqe",
+      "sp": {
+        "id": 30,
+        "src": "m"
+      }
+    },
+    {
+      "id": 3,
+      "s": "e",
+      "cal": "c",
+      "a": "pqe",
+      "sp": null
+    }
+  ],
+  "groups": [
+    {
+      "n": "T0",
+      "b": [
+        "clay-0",
+        "clay-1"
+      ],
+      "s": "rr"
+    },
+    {
+      "n": "T1",
+      "b": [
+        "clay-2"
+      ],
+      "s": "r"
+    }
+  ],
+  "env": null,
+  "dryer": null,
+  "fault": null,
+  "nf": 0,
+  "act": [
+    "home"
+  ]
+}

@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 13:32:33 -0700
+Subject: [PATCH] serialhdl: Contain orphaned send notifications
+
+The serial background thread removed completed notification ids with dict.pop() and no default.  A duplicate or stale completion therefore raised KeyError out of the thread which exclusively receives all subsequent MCU messages, converting one bookkeeping inconsistency into a permanent silent connection stall.
+
+Log and discard an unknown notification while keeping the receiver alive.  Valid acknowledgements retain the existing completion path, and malformed notification state is contained in the same way as an invalid parsed MCU message.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/klippy/serialhdl.py b/klippy/serialhdl.py
+index 88c63d86..eb06cc36 100644
+--- a/klippy/serialhdl.py
++++ b/klippy/serialhdl.py
+@@ -50,7 +50,22 @@ class SerialReader:
+             if response.notify_id:
+                 params = {'#sent_time': response.sent_time,
+                           '#receive_time': response.receive_time}
+-                completion = self.pending_notifications.pop(response.notify_id)
++                # Notification ids are allocated by this host and returned by
++                # serialqueue when the corresponding message is acknowledged;
++                # they are not MCU-controlled dictionary values.  Even so, a
++                # duplicate or stale completion must not raise KeyError out of
++                # this function: _bg_thread is the sole receiver for all later
++                # MCU traffic, so losing it would turn one bookkeeping
++                # inconsistency into a silent, permanent connection stall.
++                # Report the violated invariant and discard only the orphaned
++                # completion, matching the containment used for an invalid MCU
++                # message below.
++                completion = self.pending_notifications.pop(
++                    response.notify_id, None)
++                if completion is None:
++                    logging.error("%sUnknown serial notification id %d",
++                                  self.warn_prefix, response.notify_id)
++                    continue
+                 self.reactor.async_complete(completion, params)
+                 continue
+             params = self.msgparser.parse(response.msg[0:count])

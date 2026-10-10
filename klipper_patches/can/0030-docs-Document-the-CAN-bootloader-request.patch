@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 12:23:03 -0700
+Subject: [PATCH] docs: Document the CAN bootloader request
+
+The firmware implements CMD_REQUEST_BOOTLOADER on the broadcast CAN administration identifier, but the CAN protocol document listed only discovery and node assignment messages.  The missing entry obscured both the command wire format and the fact that it can be sent before node-id assignment.
+
+Document the command byte, UUID payload, build-time availability, and bootloader-entry reference.  Explicitly state that the UUID selects a destination but does not authenticate the sender; the broader CAN trust assumptions are documented separately.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/docs/CANBUS_protocol.md b/docs/CANBUS_protocol.md
+index 534d3619..453a9166 100644
+--- a/docs/CANBUS_protocol.md
++++ b/docs/CANBUS_protocol.md
+@@ -57,6 +57,21 @@ The CMD_SET_KLIPPER_NODEID message format is:
+ The RESP_NEED_NODEID message format is:
+ `<1-byte message_id = 0x20><6-byte canbus_uuid><1-byte set_klipper_nodeid = 0x01>`
+ 
++### CMD_REQUEST_BOOTLOADER message
++
++This command asks the micro-controller with a given `canbus_uuid` to
++enter its bootloader. It is accepted only by firmware builds that
++support a bootloader request. The command may be sent before a nodeid
++has been assigned because, like the other admin commands, it uses the
++broadcast CAN bus id `0x3f0` and selects its destination by UUID.
++
++The CMD_REQUEST_BOOTLOADER message format is:
++`<1-byte message_id = 0x02><6-byte canbus_uuid>`
++
++The `canbus_uuid` selects the target but does not authenticate the
++sender. See [Bootloader Entry](Bootloader_Entry.md) for the supported
++bootloader transition mechanisms.
++
+ ## Data Packets
+ 
+ A micro-controller that has been assigned a nodeid via the

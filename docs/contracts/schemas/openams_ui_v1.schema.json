@@ -1,0 +1,514 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openams.org/contracts/openams_ui_v1.schema.json",
+  "title": "openams_ui projection, version 1 (C2 \u00a76)",
+  "description": "NEW-v2 (H5). The compact per-unit projection a small client (the 480x320 display) subscribes to: one Klipper object per unit (RESOLVED, review C2 6: openams_ui <unit>), published at <= 2 Hz. Every value is a pure function of the oams_manager v2 status. RESOLVED (review, C2 4/7): spool facts (material/color/vendor/remaining) do NOT live here -- they moved to the C4 openams_spoolman status, keyed by <unit>-<bay>; a bay here carries only spool_id and link_source plus host-side flags, which keeps every example under 1024 bytes with room to spare (see C2_status.md \u00a76 for the recomputed worst case). Key legend in C2_status.md \u00a76.2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "unit",
+    "idx",
+    "family",
+    "serial",
+    "online",
+    "ready",
+    "cal",
+    "lane",
+    "bays",
+    "groups",
+    "env",
+    "dryer",
+    "fault",
+    "nf",
+    "act"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "unit": {
+      "type": "string",
+      "minLength": 1
+    },
+    "idx": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The unit index (OAMS_* commands take OAMS=<idx>)."
+    },
+    "family": {
+      "description": "C2 \u00a74.3/§4.4: the unit's registry family (src/ams_family.py FAMILIES), or inline_follower for an [follower] unit. Checked against that registry by test/test_ams_family_registry.py.",
+      "enum": [
+        "ams1",
+        "ams2",
+        "ams_ht",
+        "inline_follower",
+        "boxturtle",
+        "nightowl",
+        "custom",
+        "3d_chameleon",
+        "3ms",
+        "angry_beaver",
+        "emu",
+        "ercf_1_1",
+        "ercf_2_0",
+        "ercf_3_0",
+        "htlf",
+        "kms",
+        "mmx",
+        "mmx6",
+        "quattrobox_1_0",
+        "quattrobox_1_1",
+        "quattrobox_2",
+        "tradrack",
+        "low_rider",
+        "pico_mmu",
+        "qidi_box",
+        "btt_vivid",
+        "claymore"
+      ]
+    },
+    "serial": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "devices[unit].identity.serial; the display binds by it (D4)."
+    },
+    "online": {
+      "type": "boolean"
+    },
+    "ready": {
+      "type": "boolean"
+    },
+    "cal": {
+      "$ref": "#/$defs/cal"
+    },
+    "lane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "op",
+        "group",
+        "bay",
+        "stage",
+        "runout",
+        "from",
+        "to",
+        "ms",
+        "ext"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ext": {
+          "type": "string",
+          "description": "RESOLVED (review, C2 19): the lane's extruder name (oams_manager v2 lanes_by_fps[*].extruder), so the display can tell which side a dual-extruder printer's lane feeds."
+        },
+        "op": {
+          "enum": [
+            "UNLOADED",
+            "LOADING",
+            "LOADED",
+            "UNLOADING",
+            "CALIBRATING"
+          ]
+        },
+        "group": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bay": {
+          "$ref": "#/$defs/ref_or_null"
+        },
+        "stage": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "description": "[plan, index, failed, detail, labels] (oams_manager v2 lanes_by_fps[*].stage). H1 appended the last two; a client reading the first three is unaffected.",
+              "prefixItems": [
+                {
+                  "type": "array",
+                  "description": "Standard step names plus custom ones, 1 to 8 steps, no duplicates.",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,15}$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "uniqueItems": true
+                },
+                {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 24,
+                  "description": "The current step's detail, else null."
+                },
+                {
+                  "type": "object",
+                  "description": "Display label per labeled step; {} when the plan carries none.",
+                  "propertyNames": {
+                    "pattern": "^[a-z][a-z0-9_]{0,15}$"
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 47
+                  },
+                  "maxProperties": 8
+                }
+              ],
+              "items": false,
+              "minItems": 5,
+              "maxItems": 5
+            }
+          ]
+        },
+        "runout": {
+          "enum": [
+            "idle",
+            "pausing",
+            "coasting",
+            "loading"
+          ]
+        },
+        "from": {
+          "$ref": "#/$defs/ref_or_null"
+        },
+        "to": {
+          "$ref": "#/$defs/ref_or_null"
+        },
+        "ms": {
+          "type": "boolean",
+          "description": "The lane's motion_settled (C2 §4.2): nothing moves and no motion action is in progress."
+        }
+      }
+    },
+    "bays": {
+      "type": "array",
+      "maxItems": 16,
+      "description": "Index = bay number.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "s",
+          "cal",
+          "a",
+          "sp"
+        ],
+        "properties": {
+          "id": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "description": "The global slot id (OPENAMS_LOAD ... SLOT=<id>)."
+          },
+          "s": {
+            "enum": [
+              "e",
+              "r",
+              "l",
+              "x",
+              "p"
+            ],
+            "description": "empty, ready, loaded, error, positioning (NEW-v2, H16: firmware-autonomous insertion positioning in progress for this bay)"
+          },
+          "cal": {
+            "$ref": "#/$defs/cal"
+          },
+          "a": {
+            "type": "string",
+            "pattern": "^l?u?c?a?d?p?q?e?$",
+            "description": "load, unload, calibrate_ptfe, assign (set_spool), detach (clear_spool), in this order, then preload, unpreload, eject: a klipper-mmu unit's own bay operations (C2 \u00a76.2, C5 \u00a77.1), which an AMS unit never offers."
+          },
+          "sp": {
+            "description": "RESOLVED (review, C2 4/7): the link only. Spool facts (material/color/vendor/remaining) live in the C4 openams_spoolman status, keyed '<unit>-<bay>'; the display merges the two. null when link_source is 'none'.",
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "src"
+                ],
+                "properties": {
+                  "id": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1
+                  },
+                  "src": {
+                    "enum": [
+                      "t",
+                      "m"
+                    ],
+                    "description": "tag, manual (link_source 'none' is represented by sp: null, not a third enum value)"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "groups": {
+      "type": "array",
+      "description": "Every group on this unit's lane. Members and their states only for groups holding one of this unit's bays.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "n"
+        ],
+        "dependentRequired": {
+          "b": [
+            "s"
+          ],
+          "s": [
+            "b"
+          ]
+        },
+        "properties": {
+          "n": {
+            "type": "string"
+          },
+          "b": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "s": {
+            "type": "string",
+            "pattern": "^[lrep]*$",
+            "description": "One letter per member: loaded, ready, empty, positioning"
+          }
+        }
+      }
+    },
+    "env": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "t",
+            "rh"
+          ],
+          "properties": {
+            "t": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "rh": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100
+            }
+          }
+        }
+      ]
+    },
+    "dryer": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "target",
+            "min",
+            "heat",
+            "fan",
+            "fault",
+            "adapter"
+          ],
+          "properties": {
+            "state": {
+              "type": "string"
+            },
+            "target": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "min": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Remaining minutes, rounded up."
+            },
+            "heat": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100
+            },
+            "fan": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100
+            },
+            "fault": {
+              "type": "string"
+            },
+            "adapter": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "fault": {
+      "description": "The most severe fault on this unit's lane (stop > pause > info), else null.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sev",
+            "code",
+            "text",
+            "unit",
+            "bay",
+            "act"
+          ],
+          "properties": {
+            "sev": {
+              "enum": [
+                "stop",
+                "pause",
+                "info"
+              ]
+            },
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 48
+            },
+            "unit": {
+              "type": "string"
+            },
+            "bay": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "act": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "clear_errors",
+                  "clear_fault",
+                  "resume",
+                  "retry_load"
+                ]
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      ]
+    },
+    "nf": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of faults on this unit's lane, including the one shown."
+    },
+    "act": {
+      "type": "array",
+      "description": "Unit-level actions a UI offers; clear_errors is always available and not listed. `home` is a klipper-mmu unit's selector (C3 \u00a72 OAMS_HOME) and is offered only where the family's selector kind has one to move.",
+      "items": {
+        "enum": [
+          "dryer_start",
+          "dryer_stop",
+          "clear_fault",
+          "rfid_scan",
+          "home"
+        ]
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "cal": {
+      "enum": [
+        "c",
+        "u",
+        "p"
+      ],
+      "description": "configured, uncalibrated, calibrating (in progress)"
+    },
+    "ref": {
+      "type": "string",
+      "pattern": "^\\S+-[0-9]+$"
+    },
+    "ref_or_null": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ref"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

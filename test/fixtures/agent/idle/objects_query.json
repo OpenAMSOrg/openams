@@ -1,0 +1,3817 @@
+{
+ "result": {
+  "status": {
+   "aht3x oams": {
+    "humidity": 23.86474609375,
+    "temperature": 26.63
+   },
+   "canbus_stats ebb36": {
+    "bus_off": 0,
+    "bus_state": "active",
+    "rx_error": 0,
+    "rx_overflows": 0,
+    "tx_discards": 0,
+    "tx_error": 0,
+    "tx_retries": 0,
+    "usb_invalid": 0
+   },
+   "canbus_stats fps": {
+    "bus_off": null,
+    "bus_state": null,
+    "rx_error": null,
+    "rx_overflows": null,
+    "tx_discards": null,
+    "tx_error": null,
+    "tx_retries": null,
+    "usb_invalid": null
+   },
+   "canbus_stats oams_mcu1": {
+    "bus_off": null,
+    "bus_state": 0,
+    "rx_error": 0,
+    "rx_overflows": null,
+    "tx_discards": null,
+    "tx_error": 0,
+    "tx_retries": 1492456824,
+    "usb_invalid": null
+   },
+   "configfile": {
+    "config": {
+     "adxl345": {
+      "axes_map": "x,y,z",
+      "cs_pin": "ebb36: PB12",
+      "rate": "3200",
+      "spi_software_miso_pin": "ebb36: PB2",
+      "spi_software_mosi_pin": "ebb36: PB11",
+      "spi_software_sclk_pin": "ebb36: PB10"
+     },
+     "beacon": {
+      "contact_activate_gcode": "_CONTACT_ACTIVATE",
+      "contact_max_hotend_temperature": "180",
+      "default_probe_method": "proximity",
+      "home_autocalibrate": "unhomed",
+      "home_method": "contact",
+      "home_method_when_homed": "proximity",
+      "home_xy_position": "175,175",
+      "lift_speed": "10.0",
+      "mesh_main_direction": "x",
+      "mesh_overscan": "15",
+      "mesh_runs": "2",
+      "serial": "/dev/serial/by-id/usb-Klipper_example_0000000000000000-if00",
+      "speed": "5.0",
+      "trigger_distance": "4.0",
+      "x_offset": "0",
+      "y_offset": "21.953"
+     },
+     "beacon model default": {
+      "model_coef": "1.7438199014077973,\n1.8419805239862166,\n1.0160750079333336,\n1.2105767015928028,\n-1.6038413215712046,\n-3.166400930388729,\n3.676275411986533,\n4.647945419477802,\n-2.199910801825869,\n-2.1552202707356125",
+      "model_domain": "3.2545943497078426e-07,3.3328643769916326e-07",
+      "model_offset": "0.00000",
+      "model_range": "0.200000,5.000000",
+      "model_temp": "75.105338"
+     },
+     "bed_mesh": {
+      "algorithm": "bicubic",
+      "fade_end": "10.0",
+      "fade_start": "0.0",
+      "horizontal_move_z": "20",
+      "mesh_max": "310, 310",
+      "mesh_min": "40, 40",
+      "probe_count": "10, 10",
+      "speed": "600",
+      "zero_reference_position": "175, 175"
+     },
+     "bed_mesh default": {
+      "algo": "bicubic",
+      "max_x": "310.0",
+      "max_y": "310.0",
+      "mesh_x_pps": "2",
+      "mesh_y_pps": "2",
+      "min_x": "40.0",
+      "min_y": "40.0",
+      "points": "\n0.126828, 0.131600, 0.127439, 0.123465, 0.136889, 0.113617, 0.114485, 0.094142, 0.123655, 0.121869\n0.086903, 0.089755, 0.089751, 0.076671, 0.058434, 0.084381, 0.078161, 0.077120, 0.083278, 0.095522\n0.059256, 0.053510, 0.042802, 0.042709, 0.046889, 0.054273, 0.048608, 0.027709, 0.060493, 0.061170\n0.006802, 0.033791, 0.006401, 0.016146, 0.003773, 0.031838, 0.027836, 0.006104, 0.037521, 0.041174\n-0.013411, 0.005857, -0.015089, 0.005756, -0.011097, -0.002155, 0.008249, -0.013398, 0.010900, 0.015936\n-0.027900, -0.021474, -0.023874, -0.004833, -0.015776, -0.018878, -0.004687, -0.016675, 0.004163, 0.019374\n-0.013669, -0.009227, -0.007447, -0.006399, -0.026466, -0.006402, -0.005725, 0.025080, 0.024458, 0.037345\n0.020598, 0.016783, -0.006188, 0.009920, 0.008341, 0.011285, 0.011416, -0.014207, 0.037710, 0.043133\n0.060873, 0.078146, 0.077292, 0.067252, 0.067650, 0.057119, 0.061572, 0.079759, 0.074956, 0.086332\n0.132465, 0.140091, 0.125884, 0.136450, 0.137289, 0.119661, 0.125012, 0.117797, 0.137669, 0.130213",
+      "tension": "0.2",
+      "version": "1",
+      "x_count": "10",
+      "y_count": "10"
+     },
+     "board_pins": {
+      "aliases": "\n\nMOT0_EN=PF14, MOT0_STEP=PF13, MOT0_DIR=PF12, MOT0_CS=PC4,\nMOT1_EN=PF15, MOT1_STEP=PG0,  MOT1_DIR=PG1,  MOT1_CS=PD11,\nMOT2_EN=PG5,  MOT2_STEP=PF11, MOT2_DIR=PG3,  MOT2_CS=PC6,\nMOT3_EN=PA0,  MOT3_STEP=PG4,  MOT3_DIR=PC1,  MOT3_CS=PC7,\nMOT4_EN=PG2,  MOT4_STEP=PF9,  MOT4_DIR=PF10, MOT4_CS=PF2,\nMOT5_EN=PF1,  MOT5_STEP=PC13, MOT5_DIR=PF0,  MOT5_CS=PE4,\nMOT6_EN=PD4,  MOT6_STEP=PE2,  MOT6_DIR=PE3,  MOT6_CS=PE1,\nMOT7_EN=PE0,  MOT7_STEP=PE6,  MOT7_DIR=PA14, MOT7_CS=PD3,\n\n\nBED_OUT=PA1,\nHE0=PA2, HE1=PA3, HE2=PB10, HE3=PB11,\n\n\nTB=PF3, T0=PF4, T1=PF5, T2=PF6, T3=PF7,\nPT100=PF8,\n\n\nFAN0=PA8, FAN1=PE5, FAN2=PD12, FAN3=PD13, FAN4=PD14, FAN5=PD15,\n\n\nESTOP0=PG6,  ESTOP1=PG9,  ESTOP2=PG10, ESTOP3=PG11,\nESTOP4=PG12, ESTOP5=PG13, ESTOP6=PG14, ESTOP7=PG15,\n\n\nEXP1_1=PE8,   EXP1_2=PE7,\nEXP1_3=PE9,   EXP1_4=PE10,\nEXP1_5=PE12,  EXP1_6=PE13,\nEXP1_7=PE14,  EXP1_8=PE15,\nEXP1_9=<GND>, EXP1_10=<5V>,\n\n\nEXP2_1=PA6,   EXP2_2=PA5,\nEXP2_3=PB1,   EXP2_4=PA4,\nEXP2_5=PB2,   EXP2_6=PA7,\nEXP2_7=PC15,  EXP2_8=<RST>,\nEXP2_9=<GND>, EXP2_10=<5V>,\n\n\nTFT_5=<RST>, TFT_4=PA10, TFT_3=PA9, TFT_2=<GND>, TFT_1=<5V>,\n\n\nPRB_1=<DCV>, PRB_2=<GND>, PRB_3=PB7,\n\n\nBLT_5=<GND>, BLT_4=<5V>,\nBLT_CTL=PB6,\nBLT_2=<GND>,\nBLT_SNSR=PB7,\n\n\nNEOPXL_3=<GND>, NEOPXL_2=PB0, NEOPXL_1=<5V>,\n\n\nRPI_1=<5V>,  RPI_2=<5V>,\nRPI_3=<GND>, RPI_4=<GND>,\nRPI_5=<GND>, RPI_6=<GND>,\nRPI_7=<GND>, RPI_8=<GND>,\nRPI_RX=PD6,  RPI_TX=PD5,\n\n\nSPI3_2=<3V3>, SPI3_MOSI=PB5, SPI3_CS=PA15, SPI3_8=<GND>, SPI3_10=<5V>,\nSPI3_1=<GND>, SPI3_MISO=PB4, SPI3_SCK=PB3,  SPI3_7=<GND>, SPI3_9=<5V>,\n\n\nPOWER_DET=PC0,\nPS_ON=PE11"
+     },
+     "controller_fan controller_fan": {
+      "heater": "heater_bed",
+      "kick_start_time": "0.5",
+      "max_power": "0.3",
+      "pin": "PD12"
+     },
+     "display": {
+      "a0_pin": "EXP1_4",
+      "click_pin": "^!EXP1_2",
+      "contrast": "63",
+      "cs_pin": "EXP1_3",
+      "encoder_pins": "^EXP2_5, ^EXP2_3",
+      "lcd_type": "uc1701",
+      "rst_pin": "EXP1_5",
+      "spi_software_miso_pin": "EXP2_1",
+      "spi_software_mosi_pin": "EXP2_6",
+      "spi_software_sclk_pin": "EXP2_2"
+     },
+     "display_status": {},
+     "exclude_object": {},
+     "extruder": {
+      "control": "pid",
+      "dir_pin": "!ebb36:PD1",
+      "enable_pin": "!ebb36:PD2",
+      "filament_diameter": "1.75",
+      "full_steps_per_rotation": "200",
+      "gear_ratio": "50:8",
+      "heater_pin": "ebb36:PB13",
+      "max_extrude_cross_section": "100",
+      "max_extrude_only_distance": "1001",
+      "max_power": "1.0",
+      "max_temp": "400",
+      "microsteps": "16",
+      "min_extrude_temp": "10",
+      "min_temp": "5",
+      "nozzle_diameter": "0.400",
+      "pid_kd": "20.698",
+      "pid_ki": "12.732",
+      "pid_kp": "32.468",
+      "pressure_advance": "0.015",
+      "pressure_advance_smooth_time": "0.04",
+      "rotation_distance": "22.67895",
+      "sensor_pin": "ebb36:PA3",
+      "sensor_type": "ATC Semitec 104NT-4-R025H42G",
+      "step_pin": "ebb36:PD0"
+     },
+     "fan": {
+      "kick_start_time": "0.5",
+      "off_below": "0.10",
+      "pin": "ebb36:PA0"
+     },
+     "filament_group T0": {
+      "group": "oams1-0"
+     },
+     "filament_group T1": {
+      "group": "oams1-1"
+     },
+     "filament_group T2": {
+      "group": "oams1-2"
+     },
+     "filament_group T3": {
+      "group": "oams1-3"
+     },
+     "filament_switch_sensor RunoutSensor": {
+      "pause_on_runout": "False",
+      "switch_pin": "^PG15"
+     },
+     "filament_switch_sensor m4_left_runout": {
+      "pause_on_runout": "False",
+      "switch_pin": "^!PG13"
+     },
+     "filament_switch_sensor my_after_sensor": {
+      "pause_on_runout": "False",
+      "switch_pin": "^PF7"
+     },
+     "filament_switch_sensor my_before_sensor": {
+      "pause_on_runout": "False",
+      "switch_pin": "^PF6"
+     },
+     "force_move": {
+      "enable_force_move": "True"
+     },
+     "fps": {
+      "pin": "fps:PA3",
+      "reversed": "true"
+     },
+     "gco_routines": {},
+     "gcode_arcs": {},
+     "gcode_macro CANCEL_PRINT": {
+      "description": "Cancel the actual running print",
+      "gcode": "\nSTOP_LED_EFFECTS\nSET_LED_EFFECT EFFECT=panel_idle\n{% set idle_timeout = printer.configfile.settings.idle_timeout.timeout %}\nSET_IDLE_TIMEOUT TIMEOUT={idle_timeout}\nSET_HEATER_TEMPERATURE HEATER=\"the_filter\" TARGET=0\nDISABLE_STEPPER_FOLLOWER\n\n{% set macro_found = True if printer['gcode_macro _CLIENT_VARIABLE'] is defined else False %}\n{% set client = printer['gcode_macro _CLIENT_VARIABLE'] %}\n{% set allow_park = False if not macro_found\nelse False if client.park_at_cancel is not defined\nelse True  if client.park_at_cancel|lower == 'true'\nelse False %}\n{% set retract    = 5.0  if not macro_found else client.cancel_retract|default(5.0)|abs %}\n{% set sp_retract = 2100 if not macro_found else client.speed_retract|default(35) * 60 %}\n\n{% if not printer.pause_resume.is_paused and allow_park %} _TOOLHEAD_PARK_PAUSE_CANCEL {% endif %}\n{% if printer.extruder.can_extrude %}\nM83\nG1 E-{retract} F{sp_retract}\n{% if printer.gcode_move.absolute_extrude %} M82 {% endif %}\n{% else %}\n{action_respond_info(\"Extruder not hot enough\")}\n{% endif %}\nSET_HEATER_TEMPERATURE HEATER=extruder\nM106 S0\nCANCEL_PRINT_BASE\n\n\nSTOP_LED_EFFECTS\nSET_LED_EFFECT EFFECT=panel_idle REPLACE=1\nSET_LED_EFFECT EFFECT=progress_bar_idle REPLACE=1\n\nOAMS_LOADED\nM117 Ready\nSTATUS_READY",
+      "rename_existing": "CANCEL_PRINT_BASE"
+     },
+     "gcode_macro CHECK_FILAMENT": {
+      "description": "Report the configured runout switch state",
+      "gcode": "\n{% set filament_status = printer['filament_switch_sensor m4_left_runout'].filament_detected %}\nM117 Filament {filament_status}"
+     },
+     "gcode_macro CLEAN_NOZZLE": {
+      "gcode": "\n{% if \"xyz\" not in printer.toolhead.homed_axes %}\nG28\n{% endif %}\n\nG90\n\n\nG1 X{start_x} Y{start_y} F6000\n\n\n\n\n\n{% for wipes in range(1, (wipe_qty + 1)) %}\nG1 X{start_x + wipe_dist} F{wipe_spd * 60}\nG1 X{start_x} F{wipe_spd * 60}\n{% endfor %}",
+      "variable_start_x": "57",
+      "variable_start_y": "350",
+      "variable_wipe_dist": "-32",
+      "variable_wipe_qty": "5",
+      "variable_wipe_spd": "600"
+     },
+     "gcode_macro CUT_FILAMENT": {
+      "gcode": "\n{% set v = printer[\"gcode_macro _oams_macro_variables\"] %}\n{% if printer.toolhead.homed_axes != 'xyz' %}\nRESPOND TYPE=command MSG='Homing'\nG28\n{% endif %}\nRESPOND TYPE=command MSG='Cutting'\n\n\nG90\nG0 X{v.pre_cut_x} Y{v.pre_cut_y} F{v.pre_cut_speed}\nG0 X{v.cut_x} Y{v.cut_y} F{v.cut_speed}\nG0 X{v.post_cut_x} Y{v.post_cut_y} F{v.pre_cut_speed}\nM400"
+     },
+     "gcode_macro CYCLE_CHAMBER_LIGHTS": {
+      "description": "Cycle chamber/rear panel lights: on -> idle -> off",
+      "gcode": "\n{% if state == \"on\" %}\nSET_LED_EFFECT EFFECT=panel_idle REPLACE=1\nSET_GCODE_VARIABLE MACRO=CYCLE_CHAMBER_LIGHTS VARIABLE=state VALUE='\"idle\"'\n{% elif state == \"idle\" %}\nSET_LED_EFFECT EFFECT=panel_off REPLACE=1\nSET_GCODE_VARIABLE MACRO=CYCLE_CHAMBER_LIGHTS VARIABLE=state VALUE='\"off\"'\n{% else %}\nSET_LED_EFFECT EFFECT=panel_on REPLACE=1\nSET_GCODE_VARIABLE MACRO=CYCLE_CHAMBER_LIGHTS VARIABLE=state VALUE='\"on\"'\n{% endif %}",
+      "variable_state": "\"idle\""
+     },
+     "gcode_macro EXTRUDE_VOLUMETRIC": {
+      "description": "Extrude specified volume of filament using a given diameter",
+      "gcode": "\n{% set D = params.D|float %}\n{% set EXTRUDER = params.EXTRUDER|default(\"extruder\") %}\n{% set VOLUME = params.VOLUME|float %}\n{% set SPEED = params.SPEED|float %}\n\n\n{% if D <= 0 %}\nrespond_error \"Invalid filament diameter: D must be greater than 0\"\nreturn\n{% endif %}\n{% if VOLUME <= 0 %}\nrespond_error \"Invalid volume: VOLUME must be greater than 0\"\nreturn\n{% endif %}\n{% if SPEED <= 0 %}\nrespond_error \"Invalid speed: SPEED must be greater than 0\"\nreturn\n{% endif %}\n\n\n{% set area = (3.14159 * (D / 2) ** 2) %}\n\n\n{% set length = VOLUME / area %}\n\n\nrespond_info \"Extruding length of filament: {length} mm at speed { SPEED } mm/min with filament diameter {D } mm\"\n\n\nACTIVATE_EXTRUDER EXTRUDER={EXTRUDER}\nG1 E{length} F{SPEED}",
+      "variable_extruder_name": "\"extruder\"",
+      "variable_filament_diameter": "1.75",
+      "variable_speed": "0",
+      "variable_volume": "0"
+     },
+     "gcode_macro G28": {
+      "gcode": "\n{% set home_all = 'X' not in params and 'Y' not in params and 'Z' not in params %}\n\n{% if 'z' not in printer.toolhead.homed_axes %}\nUNSAFE_LIFT_TOOLHEAD\n{% endif %}\n\n{% if home_all or 'X' in params %}\n_HOME_X\n{% endif %}\n\n{% if home_all or 'Y' in params %}\n_HOME_Y\n{% endif %}\n\n{% if home_all or 'Z' in params %}\nG28.1 Z\nG0 Z10\n{% endif %}",
+      "rename_existing": "G28.1"
+     },
+     "gcode_macro G32": {
+      "gcode": "\nSAVE_GCODE_STATE NAME=STATE_G32\nSTATUS_LEVELING\nQUAD_GANTRY_LEVEL\nG0 X175 Y175 Z30 F3600\nRESTORE_GCODE_STATE NAME=STATE_G32"
+     },
+     "gcode_macro GREASE_RAILS": {
+      "gcode": "\n{% if \"xyz\" not in printer.toolhead.homed_axes %}\nG28\n{% endif %}\nG90\n\nG0 X{x_width / 2} Y{y_width / 2} F6000\nG0 Z{safe_z_height} F{speed}\n\n{% for travels in range(0, repeat_times) %}\nG0 X0\nG0 X{x_width}\n{% endfor %}\nG0 X{x_width / 2}\n\n{% for travels in range(0, repeat_times) %}\nG0 Y0\nG0 Y{y_width}\n{% endfor %}\nG0 Y{y_width / 2}\n\n{% for travels in range(0, repeat_times) %}\nG0 Z{z_height} F{z_speed}\nG0 Z{safe_z_height}\n{% endfor %}",
+      "variable_repeat_times": "5",
+      "variable_safe_z_height": "10",
+      "variable_speed": "6000",
+      "variable_x_width": "350",
+      "variable_y_width": "350",
+      "variable_z_height": "280",
+      "variable_z_speed": "3000"
+     },
+     "gcode_macro M0": {
+      "gcode": "\nPAUSE"
+     },
+     "gcode_macro M600": {
+      "gcode": "\nPAUSE"
+     },
+     "gcode_macro OAMS_TOOLCHANGE_TORTURE_TEST": {
+      "gcode": "\n{% set num = params.LOOPS|int %}\nG0 Z{extrusion_z_height} F30\n{% for i in range(num) %}\n{% for j in range(4) %}\nT{j}\nRESPOND TYPE=command MSG='Purging {extrusion_amount}mm of filament'\n{% endfor %}\nRESPOND TYPE=command MSG='Number of loops now {i+1}'\n{% endfor %}",
+      "variable_extrusion_amount": "30",
+      "variable_extrusion_speed": "300",
+      "variable_extrusion_z_height": "100"
+     },
+     "gcode_macro OAMS_TORTURE_TEST": {
+      "gcode": "\n{% set num = params.LOOPS|int %}\n{% for i in range(num) %}\n{% for j in range(4) %}\nOAMS_LOAD_SPOOL OAMS=1 SPOOL={j}\nOAMS_UNLOAD_SPOOL OAMS=1\n{% endfor %}\nRESPOND TYPE=command MSG='Number of loops now {i+1}'\n{% endfor %}"
+     },
+     "gcode_macro OPENAMS_LOAD": {
+      "description": "Load a selected OpenAMS slot through the complete safe toolchange sequence",
+      "gcode": "\n{% if 'GROUP' not in params %}\n{ action_raise_error(\"OPENAMS_LOAD requires GROUP\") }\n{% elif 'SLOT' not in params %}\n{ action_raise_error(\"OPENAMS_LOAD requires SLOT\") }\n{% else %}\n_TX GROUP={params.GROUP} SLOT={params.SLOT}\n{% endif %}"
+     },
+     "gcode_macro OPENAMS_UNLOAD": {
+      "description": "Unload OpenAMS through the complete cutter and extruder sequence",
+      "gcode": "\n{% set manager = printer['oams_manager'] %}\n{% set ns = namespace(lane=params.FPS|default(none)) %}\n{% if ns.lane is none %}{% for name in manager.lanes_by_fps %}{% if manager.lanes_by_fps[name].extruder == printer.toolhead.extruder %}{% set ns.lane = name %}{% endif %}{% endfor %}{% endif %}\n{% if ns.lane is none and manager.lanes_by_fps|length == 1 %}{% set ns.lane = (manager.lanes_by_fps|list)[0] %}{% endif %}\n{% if ns.lane is none %}\n{ action_raise_error(\"Cannot tell which OpenAMS lane to unload; pass FPS=<name>\") }\n{% endif %}\n{% set LANE = ns.lane %}\n{% if manager.lanes_by_fps[LANE].current_slot is not none %}\nSAFE_UNLOAD_FILAMENT STRICT=1 FPS={LANE}\n{% else %}\nRESPOND TYPE=command MSG='OpenAMS is already unloaded'\n{% endif %}"
+     },
+     "gcode_macro PAUSE": {
+      "description": "Pause the actual running print",
+      "gcode": "\nM117 Paused\nSTATUS_PART_READY\nPAUSE_BASE\n_TOOLHEAD_PARK_PAUSE_CANCEL {rawparams}\nSET_IDLE_TIMEOUT TIMEOUT=86400",
+      "rename_existing": "PAUSE_BASE"
+     },
+     "gcode_macro PRIME_NOZZLE": {
+      "gcode": "\nSTATUS_CLEANING\nSAVE_GCODE_STATE NAME=PRIME_NOZZLE_STATE\nM117 Priming\nG90\nM83\nG92 E0\nG1 Z10 F900\nG1 Y3 X3 F18000\nG1 Z0.2 F900\nG91\nG1 X100 E25 F1000\nG1 Y-2 F1000\nG1 X-60 E9 F1000\nG1 E-0.5 F3000\nG1 X0.5 E0 F1000\nG1 X-5.5 E0 F1000\nRESTORE_GCODE_STATE NAME=PRIME_NOZZLE_STATE"
+     },
+     "gcode_macro PRINT_END": {
+      "gcode": "\n\n{% set th = printer.toolhead %}\n{% set x_safe = th.position.x + 20 * (1 if th.axis_maximum.x - th.position.x > 20 else -1) %}\n{% set y_safe = th.position.y + 20 * (1 if th.axis_maximum.y - th.position.y > 20 else -1) %}\n{% set z_safe = [th.position.z + 2, th.axis_maximum.z]|min %}\n\nSAVE_GCODE_STATE NAME=STATE_PRINT_END\nSET_LED_EFFECT EFFECT=panel_idle REPLACE=1\n\nM400\nG92 E0\nG1 E-5.0 F1800\n\nSET_HEATER_TEMPERATURE HEATER=\"the_filter\" TARGET=0\nSET_HEATER_TEMPERATURE HEATER=extruder\n\nG90\nG0 X{x_safe} Y{y_safe} Z{z_safe} F20000\nG0 X{th.axis_maximum.x // 2} Y{th.axis_maximum.y - 2} F3600\nM107\n\nBED_MESH_CLEAR\nRESTORE_GCODE_STATE NAME=STATE_PRINT_END\nturn_chamber_lights_off\nSTATUS_READY\nM117 Ready"
+     },
+     "gcode_macro PRINT_START": {
+      "gcode": "\nSET_LED_EFFECT EFFECT=panel_on REPLACE=1\nSTATUS_BUSY\n\nM140 S{ params.BED }\nM190 S{ params.BED }\n\n{% set axes_homed  = 'xyz' in printer.toolhead.homed_axes %}\n{% set mesh_loaded = printer.bed_mesh.profile_name != '' %}\n\n{% if axes_homed and mesh_loaded %}\n\nM117 Skipping calibration\nSET_GCODE_OFFSET Z=0\n\nM104 S{ params.EXTRUDER }\nM109 S{ params.EXTRUDER }\n\nSET_GCODE_OFFSET Z=0.030 MOVE=1\n{% else %}\n\nBED_MESH_CLEAR\nSET_GCODE_OFFSET Z=0\n\nG28\nG0 Z4\n\nM109 S150\nG4 P20000\n\nCLEAN_NOZZLE\n\nQUAD_GANTRY_LEVEL\n\nG28.1 Z METHOD=CONTACT CALIBRATE=1\n\nBED_MESH_CALIBRATE PROFILE=\"default\"\nBED_MESH_PROFILE LOAD=default\n\nM104 S{ params.EXTRUDER }\nM109 S{ params.EXTRUDER }\n\nSET_GCODE_OFFSET Z=0.030 MOVE=1\n{% endif %}\n\nSTATUS_PRINTING\nOAMSM_FOLLOWER FPS=fps1 ENABLE=1 DIRECTION=1"
+     },
+     "gcode_macro PURGE_COLOR": {
+      "gcode": "\nG0 X185 Y275 F6000\nG0 X185 Y350\nG0 Z30 F900\nM83\nG1 E200 F300\nCLEAN_NOZZLE"
+     },
+     "gcode_macro PURGE_HOTEND": {
+      "gcode": "\nSTATUS_CLEANING\nSAVE_GCODE_STATE NAME=PURGE_HOTEND_STATE\nM117 Purging\nG90\nM83\nG92 E0\nG1 Z30 F900\nG1 X170 Y350 F18000\nG1 E300 F300\nM117 Ready\nRESTORE_GCODE_STATE NAME=PURGE_HOTEND_STATE"
+     },
+     "gcode_macro RESUME": {
+      "description": "Resume the actual running print",
+      "gcode": "\n{% set idle_timeout = printer.configfile.settings.idle_timeout.timeout %}\nSET_IDLE_TIMEOUT TIMEOUT={idle_timeout}\n\n{% set macro_found = True if printer['gcode_macro _CLIENT_VARIABLE'] is defined else False %}\n{% set client = printer['gcode_macro _CLIENT_VARIABLE'] %}\n{% set velocity = printer.configfile.settings.pause_resume.recover_velocity %}\n{% set use_fw_retract = False if not macro_found\nelse False if client.use_fw_retract is not defined\nelse True  if client.use_fw_retract|lower == 'true' and printer.firmware_retraction is defined\nelse False %}\n{% set unretract    = 1.0  if not macro_found else client.unretract|default(1.0)|abs %}\n{% set sp_unretract = 2100 if not macro_found else client.speed_unretract|default(35) * 60 %}\n{% set sp_move      = velocity if not macro_found else client.speed_move|default(velocity) %}\n\n{% if printer.extruder.can_extrude %}\n{% if use_fw_retract %}\nG11\n{% else %}\nM83\nG1 E{unretract} F{sp_unretract}\n{% if printer.gcode_move.absolute_extrude %} M82 {% endif %}\n{% endif %}\n{% else %}\n{action_respond_info(\"Extruder not hot enough %s\" % use_fw_retract)}\n{% endif %}\nM117 Printing\nSTATUS_PRINTING\nRESUME_BASE VELOCITY={params.VELOCITY|default(sp_move)}",
+      "rename_existing": "RESUME_BASE"
+     },
+     "gcode_macro SAFE_UNLOAD_FILAMENT": {
+      "gcode": "\n{% set v = printer[\"gcode_macro _oams_macro_variables\"] %}\n{% set manager = printer['oams_manager'] %}\n{% set ns = namespace(lane=params.FPS|default(none)) %}\n{% if ns.lane is none %}{% for name in manager.lanes_by_fps %}{% if manager.lanes_by_fps[name].extruder == printer.toolhead.extruder %}{% set ns.lane = name %}{% endif %}{% endfor %}{% endif %}\n{% if ns.lane is none and manager.lanes_by_fps|length == 1 %}{% set ns.lane = (manager.lanes_by_fps|list)[0] %}{% endif %}\n{% if ns.lane is none %}\n{ action_raise_error(\"Cannot tell which OpenAMS lane to unload; pass FPS=<name>\") }\n{% endif %}\n{% set LANE = ns.lane %}\n{% set LANE_EXTRUDER = manager.lanes_by_fps[LANE].extruder %}\n{% set STRICT = params.STRICT|default(0)|int == 1 %}\n{% set STAGED = params.STAGED|default(0)|int == 1 %}\n{% set UNLOAD_SPEED = v.unload_speed|default(1000) %}\n{% if STRICT and pause_triggered %}\n{ action_raise_error(\"Resolve the previous unload sensor failure before retrying\") }\n{% endif %}\n{% if not printer[LANE_EXTRUDER].can_extrude or printer[LANE_EXTRUDER].temperature < v.minimum_extrude_temperature|default(0) %}\n{ action_raise_error(\"Heat the extruder before unloading OpenAMS filament. Cutting and retracting need extrusion temperature\") }\n{% endif %}\n\n\n{% if not STAGED %}\nOAMSM_STAGE PLAN=cut,retract FPS={LANE}\n{% endif %}\n\n{% set PRE_HOMING_TARGET = printer[LANE_EXTRUDER].target|default(0) %}\n{% if STRICT and printer.toolhead.homed_axes != 'xyz' %}\nG28\n_OAMS_AFTER_HOMING EXTRUDER={LANE_EXTRUDER} TARGET={PRE_HOMING_TARGET}\n{% endif %}\nSAVE_GCODE_STATE NAME=oams_unload\n{% if not STRICT %}\nSET_GCODE_VARIABLE MACRO=SAFE_UNLOAD_FILAMENT VARIABLE=pause_triggered VALUE=False\n{% endif %}\nM83\nOAMSM_FOLLOWER ENABLE=1 DIRECTION=0 FPS={LANE}\nSET_STEPPER_ENABLE STEPPER={LANE_EXTRUDER} ENABLE=1\nOAMSM_STAGE NAME=cut FPS={LANE}\nG1 E-{v.retract_length} F{UNLOAD_SPEED}\nCUT_FILAMENT\n\nM83\nG1 E-{v.extrusion_unload_length} F{UNLOAD_SPEED}\nM400\n_UNLOAD_FS_OUT STRICT={1 if STRICT else 0} FPS={LANE}\n_OAMS_FINISH_UNLOAD STRICT={1 if STRICT else 0} STARTED_PAUSED={1 if printer.pause_resume.is_paused else 0} STAGED={1 if STAGED else 0} FPS={LANE}",
+      "variable_pause_triggered": "False"
+     },
+     "gcode_macro SEARCH_VARS": {
+      "gcode": "\n{% set search = params.S|lower %}\n{% set ns = namespace() %}\n{% for item in printer %}\n{% if ' ' in item %}\n{% set ns.path = ['printer', \"['%s']\" % (item), ''] %}\n{% else %}\n{% set ns.path = ['printer.', item, ''] %}\n{% endif %}\n\n{% if search in ns.path|lower %}\n{ action_respond_info(ns.path|join) }\n{% endif %}\n\n{% if printer[item].items() %}\n{% for childkey, child in printer[item].items() recursive %}\n{% set ns.path = ns.path[:loop.depth|int + 1] %}\n\n{% if ' ' in childkey %}\n{% set null = ns.path.append(\"['%s']\" % (childkey)) %}\n{% else %}\n{% set null = ns.path.append(\".%s\" % (childkey)) %}\n{% endif %}\n\n{% if child is mapping %}\n{ loop(child.items()) }\n{% else %}\n{% if search in ns.path|lower %}\n{ action_respond_info(\"%s : %s\" % (ns.path|join, child)) }\n{% endif %}\n{% endif %}\n{% endfor %}\n{% endif %}\n{% endfor %}"
+     },
+     "gcode_macro STATUS_BUSY": {
+      "gcode": ""
+     },
+     "gcode_macro STATUS_CALIBRATING_Z": {
+      "gcode": ""
+     },
+     "gcode_macro STATUS_CLEANING": {
+      "gcode": ""
+     },
+     "gcode_macro STATUS_COOLING": {
+      "gcode": ""
+     },
+     "gcode_macro STATUS_HEATING": {
+      "gcode": ""
+     },
+     "gcode_macro STATUS_HOMING": {
+      "gcode": ""
+     },
+     "gcode_macro STATUS_LEVELING": {
+      "gcode": ""
+     },
+     "gcode_macro STATUS_MESHING": {
+      "gcode": ""
+     },
+     "gcode_macro STATUS_PART_READY": {
+      "gcode": ""
+     },
+     "gcode_macro STATUS_PRINTING": {
+      "gcode": "\nSET_LED_EFFECT EFFECT=panel_on REPLACE=1"
+     },
+     "gcode_macro STATUS_READY": {
+      "gcode": "\nSTOP_LED_EFFECTS\nSET_LED_EFFECT EFFECT=panel_idle REPLACE=1"
+     },
+     "gcode_macro T0": {
+      "gcode": "\n_TX GROUP=T0"
+     },
+     "gcode_macro T1": {
+      "gcode": "\n_TX GROUP=T1"
+     },
+     "gcode_macro T2": {
+      "gcode": "\n_TX GROUP=T2"
+     },
+     "gcode_macro T3": {
+      "gcode": "\n_TX GROUP=T3"
+     },
+     "gcode_macro UNSAFE_LIFT_TOOLHEAD": {
+      "description": "Lower the bed 10mm without homing",
+      "gcode": "\nG90\nSET_KINEMATIC_POSITION Z=0\nG0 Z10 F600\nM84"
+     },
+     "gcode_macro _CONTACT_ACTIVATE": {
+      "description": "Check Nozzle temp",
+      "gcode": "\n{% set PROBE_TEMP = 150 %}\n{% set ACTUAL_TEMP = printer.extruder.temperature %}\n\n{% if ACTUAL_TEMP > (PROBE_TEMP + 1) %}\nM118 Extruder temperature of {ACTUAL_TEMP}\u00b0C is too high, lowering to {PROBE_TEMP}\u00b0C\nM109 S{ PROBE_TEMP }\n{% endif %}"
+     },
+     "gcode_macro _HOME_X": {
+      "gcode": "\n\n{% set RUN_CURRENT_X = printer.configfile.settings['tmc2209 stepper_x'].run_current|float %}\n{% set RUN_CURRENT_Y = printer.configfile.settings['tmc2209 stepper_y'].run_current|float %}\n{% set HOME_CURRENT = 0.7 %}\nSET_TMC_CURRENT STEPPER=stepper_x CURRENT={HOME_CURRENT}\nSET_TMC_CURRENT STEPPER=stepper_y CURRENT={HOME_CURRENT}\n\nG28.1 X\nG91\nG1 X-10 F1200\n\nG4 P2000\nSET_TMC_CURRENT STEPPER=stepper_x CURRENT={RUN_CURRENT_X}\nSET_TMC_CURRENT STEPPER=stepper_y CURRENT={RUN_CURRENT_Y}"
+     },
+     "gcode_macro _HOME_Y": {
+      "gcode": "\n{% set RUN_CURRENT_X = printer.configfile.settings['tmc2209 stepper_x'].run_current|float %}\n{% set RUN_CURRENT_Y = printer.configfile.settings['tmc2209 stepper_y'].run_current|float %}\n{% set HOME_CURRENT = 0.7 %}\nSET_TMC_CURRENT STEPPER=stepper_x CURRENT={HOME_CURRENT}\nSET_TMC_CURRENT STEPPER=stepper_y CURRENT={HOME_CURRENT}\n\nG4 P2000\nG28.1 Y\nG91\nG1 Y-10 F1200\n\nG4 P2000\nSET_TMC_CURRENT STEPPER=stepper_x CURRENT={RUN_CURRENT_X}\nSET_TMC_CURRENT STEPPER=stepper_y CURRENT={RUN_CURRENT_Y}"
+     },
+     "gcode_macro _LOAD_FS_IN": {
+      "gcode": "\n{% set fs_extruder_in = printer[\"gcode_macro _oams_macro_variables\"].fs_extruder_in %}\n{% set LANE = params.FPS|default(none) %}\n\n{% if fs_extruder_in and not printer['filament_switch_sensor extruder_in'].filament_detected %}\n{% if params.STRICT|default(0)|int == 1 %}\nOAMSM_STAGE FAILED=1 {('FPS=' ~ LANE) if LANE is not none else ''}\n{ action_raise_error(\"Filament not detected at toolhead extruder inlet\") }\n{% endif %}\nRESPOND TYPE=error MSG='Filament not detected at toolhead extruder inlet... pausing for user intervention'\nSET_GCODE_VARIABLE MACRO=_TX VARIABLE=pause_triggered VALUE=True\n{% elif fs_extruder_in and printer['filament_switch_sensor extruder_in'].filament_detected %}\nRESPOND TYPE=command MSG='Filament detected at toolhead extruder inlet... continue loading'\n{% endif %}"
+     },
+     "gcode_macro _LOAD_FS_OUT": {
+      "gcode": "\n{% set fs_extruder_out = printer[\"gcode_macro _oams_macro_variables\"].fs_extruder_out %}\n{% set LANE = params.FPS|default(none) %}\n\n{% if fs_extruder_out and not printer['filament_switch_sensor extruder_out'].filament_detected %}\n{% if params.STRICT|default(0)|int == 1 %}\nOAMSM_STAGE FAILED=1 {('FPS=' ~ LANE) if LANE is not none else ''}\n{ action_raise_error(\"Filament not detected between extruder and hotend\") }\n{% endif %}\nRESPOND TYPE=error MSG='Filament not detected between toolhead extruder and hotend... pausing for user intervention'\nSET_GCODE_VARIABLE MACRO=_TX VARIABLE=pause_triggered VALUE=True\n{% elif fs_extruder_out and printer['filament_switch_sensor extruder_out'].filament_detected %}\nRESPOND TYPE=command MSG='Filament successfully loaded through extruder... continue'\n{% endif %}"
+     },
+     "gcode_macro _OAMS_ABORT": {
+      "gcode": "\n{% set LANE = params.FPS|default(none) %}\nOAMSM_STAGE FAILED=1 {('FPS=' ~ LANE) if LANE is not none else ''}\nOAMSM_FOLLOWER ENABLE=0 DIRECTION=0\n{% if params.STRICT|default(0)|int != 1 %}\nPAUSE\n{% endif %}\n_OAMS_RAISE MSG=\"{params.MSG}\""
+     },
+     "gcode_macro _OAMS_AFTER_HOMING": {
+      "gcode": "\n{% set v = printer[\"gcode_macro _oams_macro_variables\"] %}\n{% set EXTRUDER = params.EXTRUDER %}\n{% set TARGET = params.TARGET|default(0)|float %}\n{% set MINIMUM = v.minimum_extrude_temperature|default(0)|float %}\n{% set HOT = printer[EXTRUDER] %}\n\n\n{% set RESTORE = TARGET > 0 and TARGET >= MINIMUM %}\n{% if RESTORE and HOT.target|default(0)|float != TARGET %}\nRESPOND TYPE=command MSG='Homing changed the extruder target. Restoring {TARGET}'\nSET_HEATER_TEMPERATURE HEATER={EXTRUDER} TARGET={TARGET}\n{% endif %}\n{% if RESTORE %}\n\n\n{% set WAIT_MINIMUM = [TARGET - 5, MINIMUM]|max %}\n{% if HOT.temperature|default(0)|float < WAIT_MINIMUM %}\nRESPOND TYPE=command MSG='Waiting for the extruder to reach {WAIT_MINIMUM}'\nTEMPERATURE_WAIT SENSOR={EXTRUDER} MINIMUM={WAIT_MINIMUM}\n{% endif %}\n{% elif not HOT.can_extrude or HOT.temperature|default(0)|float < MINIMUM %}\n{ action_raise_error(\"Homing cooled the extruder and there is no target to restore. Heat the extruder before unloading or changing OpenAMS filament. Cutting and retracting need extrusion temperature\") }\n{% endif %}"
+     },
+     "gcode_macro _OAMS_CONFIRM_UNLOADED": {
+      "gcode": "\n{% set manager = printer['oams_manager'] %}\n{% set LANE = params.FPS|default(none) %}\n{% set STAGED = params.STAGED|default(0)|int %}\n{% set NEW_PAUSE = printer.pause_resume.is_paused and not params.STARTED_PAUSED|default(0)|int %}\n{% set MSG = 'OpenAMS unload stopped because the printer was paused' if NEW_PAUSE else 'OpenAMS did not finish unloading. Inspect the filament path before retrying' %}\nRESTORE_GCODE_STATE NAME=oams_unload\n{% set LOADED_GROUP = manager.lanes_by_fps[LANE].group if LANE is not none else manager.current_group %}\n{% if LOADED_GROUP is not none or NEW_PAUSE %}\n_OAMS_ABORT STRICT={params.STRICT|default(0)|int} MSG=\"{MSG}\" {('FPS=' ~ LANE) if LANE is not none else ''}\n{% elif not STAGED %}\nOAMSM_STAGE DONE=1 {('FPS=' ~ LANE) if LANE is not none else ''}\n{% endif %}"
+     },
+     "gcode_macro _OAMS_CONTINUE_AFTER_INLET": {
+      "gcode": "\n{% set v = printer[\"gcode_macro _oams_macro_variables\"] %}\n{% set manager = printer['oams_manager'] %}\n{% set LANE = params.FPS|default(none) %}\n{% set LANE_EXTRUDER = manager.lanes_by_fps[LANE].extruder if LANE is not none else printer.toolhead.extruder %}\n{% set RELOAD_LENGTH = v.extrusion_reload_length + v.retract_length + v.hotend_meltzone_compensation %}\n{% set NEW_PAUSE = printer.pause_resume.is_paused and not params.STARTED_PAUSED|default(0)|int %}\n{% set MSG = 'OpenAMS toolchange stopped because the printer was paused' if NEW_PAUSE else 'OpenAMS toolchange stopped at the toolhead inlet check' %}\n{% if printer[\"gcode_macro _TX\"].pause_triggered or NEW_PAUSE %}\n_OAMS_FAIL_TOOLCHANGE STRICT={params.STRICT} MSG=\"{MSG}\" {('FPS=' ~ LANE) if LANE is not none else ''}\n{% else %}\n{% if params.CLEAN|default(0)|int == 1 %}\nCLEAN_NOZZLE\nM400\n{% endif %}\nSET_STEPPER_ENABLE STEPPER={LANE_EXTRUDER} ENABLE=1\nM83\nG1 E{RELOAD_LENGTH} F{v.reload_speed}\nM400\nG4 P1000\n_LOAD_FS_OUT STRICT={params.STRICT} {('FPS=' ~ LANE) if LANE is not none else ''}\n_OAMS_FINISH_TOOLCHANGE STRICT={params.STRICT} STARTED_PAUSED={params.STARTED_PAUSED} {('FPS=' ~ LANE) if LANE is not none else ''}\n{% endif %}"
+     },
+     "gcode_macro _OAMS_CONTINUE_AFTER_LOAD": {
+      "gcode": "\n{% set manager = printer['oams_manager'] %}\n{% set LANE = params.FPS|default(none) %}\n{% set STRICT = params.STRICT|default(0)|int %}\n{% set STARTED_PAUSED = params.STARTED_PAUSED|default(0)|int %}\n{% set LOADED_GROUP = manager.lanes_by_fps[LANE].group if LANE is not none else manager.current_group %}\n{% set LOADED_SLOT = manager.lanes_by_fps[LANE].current_slot if LANE is not none else none %}\n{% set NEW_PAUSE = printer.pause_resume.is_paused and not STARTED_PAUSED %}\n{% if NEW_PAUSE %}\n_OAMS_FAIL_TOOLCHANGE STRICT={STRICT} MSG=\"OpenAMS toolchange stopped because the printer was paused\" {('FPS=' ~ LANE) if LANE is not none else ''}\n{% elif LOADED_GROUP != params.GROUP or (STRICT == 1 and LOADED_SLOT != params.SLOT|int) %}\n_OAMS_FAIL_TOOLCHANGE STRICT={STRICT} MSG=\"OpenAMS did not load {params.GROUP}. The toolhead was not reloaded\" {('FPS=' ~ LANE) if LANE is not none else ''}\n{% else %}\n_LOAD_FS_IN STRICT={STRICT} {('FPS=' ~ LANE) if LANE is not none else ''}\n_OAMS_CONTINUE_AFTER_INLET STRICT={STRICT} STARTED_PAUSED={STARTED_PAUSED} CLEAN={params.CLEAN|default(0)|int} {('FPS=' ~ LANE) if LANE is not none else ''}\n{% endif %}"
+     },
+     "gcode_macro _OAMS_CONTINUE_AFTER_UNLOAD": {
+      "gcode": "\n{% set manager = printer['oams_manager'] %}\n{% set LANE = params.FPS|default(none) %}\n{% set NEW_PAUSE = printer.pause_resume.is_paused and not params.STARTED_PAUSED|default(0)|int %}\n{% set MSG = 'OpenAMS toolchange stopped because the printer was paused' if NEW_PAUSE else 'OpenAMS toolchange stopped before loading. Inspect the filament path before retrying' %}\n{% set ARGS = 'GROUP=' ~ params.GROUP ~ ' SLOT=' ~ params.SLOT ~ ' STRICT=' ~ params.STRICT ~ ' STARTED_PAUSED=' ~ params.STARTED_PAUSED ~ ((' FPS=' ~ LANE) if LANE is not none else '') %}\n{% set LOADED_GROUP = manager.lanes_by_fps[LANE].group if LANE is not none else manager.current_group %}\n{% if printer[\"gcode_macro _TX\"].pause_triggered or NEW_PAUSE or LOADED_GROUP is not none %}\n_OAMS_FAIL_TOOLCHANGE STRICT={params.STRICT} MSG=\"{MSG}\" {('FPS=' ~ LANE) if LANE is not none else ''}\n{% else %}\nOAMSM_STAGE NAME=feed {('FPS=' ~ LANE) if LANE is not none else ''}\n{% if params.STRICT|int == 1 %}\nOAMSM_LOAD_FILAMENT GROUP={params.GROUP} SLOT={params.SLOT}\n{% else %}\nOAMSM_LOAD_FILAMENT GROUP={params.GROUP}\n{% endif %}\n\n\nM400\nG4 P1000\n_OAMS_CONTINUE_AFTER_LOAD {ARGS} CLEAN=1\n{% endif %}"
+     },
+     "gcode_macro _OAMS_FAIL_TOOLCHANGE": {
+      "gcode": "\n{% set LANE = params.FPS|default(none) %}\nOAMSM_STAGE FAILED=1 {('FPS=' ~ LANE) if LANE is not none else ''}\nRESTORE_GCODE_STATE NAME=oams_toolchange\n_OAMS_ABORT STRICT={params.STRICT|default(0)} MSG=\"{params.MSG}\" {('FPS=' ~ LANE) if LANE is not none else ''}"
+     },
+     "gcode_macro _OAMS_FINISH_TOOLCHANGE": {
+      "gcode": "\n{% set LANE = params.FPS|default(none) %}\n{% set NEW_PAUSE = printer.pause_resume.is_paused and not params.STARTED_PAUSED|default(0)|int %}\n{% set MSG = 'OpenAMS toolchange stopped because the printer was paused' if NEW_PAUSE else 'OpenAMS toolchange stopped at the extruder outlet check' %}\n{% if printer[\"gcode_macro _TX\"].pause_triggered or NEW_PAUSE %}\n_OAMS_FAIL_TOOLCHANGE STRICT={params.STRICT} MSG=\"{MSG}\" {('FPS=' ~ LANE) if LANE is not none else ''}\n{% else %}\nOAMSM_STAGE DONE=1 {('FPS=' ~ LANE) if LANE is not none else ''}\nRESTORE_GCODE_STATE NAME=oams_toolchange MOVE=1 MOVE_SPEED=100\n{% endif %}"
+     },
+     "gcode_macro _OAMS_FINISH_UNLOAD": {
+      "gcode": "\n{% set v = printer[\"gcode_macro _oams_macro_variables\"] %}\n{% set LANE = params.FPS|default(none) %}\n{% set STRICT = params.STRICT|default(0)|int %}\n{% set STAGED = params.STAGED|default(0)|int %}\n{% set STARTED_PAUSED = params.STARTED_PAUSED|default(0)|int %}\n{% set NEW_PAUSE = printer.pause_resume.is_paused and not STARTED_PAUSED %}\n{% set MSG = 'OpenAMS unload stopped because the printer was paused' if NEW_PAUSE else 'OpenAMS unload stopped after the toolhead sensor check' %}\n{% if not printer[\"gcode_macro SAFE_UNLOAD_FILAMENT\"].pause_triggered and not NEW_PAUSE %}\nG1 E-{v.extrusion_unload_additional_length|default(250)} F{v.additional_unload_speed|default(5000)}\n\nG4 P1000\nOAMSM_STAGE NAME=retract {('FPS=' ~ LANE) if LANE is not none else ''}\n{% if STRICT == 1 %}\nOAMSM_UNLOAD_FILAMENT STRICT=1 {('FPS=' ~ LANE) if LANE is not none else ''}\n{% else %}\nOAMSM_UNLOAD_FILAMENT {('FPS=' ~ LANE) if LANE is not none else ''}\n{% endif %}\nM400\n_OAMS_CONFIRM_UNLOADED STRICT={STRICT} STARTED_PAUSED={STARTED_PAUSED} STAGED={STAGED} {('FPS=' ~ LANE) if LANE is not none else ''}\n{% else %}\nRESTORE_GCODE_STATE NAME=oams_unload\n_OAMS_ABORT STRICT={STRICT} MSG=\"{MSG}\" {('FPS=' ~ LANE) if LANE is not none else ''}\n{% endif %}"
+     },
+     "gcode_macro _OAMS_RAISE": {
+      "gcode": "\n{ action_raise_error(params.MSG) }"
+     },
+     "gcode_macro _TOOLHEAD_PARK_PAUSE_CANCEL": {
+      "description": "Helper: park toolhead used in PAUSE and CANCEL_PRINT",
+      "gcode": "\n\n{% set macro_found = True if printer['gcode_macro _CLIENT_VARIABLE'] is defined else False %}\n{% set client = printer['gcode_macro _CLIENT_VARIABLE'] %}\n{% set velocity = printer.configfile.settings.pause_resume.recover_velocity %}\n{% set use_custom     = False if not macro_found\nelse False if client.use_custom_pos is not defined\nelse True  if client.use_custom_pos|lower == 'true'\nelse False %}\n{% set custom_park_x  = 0.0 if not macro_found else client.custom_park_x|default(0.0) %}\n{% set custom_park_y  = 0.0 if not macro_found else client.custom_park_y|default(0.0) %}\n{% set park_dz        = 2.0 if not macro_found else client.custom_park_dz|default(2.0)|abs %}\n{% set use_fw_retract = False if not macro_found\nelse False if client.use_fw_retract is not defined\nelse True  if client.use_fw_retract|lower == 'true' and printer.firmware_retraction is defined\nelse False %}\n{% set retract    = 1.0  if not macro_found else client.retract|default(1.0)|abs %}\n{% set sp_retract = 2100 if not macro_found else client.speed_retract|default(35) * 60 %}\n{% set sp_hop     = 900  if not macro_found else client.speed_hop|default(15) * 60 %}\n{% set sp_move    = velocity * 60 if not macro_found else client.speed_move|default(velocity) * 60 %}\n\n{% set act = printer.toolhead.position %}\n{% set max = printer.toolhead.axis_maximum %}\n{% set cone = printer.toolhead.cone_start_z|default(max.z) %}\n{% set round_bed = True if printer.configfile.settings.printer.kinematics is in ['delta','polar','rotary_delta','winch']\nelse False %}\n\n{% set z_min = params.Z_MIN|default(0)|float %}\n{% set z_park = [[(act.z + park_dz), z_min]|max, max.z]|min %}\n{% set x_park = params.X       if params.X is defined\nelse custom_park_x  if use_custom\nelse 0.0            if round_bed\nelse (max.x - 5.0) %}\n{% set y_park = params.Y       if params.Y is defined\nelse custom_park_y  if use_custom\nelse (max.y - 5.0)  if round_bed and z_park < cone\nelse 0.0            if round_bed\nelse (max.y - 5.0) %}\n\n{% if printer.extruder.can_extrude %}\n{% if use_fw_retract %}\nG10\n{% else %}\nM83\nG1 E-{retract} F{sp_retract}\n{% if printer.gcode_move.absolute_extrude %} M82 {% endif %}\n{% endif %}\n{% else %}\n{action_respond_info(\"Extruder not hot enough\")}\n{% endif %}\n{% if \"xyz\" in printer.toolhead.homed_axes %}\nG90\nG1 Z{z_park} F{sp_hop}\nG1 X{x_park} Y{y_park} F{sp_move}\n{% if not printer.gcode_move.absolute_coordinates %} G91 {% endif %}\n{% else %}\n{action_respond_info(\"Printer not homed\")}\n{% endif %}"
+     },
+     "gcode_macro _TX": {
+      "gcode": "\n{% set v = printer[\"gcode_macro _oams_macro_variables\"] %}\n{% set manager = printer['oams_manager'] %}\n{% set GROUP = params.GROUP %}\n{% set LANE = (manager.topology.groups.get(GROUP) or {}).get('lane') %}\n{% set TARGETED = 'SLOT' in params %}\n{% set SLOT = params.SLOT|default(-1)|int %}\n{% set LOADED_GROUP = manager.lanes_by_fps[LANE].group if LANE is not none else none %}\n{% set LOADED_SLOT = manager.lanes_by_fps[LANE].current_slot if TARGETED and LANE is not none else none %}\n{% set EXCLUDED = printer.exclude_object.current_object in printer.exclude_object.excluded_objects %}\n{% set SWITCH = not EXCLUDED and not (LOADED_GROUP == GROUP and (not TARGETED or LOADED_SLOT == SLOT)) %}\n{% set LOAD_ARGS = 'GROUP=' ~ GROUP ~ ((' SLOT=' ~ SLOT) if TARGETED else '') %}\n{% set HELPER_ARGS = 'GROUP=' ~ GROUP ~ ' SLOT=' ~ SLOT ~ ' STRICT=' ~ (1 if TARGETED else 0) ~ ' STARTED_PAUSED=' ~ (1 if printer.pause_resume.is_paused else 0) ~ ((' FPS=' ~ LANE) if LANE is not none else '') %}\n{% set LANE_EXTRUDER = manager.lanes_by_fps[LANE].extruder if LANE is not none else printer.toolhead.extruder %}\n\n\n\n{% set HAS_GCO_ROUTINES = 'gco_routines' in printer and printer.configfile.settings.get('gcode_macro _tx', {}).get('render_mode', 'legacy') == 'ordered' %}\n{% if TARGETED %}\n{% if pause_triggered %}\n{ action_raise_error(\"Resolve the previous load sensor failure before retrying\") }\n{% endif %}\n\nOAMSM_VALIDATE_LOAD GROUP={GROUP} SLOT={params.SLOT}\n{% endif %}\n{% if SWITCH %}\n\n{% if not TARGETED and ('filament_group ' ~ GROUP|lower) not in printer.configfile.settings %}\n{ action_raise_error(\"Unknown OpenAMS filament group \" ~ GROUP) }\n{% endif %}\n\n{% if not printer[LANE_EXTRUDER].can_extrude or printer[LANE_EXTRUDER].temperature < v.minimum_extrude_temperature|default(0) %}\n{ action_raise_error(\"Heat the extruder before an OpenAMS toolchange. Cutting and reloading need extrusion temperature\") }\n{% endif %}\n\n\n{% if LOADED_GROUP is not none %}\nOAMSM_STAGE PLAN=cut,retract,feed {('FPS=' ~ LANE) if LANE is not none else ''}\n{% else %}\nOAMSM_STAGE PLAN=feed {('FPS=' ~ LANE) if LANE is not none else ''}\n{% endif %}\n{% endif %}\n\n\n\n\n\n\n\n{% set PRE_HOMING_TARGET = printer[LANE_EXTRUDER].target|default(0) %}\n{% if printer.toolhead.homed_axes != 'xyz' %}\nRESPOND TYPE=command MSG='Homing'\nG28\n{% if SWITCH %}\n_OAMS_AFTER_HOMING EXTRUDER={LANE_EXTRUDER} TARGET={PRE_HOMING_TARGET}\n{% endif %}\n{% endif %}\n{% if not EXCLUDED %}\n{% if not SWITCH %}\nRESPOND TYPE=command MSG='Toolhead already loaded with {GROUP}'\n{% else %}\nRESPOND TYPE=command MSG='Switching {LOADED_GROUP} -> {GROUP}'\n{% if not TARGETED %}\nSET_GCODE_VARIABLE MACRO=_TX VARIABLE=pause_triggered VALUE=False\n{% endif %}\nSAVE_GCODE_STATE NAME=oams_toolchange\n{% if LOADED_GROUP is not none %}\n{% if TARGETED %}\nSAFE_UNLOAD_FILAMENT STRICT=1 STAGED=1 FPS={LANE}\n{% else %}\nSAFE_UNLOAD_FILAMENT STAGED=1 FPS={LANE}\n{% endif %}\n{% endif %}\n\n{% if HAS_GCO_ROUTINES and not printer.pause_resume.is_paused and not printer[\"gcode_macro _TX\"].pause_triggered and (manager.lanes_by_fps[LANE].group if LANE is not none else manager.current_group) is none %}\n\n\n\nOAMSM_STAGE NAME=feed {('FPS=' ~ LANE) if LANE is not none else ''}\nSTART\nOAMSM_LOAD_FILAMENT {LOAD_ARGS}\nEND\nCLEAN_NOZZLE\nM400\nWAIT\n_OAMS_CONTINUE_AFTER_LOAD {HELPER_ARGS}\n{% else %}\n_OAMS_CONTINUE_AFTER_UNLOAD {HELPER_ARGS}\n{% endif %}\n{% endif %}\n{% endif %}",
+      "render_mode": "ordered",
+      "variable_pause_triggered": "False"
+     },
+     "gcode_macro _UNLOAD_FS_OUT": {
+      "gcode": "\n{% set fs_extruder_out = printer[\"gcode_macro _oams_macro_variables\"].fs_extruder_out %}\n{% set LANE = params.FPS|default(none) %}\n\n{% if fs_extruder_out and printer['filament_switch_sensor extruder_out'].filament_detected %}\n{% if params.STRICT|default(0)|int == 1 %}\nOAMSM_STAGE FAILED=1 {('FPS=' ~ LANE) if LANE is not none else ''}\n{ action_raise_error(\"Filament still detected between extruder and hotend after cutting\") }\n{% endif %}\nRESPOND TYPE=error MSG='Filament detected between extruder and hotend!  This is most likely a failure to cut the filament, or the settings are incorrect and the extrusion_unload_length is insufficient to retract the remaining filament past the gears of the extruder   ... pausing for user intervention'\nSET_GCODE_VARIABLE MACRO=SAFE_UNLOAD_FILAMENT VARIABLE=pause_triggered VALUE=True\n{% elif fs_extruder_out and  not printer['filament_switch_sensor extruder_out'].filament_detected %}\nRESPOND TYPE=command MSG='Filament retracted past extruder... continue'\n{% endif %}"
+     },
+     "gcode_macro _oams_macro_variables": {
+      "gcode": "",
+      "variable_additional_unload_speed": "3000",
+      "variable_cut_speed": "1000",
+      "variable_cut_x": "7",
+      "variable_cut_y": "350",
+      "variable_extrusion_reload_length": "28.0",
+      "variable_extrusion_unload_additional_length": "150.0",
+      "variable_extrusion_unload_length": "32.0",
+      "variable_fs_extruder_in": "False",
+      "variable_fs_extruder_out": "False",
+      "variable_hotend_meltzone_compensation": "0.0",
+      "variable_minimum_extrude_temperature": "170.0",
+      "variable_post_cut_x": "57",
+      "variable_post_cut_y": "350",
+      "variable_pre_cut_speed": "9000",
+      "variable_pre_cut_x": "57",
+      "variable_pre_cut_y": "350",
+      "variable_reload_speed": "1000",
+      "variable_retract_length": "20.0",
+      "variable_unload_speed": "1000"
+     },
+     "gcode_macro turn_chamber_lights_off": {
+      "description": "Chamber/rear lights off",
+      "gcode": "\nSET_LED_EFFECT EFFECT=panel_off REPLACE=1"
+     },
+     "gcode_macro turn_chamber_lights_on": {
+      "description": "Chamber/rear lights solid white",
+      "gcode": "\nSET_LED_EFFECT EFFECT=panel_on REPLACE=1"
+     },
+     "hdc1080": {},
+     "heater_bed": {
+      "control": "pid",
+      "heater_pin": "PA3",
+      "max_power": "1",
+      "max_temp": "120",
+      "min_temp": "0",
+      "pid_kd": "269.081",
+      "pid_ki": "2.625",
+      "pid_kp": "53.152",
+      "sensor_pin": "PF3",
+      "sensor_type": "Generic 3950"
+     },
+     "heater_fan hotend_fan": {
+      "fan_speed": "1.0",
+      "heater": "extruder",
+      "heater_temp": "50.0",
+      "kick_start_time": "0.5",
+      "max_power": "1.0",
+      "pin": "ebb36:PA1"
+     },
+     "heater_generic the_filter": {
+      "control": "pid",
+      "heater_pin": "multi_pin:the_filter_pins",
+      "max_power": "1.0",
+      "max_temp": "100",
+      "min_temp": "0",
+      "pid_kd": "0.5",
+      "pid_ki": "5.0",
+      "pid_kp": "10.0",
+      "pwm_cycle_time": "0.0005",
+      "sensor_pin": "PF4",
+      "sensor_type": "Generic 3950"
+     },
+     "idle_timeout": {
+      "timeout": "3600"
+     },
+     "input_shaper": {
+      "shaper_freq_x": "61.2",
+      "shaper_freq_y": "38.8",
+      "shaper_type_x": "mzv",
+      "shaper_type_y": "mzv"
+     },
+     "led_effect bed_temp": {
+      "autostart": "true",
+      "frame_rate": "60",
+      "heater": "heater_bed",
+      "layers": "\ntemperature 20 110 top (0.0, 0.0, 1.0),(1.0, 0.0, 0.0)",
+      "leds": "\nneopixel:bed_left\nneopixel:bed_right"
+     },
+     "led_effect critical_error": {
+      "autostart": "false",
+      "frame_rate": "60",
+      "layers": "\nstrobe    1 1.5 add        (1.0,  1.0, 1.0)\nbreathing 2 0   difference (0.95, 0.0, 0.0)\nstatic    1 0   top        (1.0,  0.0, 0.0)",
+      "leds": "\nneopixel:chamber_lights\nneopixel:rear_lights",
+      "run_on_error": "true"
+     },
+     "led_effect panel_idle": {
+      "autostart": "true",
+      "frame_rate": "30",
+      "layers": "\ngradient 1 1 top (1.0, 0.0, 0.0),(0.0, 1.0, 0.0),(0.0, 0.0, 1.0)",
+      "leds": "\nneopixel:chamber_lights\nneopixel:rear_lights"
+     },
+     "led_effect panel_off": {
+      "frame_rate": "30",
+      "layers": "\nstatic 1 0 top (0.0, 0.0, 0.0)",
+      "leds": "\nneopixel:chamber_lights\nneopixel:rear_lights"
+     },
+     "led_effect panel_on": {
+      "frame_rate": "30",
+      "layers": "\nstatic 1 0 top (1.0, 1.0, 1.0)",
+      "leds": "\nneopixel:chamber_lights\nneopixel:rear_lights"
+     },
+     "led_effect progress_bar_idle": {
+      "autostart": "false",
+      "frame_rate": "30",
+      "layers": "\nknightradiant 1 15 top (0.8, 0.0, 0.01)",
+      "leds": "\nneopixel:progress_bar"
+     },
+     "led_effect progress_bar_printing": {
+      "frame_rate": "30",
+      "layers": "\nprogress 4 4 top (0.0, 0.8, 1.0)",
+      "leds": "\nneopixel:progress_bar"
+     },
+     "mcu": {
+      "restart_method": "command",
+      "serial": "/dev/serial/by-id/usb-Klipper_example_0000000000000000-if00"
+     },
+     "mcu ebb36": {
+      "canbus_uuid": "0a0b0c0d0e01"
+     },
+     "mcu fps": {
+      "canbus_uuid": "0a0b0c0d0e02"
+     },
+     "mcu host": {
+      "serial": "/tmp/klipper_host_mcu"
+     },
+     "mcu oams_mcu1": {
+      "canbus_uuid": "0a0b0c0d0e00"
+     },
+     "menu __main __octoprint": {
+      "type": "disabled"
+     },
+     "menu __main __temp __preheat_abs": {
+      "name": "Preheat ABS",
+      "type": "list"
+     },
+     "menu __main __temp __preheat_abs __all": {
+      "enable": "{('extruder' in printer) and ('heater_bed' in printer)}",
+      "gcode": "\nM140 S110\nM104 S245\nSET_HEATER_TEMPERATURE HEATER=the_filter TARGET=60",
+      "name": "Preheat all",
+      "type": "command"
+     },
+     "menu __main __temp __preheat_abs __chamber": {
+      "gcode": "SET_HEATER_TEMPERATURE HEATER=the_filter TARGET=60",
+      "name": "Preheat chamber",
+      "type": "command"
+     },
+     "menu __main __temp __preheat_abs __hotbed": {
+      "enable": "{'heater_bed' in printer}",
+      "gcode": "M140 S110",
+      "name": "Preheat hotbed",
+      "type": "command"
+     },
+     "menu __main __temp __preheat_abs __hotend": {
+      "enable": "{'extruder' in printer}",
+      "gcode": "M104 S245",
+      "name": "Preheat hotend",
+      "type": "command"
+     },
+     "menu __main __temp __the_filter": {
+      "gcode": "\nSET_HEATER_TEMPERATURE HEATER=\"the_filter\" TARGET={menu.input}",
+      "input": "{printer[\"heater_generic the_filter\"].target}",
+      "input_max": "100",
+      "input_min": "0",
+      "input_step": "1",
+      "name": "Filter: {'%3.0f' % menu.input}",
+      "type": "input"
+     },
+     "menu __main __toggle_lights": {
+      "gcode": "\nCYCLE_CHAMBER_LIGHTS\n{ menu.exit() }",
+      "name": "Lights: {printer['gcode_macro CYCLE_CHAMBER_LIGHTS'].state | upper}",
+      "type": "command"
+     },
+     "mfrc522 openams": {
+      "cs_pin_a": "oams_mcu1:PB3",
+      "cs_pin_b": "oams_mcu1:PB2",
+      "oams": "1",
+      "reset_pin_a": "oams_mcu1:PD2",
+      "reset_pin_b": "oams_mcu1:PB0",
+      "spi_software_miso_pin": "oams_mcu1:PA10",
+      "spi_software_mosi_pin": "oams_mcu1:PA9",
+      "spi_software_sclk_pin": "oams_mcu1:PA8",
+      "spi_speed": "100000"
+     },
+     "multi_pin the_filter_pins": {
+      "pins": "PD15, PA8, PE5"
+     },
+     "neopixel bed_left": {
+      "chain_count": "32",
+      "color_order": "GRB",
+      "pin": "PB4"
+     },
+     "neopixel bed_right": {
+      "chain_count": "32",
+      "color_order": "GRB",
+      "pin": "PB5"
+     },
+     "neopixel btt_mini12864": {
+      "chain_count": "3",
+      "color_order": "RGB",
+      "initial_blue": "0.71",
+      "initial_green": "0.88",
+      "initial_red": "0.0",
+      "pin": "EXP1_6"
+     },
+     "neopixel chamber_lights": {
+      "chain_count": "51",
+      "color_order": "GRBW",
+      "pin": "PB0"
+     },
+     "neopixel progress_bar": {
+      "chain_count": "24",
+      "color_order": "GRB",
+      "pin": "PB3"
+     },
+     "neopixel rear_lights": {
+      "chain_count": "32",
+      "color_order": "GRB",
+      "pin": "PA15"
+     },
+     "oams oams1": {
+      "current_kd": "0.0",
+      "current_ki": "0.0",
+      "current_kp": "3.0",
+      "current_target": "0.30",
+      "f1s_hes_is_above": "false",
+      "f1s_hes_on": "0.1, 0.1, 0.1, 0.1",
+      "fps_is_reversed": "false",
+      "fps_lower_threshold": "0.3",
+      "fps_upper_threshold": "0.7",
+      "hub_hes_is_above": "true",
+      "hub_hes_on": "0.85,0.85,0.8252441883087158,0.85",
+      "link_source_1": "manual",
+      "link_source_2": "manual",
+      "link_source_3": "manual",
+      "mcu": "oams_mcu1",
+      "oams_idx": "1",
+      "ptfe_length": "2062",
+      "spool_id_1": "1",
+      "spool_id_2": "2",
+      "spool_id_3": "3"
+     },
+     "oams_manager": {},
+     "output_pin test_pin": {
+      "pin": "host:gpio16"
+     },
+     "pause_resume": {},
+     "printer": {
+      "kinematics": "corexy",
+      "max_accel": "6100",
+      "max_velocity": "300",
+      "max_z_accel": "350",
+      "max_z_velocity": "25",
+      "square_corner_velocity": "5.0"
+     },
+     "quad_gantry_level": {
+      "gantry_corners": "\n-60, -10\n410, 420",
+      "horizontal_move_z": "5",
+      "max_adjust": "10",
+      "points": "\n300, 25\n300, 275\n50, 275\n50, 25",
+      "retries": "6",
+      "retry_tolerance": "0.02",
+      "speed": "2000"
+     },
+     "resonance_tester": {
+      "accel_chip": "adxl345",
+      "probe_points": "175, 175, 10"
+     },
+     "respond": {},
+     "stepper_x": {
+      "dir_pin": "PF12",
+      "enable_pin": "!PF14",
+      "endstop_pin": "tmc2209_stepper_x:virtual_endstop",
+      "full_steps_per_rotation": "200",
+      "homing_positive_dir": "true",
+      "homing_retract_dist": "5",
+      "homing_speed": "20",
+      "microsteps": "256",
+      "position_endstop": "350",
+      "position_max": "350",
+      "position_min": "0",
+      "rotation_distance": "40",
+      "step_pin": "PF13"
+     },
+     "stepper_y": {
+      "dir_pin": "PG1",
+      "enable_pin": "!PF15",
+      "endstop_pin": "tmc2209_stepper_y:virtual_endstop",
+      "full_steps_per_rotation": "200",
+      "homing_positive_dir": "true",
+      "homing_retract_dist": "5",
+      "homing_speed": "20",
+      "microsteps": "256",
+      "position_endstop": "348",
+      "position_max": "350",
+      "position_min": "0",
+      "rotation_distance": "40",
+      "step_pin": "PG0"
+     },
+     "stepper_z": {
+      "dir_pin": "PG3",
+      "enable_pin": "!PG5",
+      "endstop_pin": "probe:z_virtual_endstop",
+      "gear_ratio": "80:16",
+      "homing_retract_dist": "0",
+      "homing_speed": "8",
+      "microsteps": "256",
+      "position_max": "310",
+      "position_min": "-2",
+      "rotation_distance": "40",
+      "second_homing_speed": "8",
+      "step_pin": "PF11"
+     },
+     "stepper_z1": {
+      "dir_pin": "!PC1",
+      "enable_pin": "!PA0",
+      "gear_ratio": "80:16",
+      "microsteps": "256",
+      "rotation_distance": "40",
+      "step_pin": "PG4"
+     },
+     "stepper_z2": {
+      "dir_pin": "PF10",
+      "enable_pin": "!PG2",
+      "gear_ratio": "80:16",
+      "microsteps": "256",
+      "rotation_distance": "40",
+      "step_pin": "PF9"
+     },
+     "stepper_z3": {
+      "dir_pin": "!PF0",
+      "enable_pin": "!PF1",
+      "gear_ratio": "80:16",
+      "microsteps": "256",
+      "rotation_distance": "40",
+      "step_pin": "!PC13"
+     },
+     "temperature_sensor ebb36": {
+      "sensor_mcu": "ebb36",
+      "sensor_type": "temperature_mcu"
+     },
+     "temperature_sensor fps": {
+      "sensor_mcu": "fps",
+      "sensor_type": "temperature_mcu"
+     },
+     "temperature_sensor oams": {
+      "humidity_offset": "0.0",
+      "i2c_address": "64",
+      "i2c_bus": "i2c0",
+      "i2c_mcu": "oams_mcu1",
+      "i2c_speed": "200000",
+      "sensor_type": "HDC1080",
+      "temp_offset": "0.0"
+     },
+     "temperature_sensor octopus": {
+      "max_temp": "100",
+      "min_temp": "0",
+      "sensor_type": "temperature_mcu"
+     },
+     "temperature_sensor raspberry_pi": {
+      "max_temp": "100",
+      "min_temp": "10",
+      "sensor_type": "temperature_host"
+     },
+     "tmc2209 extruder": {
+      "interpolate": "false",
+      "run_current": "0.65",
+      "stealthchop_threshold": "0",
+      "uart_pin": "ebb36:PA15"
+     },
+     "tmc2209 stepper_x": {
+      "diag_pin": "PG6",
+      "driver_sgthrs": "55",
+      "interpolate": "false",
+      "run_current": "0.8",
+      "sense_resistor": "0.110",
+      "stealthchop_threshold": "0",
+      "uart_pin": "PC4"
+     },
+     "tmc2209 stepper_y": {
+      "diag_pin": "PG9",
+      "driver_sgthrs": "55",
+      "interpolate": "false",
+      "run_current": "0.8",
+      "sense_resistor": "0.110",
+      "stealthchop_threshold": "0",
+      "uart_pin": "PD11"
+     },
+     "tmc2209 stepper_z": {
+      "interpolate": "true",
+      "run_current": "0.8",
+      "sense_resistor": "0.110",
+      "stealthchop_threshold": "999999",
+      "uart_pin": "PC6"
+     },
+     "tmc2209 stepper_z1": {
+      "interpolate": "true",
+      "run_current": "0.8",
+      "sense_resistor": "0.110",
+      "stealthchop_threshold": "999999",
+      "uart_pin": "PC7"
+     },
+     "tmc2209 stepper_z2": {
+      "interpolate": "true",
+      "run_current": "0.8",
+      "sense_resistor": "0.110",
+      "stealthchop_threshold": "999999",
+      "uart_pin": "PF2"
+     },
+     "tmc2209 stepper_z3": {
+      "interpolate": "true",
+      "run_current": "0.8",
+      "sense_resistor": "0.110",
+      "stealthchop_threshold": "999999",
+      "uart_pin": "PE4"
+     },
+     "verify_heater the_filter": {
+      "enable": "False"
+     },
+     "virtual_sdcard": {
+      "on_error_gcode": "CANCEL_PRINT",
+      "path": "~/printer_data/gcodes"
+     }
+    },
+    "save_config_pending": false,
+    "save_config_pending_items": {},
+    "settings": {
+     "adxl345": {
+      "axes_map": [
+       "x",
+       "y",
+       "z"
+      ],
+      "cs_pin": "ebb36: PB12",
+      "rate": 3200,
+      "spi_software_miso_pin": "ebb36: PB2",
+      "spi_software_mosi_pin": "ebb36: PB11",
+      "spi_software_sclk_pin": "ebb36: PB10",
+      "spi_speed": 5000000
+     },
+     "beacon": {
+      "accel_axes_map": [
+       "x",
+       "y",
+       "z"
+      ],
+      "accel_scale": "",
+      "autocal_accel": 100,
+      "autocal_max_retries": 3,
+      "autocal_max_speed": 10,
+      "autocal_retract_dist": 2,
+      "autocal_retract_speed": 10,
+      "autocal_sample_count": 3,
+      "autocal_speed": 3,
+      "autocal_tolerance": 0.008,
+      "backlash_comp": 0.5,
+      "baud": 250000,
+      "cal_ceil": 5.0,
+      "cal_floor": 0.2,
+      "cal_move_speed": 10.0,
+      "cal_nozzle_z": 0.1,
+      "cal_speed": 1.0,
+      "contact_activate_gcode": "_CONTACT_ACTIVATE",
+      "contact_deactivate_gcode": "",
+      "contact_latency_min": 0,
+      "contact_max_hotend_temperature": 180.0,
+      "contact_sensitivity": 0,
+      "default_model_name": "default",
+      "default_probe_method": "proximity",
+      "filter_alpha": 0.5,
+      "filter_beta": 1e-06,
+      "home_autocalibrate": "unhomed",
+      "home_gcode_post_x": "",
+      "home_gcode_post_xy": "",
+      "home_gcode_post_y": "",
+      "home_gcode_post_z": "",
+      "home_gcode_pre_x": "",
+      "home_gcode_pre_xy": "",
+      "home_gcode_pre_y": "",
+      "home_gcode_pre_z": "",
+      "home_method": "contact",
+      "home_method_when_homed": "proximity",
+      "home_xy_move_speed": 50.0,
+      "home_xy_position": [
+       175.0,
+       175.0
+      ],
+      "home_y_before_x": false,
+      "home_z_hop": 0.0,
+      "home_z_hop_speed": 15.0,
+      "lift_speed": 10.0,
+      "mesh_cluster_size": 1,
+      "mesh_main_direction": "x",
+      "mesh_overscan": 15.0,
+      "mesh_runs": 2,
+      "prefixed_probe_commands": false,
+      "register_as_probe": true,
+      "serial": "/dev/serial/by-id/usb-Klipper_example_0000000000000000-if00",
+      "skip_firmware_version_check": false,
+      "speed": 5.0,
+      "trigger_distance": 4.0,
+      "trigger_dive_threshold": 1.0,
+      "trigger_hysteresis": 0.006,
+      "trsync_timeout": 0.025,
+      "x_offset": 0.0,
+      "y_offset": 21.953,
+      "z_settling_time": 5,
+      "zero_reference_cluster_size": 1
+     },
+     "beacon model default": {
+      "model_coef": [
+       1.7438199014077973,
+       1.8419805239862166,
+       1.0160750079333336,
+       1.2105767015928028,
+       -1.6038413215712046,
+       -3.166400930388729,
+       3.676275411986533,
+       4.647945419477802,
+       -2.199910801825869,
+       -2.1552202707356125
+      ],
+      "model_domain": [
+       3.2545943497078426e-07,
+       3.3328643769916326e-07
+      ],
+      "model_offset": 0.0,
+      "model_range": [
+       0.2,
+       5.0
+      ],
+      "model_temp": 75.105338
+     },
+     "bed_mesh": {
+      "adaptive_margin": 0.0,
+      "algorithm": "bicubic",
+      "bicubic_tension": 0.2,
+      "fade_end": 10.0,
+      "fade_start": 0.0,
+      "horizontal_move_z": 20.0,
+      "mesh_max": [
+       310.0,
+       310.0
+      ],
+      "mesh_min": [
+       40.0,
+       40.0
+      ],
+      "mesh_pps": [
+       2,
+       2
+      ],
+      "move_check_distance": 5.0,
+      "probe_count": [
+       10,
+       10
+      ],
+      "scan_overshoot": 0,
+      "speed": 600.0,
+      "split_delta_z": 0.025,
+      "zero_reference_position": [
+       175.0,
+       175.0
+      ]
+     },
+     "bed_mesh default": {
+      "algo": "bicubic",
+      "max_x": 310.0,
+      "max_y": 310.0,
+      "mesh_x_pps": 2,
+      "mesh_y_pps": 2,
+      "min_x": 40.0,
+      "min_y": 40.0,
+      "points": [
+       [
+        0.126828,
+        0.1316,
+        0.127439,
+        0.123465,
+        0.136889,
+        0.113617,
+        0.114485,
+        0.094142,
+        0.123655,
+        0.121869
+       ],
+       [
+        0.086903,
+        0.089755,
+        0.089751,
+        0.076671,
+        0.058434,
+        0.084381,
+        0.078161,
+        0.07712,
+        0.083278,
+        0.095522
+       ],
+       [
+        0.059256,
+        0.05351,
+        0.042802,
+        0.042709,
+        0.046889,
+        0.054273,
+        0.048608,
+        0.027709,
+        0.060493,
+        0.06117
+       ],
+       [
+        0.006802,
+        0.033791,
+        0.006401,
+        0.016146,
+        0.003773,
+        0.031838,
+        0.027836,
+        0.006104,
+        0.037521,
+        0.041174
+       ],
+       [
+        -0.013411,
+        0.005857,
+        -0.015089,
+        0.005756,
+        -0.011097,
+        -0.002155,
+        0.008249,
+        -0.013398,
+        0.0109,
+        0.015936
+       ],
+       [
+        -0.0279,
+        -0.021474,
+        -0.023874,
+        -0.004833,
+        -0.015776,
+        -0.018878,
+        -0.004687,
+        -0.016675,
+        0.004163,
+        0.019374
+       ],
+       [
+        -0.013669,
+        -0.009227,
+        -0.007447,
+        -0.006399,
+        -0.026466,
+        -0.006402,
+        -0.005725,
+        0.02508,
+        0.024458,
+        0.037345
+       ],
+       [
+        0.020598,
+        0.016783,
+        -0.006188,
+        0.00992,
+        0.008341,
+        0.011285,
+        0.011416,
+        -0.014207,
+        0.03771,
+        0.043133
+       ],
+       [
+        0.060873,
+        0.078146,
+        0.077292,
+        0.067252,
+        0.06765,
+        0.057119,
+        0.061572,
+        0.079759,
+        0.074956,
+        0.086332
+       ],
+       [
+        0.132465,
+        0.140091,
+        0.125884,
+        0.13645,
+        0.137289,
+        0.119661,
+        0.125012,
+        0.117797,
+        0.137669,
+        0.130213
+       ]
+      ],
+      "tension": 0.2,
+      "version": 1,
+      "x_count": 10,
+      "y_count": 10
+     },
+     "board_pins": {
+      "aliases": [
+       [
+        "MOT0_EN",
+        "PF14"
+       ],
+       [
+        "MOT0_STEP",
+        "PF13"
+       ],
+       [
+        "MOT0_DIR",
+        "PF12"
+       ],
+       [
+        "MOT0_CS",
+        "PC4"
+       ],
+       [
+        "MOT1_EN",
+        "PF15"
+       ],
+       [
+        "MOT1_STEP",
+        "PG0"
+       ],
+       [
+        "MOT1_DIR",
+        "PG1"
+       ],
+       [
+        "MOT1_CS",
+        "PD11"
+       ],
+       [
+        "MOT2_EN",
+        "PG5"
+       ],
+       [
+        "MOT2_STEP",
+        "PF11"
+       ],
+       [
+        "MOT2_DIR",
+        "PG3"
+       ],
+       [
+        "MOT2_CS",
+        "PC6"
+       ],
+       [
+        "MOT3_EN",
+        "PA0"
+       ],
+       [
+        "MOT3_STEP",
+        "PG4"
+       ],
+       [
+        "MOT3_DIR",
+        "PC1"
+       ],
+       [
+        "MOT3_CS",
+        "PC7"
+       ],
+       [
+        "MOT4_EN",
+        "PG2"
+       ],
+       [
+        "MOT4_STEP",
+        "PF9"
+       ],
+       [
+        "MOT4_DIR",
+        "PF10"
+       ],
+       [
+        "MOT4_CS",
+        "PF2"
+       ],
+       [
+        "MOT5_EN",
+        "PF1"
+       ],
+       [
+        "MOT5_STEP",
+        "PC13"
+       ],
+       [
+        "MOT5_DIR",
+        "PF0"
+       ],
+       [
+        "MOT5_CS",
+        "PE4"
+       ],
+       [
+        "MOT6_EN",
+        "PD4"
+       ],
+       [
+        "MOT6_STEP",
+        "PE2"
+       ],
+       [
+        "MOT6_DIR",
+        "PE3"
+       ],
+       [
+        "MOT6_CS",
+        "PE1"
+       ],
+       [
+        "MOT7_EN",
+        "PE0"
+       ],
+       [
+        "MOT7_STEP",
+        "PE6"
+       ],
+       [
+        "MOT7_DIR",
+        "PA14"
+       ],
+       [
+        "MOT7_CS",
+        "PD3"
+       ],
+       [
+        "BED_OUT",
+        "PA1"
+       ],
+       [
+        "HE0",
+        "PA2"
+       ],
+       [
+        "HE1",
+        "PA3"
+       ],
+       [
+        "HE2",
+        "PB10"
+       ],
+       [
+        "HE3",
+        "PB11"
+       ],
+       [
+        "TB",
+        "PF3"
+       ],
+       [
+        "T0",
+        "PF4"
+       ],
+       [
+        "T1",
+        "PF5"
+       ],
+       [
+        "T2",
+        "PF6"
+       ],
+       [
+        "T3",
+        "PF7"
+       ],
+       [
+        "PT100",
+        "PF8"
+       ],
+       [
+        "FAN0",
+        "PA8"
+       ],
+       [
+        "FAN1",
+        "PE5"
+       ],
+       [
+        "FAN2",
+        "PD12"
+       ],
+       [
+        "FAN3",
+        "PD13"
+       ],
+       [
+        "FAN4",
+        "PD14"
+       ],
+       [
+        "FAN5",
+        "PD15"
+       ],
+       [
+        "ESTOP0",
+        "PG6"
+       ],
+       [
+        "ESTOP1",
+        "PG9"
+       ],
+       [
+        "ESTOP2",
+        "PG10"
+       ],
+       [
+        "ESTOP3",
+        "PG11"
+       ],
+       [
+        "ESTOP4",
+        "PG12"
+       ],
+       [
+        "ESTOP5",
+        "PG13"
+       ],
+       [
+        "ESTOP6",
+        "PG14"
+       ],
+       [
+        "ESTOP7",
+        "PG15"
+       ],
+       [
+        "EXP1_1",
+        "PE8"
+       ],
+       [
+        "EXP1_2",
+        "PE7"
+       ],
+       [
+        "EXP1_3",
+        "PE9"
+       ],
+       [
+        "EXP1_4",
+        "PE10"
+       ],
+       [
+        "EXP1_5",
+        "PE12"
+       ],
+       [
+        "EXP1_6",
+        "PE13"
+       ],
+       [
+        "EXP1_7",
+        "PE14"
+       ],
+       [
+        "EXP1_8",
+        "PE15"
+       ],
+       [
+        "EXP1_9",
+        "<GND>"
+       ],
+       [
+        "EXP1_10",
+        "<5V>"
+       ],
+       [
+        "EXP2_1",
+        "PA6"
+       ],
+       [
+        "EXP2_2",
+        "PA5"
+       ],
+       [
+        "EXP2_3",
+        "PB1"
+       ],
+       [
+        "EXP2_4",
+        "PA4"
+       ],
+       [
+        "EXP2_5",
+        "PB2"
+       ],
+       [
+        "EXP2_6",
+        "PA7"
+       ],
+       [
+        "EXP2_7",
+        "PC15"
+       ],
+       [
+        "EXP2_8",
+        "<RST>"
+       ],
+       [
+        "EXP2_9",
+        "<GND>"
+       ],
+       [
+        "EXP2_10",
+        "<5V>"
+       ],
+       [
+        "TFT_5",
+        "<RST>"
+       ],
+       [
+        "TFT_4",
+        "PA10"
+       ],
+       [
+        "TFT_3",
+        "PA9"
+       ],
+       [
+        "TFT_2",
+        "<GND>"
+       ],
+       [
+        "TFT_1",
+        "<5V>"
+       ],
+       [
+        "PRB_1",
+        "<DCV>"
+       ],
+       [
+        "PRB_2",
+        "<GND>"
+       ],
+       [
+        "PRB_3",
+        "PB7"
+       ],
+       [
+        "BLT_5",
+        "<GND>"
+       ],
+       [
+        "BLT_4",
+        "<5V>"
+       ],
+       [
+        "BLT_CTL",
+        "PB6"
+       ],
+       [
+        "BLT_2",
+        "<GND>"
+       ],
+       [
+        "BLT_SNSR",
+        "PB7"
+       ],
+       [
+        "NEOPXL_3",
+        "<GND>"
+       ],
+       [
+        "NEOPXL_2",
+        "PB0"
+       ],
+       [
+        "NEOPXL_1",
+        "<5V>"
+       ],
+       [
+        "RPI_1",
+        "<5V>"
+       ],
+       [
+        "RPI_2",
+        "<5V>"
+       ],
+       [
+        "RPI_3",
+        "<GND>"
+       ],
+       [
+        "RPI_4",
+        "<GND>"
+       ],
+       [
+        "RPI_5",
+        "<GND>"
+       ],
+       [
+        "RPI_6",
+        "<GND>"
+       ],
+       [
+        "RPI_7",
+        "<GND>"
+       ],
+       [
+        "RPI_8",
+        "<GND>"
+       ],
+       [
+        "RPI_RX",
+        "PD6"
+       ],
+       [
+        "RPI_TX",
+        "PD5"
+       ],
+       [
+        "SPI3_2",
+        "<3V3>"
+       ],
+       [
+        "SPI3_MOSI",
+        "PB5"
+       ],
+       [
+        "SPI3_CS",
+        "PA15"
+       ],
+       [
+        "SPI3_8",
+        "<GND>"
+       ],
+       [
+        "SPI3_10",
+        "<5V>"
+       ],
+       [
+        "SPI3_1",
+        "<GND>"
+       ],
+       [
+        "SPI3_MISO",
+        "PB4"
+       ],
+       [
+        "SPI3_SCK",
+        "PB3"
+       ],
+       [
+        "SPI3_7",
+        "<GND>"
+       ],
+       [
+        "SPI3_9",
+        "<5V>"
+       ],
+       [
+        "POWER_DET",
+        "PC0"
+       ],
+       [
+        "PS_ON",
+        "PE11"
+       ]
+      ],
+      "mcu": [
+       "mcu"
+      ]
+     },
+     "controller_fan controller_fan": {
+      "cycle_time": 0.01,
+      "fan_speed": 1.0,
+      "hardware_pwm": false,
+      "heater": [
+       "heater_bed"
+      ],
+      "idle_speed": 1.0,
+      "idle_timeout": 30,
+      "kick_start_time": 0.5,
+      "max_power": 0.3,
+      "off_below": 0.0,
+      "pin": "PD12",
+      "shutdown_speed": 0.0
+     },
+     "display": {
+      "a0_pin": "EXP1_4",
+      "click_pin": "^!EXP1_2",
+      "contrast": 63,
+      "cs_pin": "EXP1_3",
+      "display_group": "_default_16x4",
+      "encoder_fast_rate": 0.03,
+      "encoder_pins": "^EXP2_5, ^EXP2_3",
+      "encoder_steps_per_detent": 4,
+      "lcd_type": "uc1701",
+      "menu_reverse_navigation": false,
+      "menu_root": "__main",
+      "menu_timeout": 0,
+      "rst_pin": "EXP1_5",
+      "spi_software_miso_pin": "EXP2_1",
+      "spi_software_mosi_pin": "EXP2_6",
+      "spi_software_sclk_pin": "EXP2_2",
+      "spi_speed": 10000000
+     },
+     "extruder": {
+      "control": "pid",
+      "dir_pin": "!ebb36:PD1",
+      "enable_pin": "!ebb36:PD2",
+      "filament_diameter": 1.75,
+      "full_steps_per_rotation": 200,
+      "gear_ratio": [
+       [
+        50.0,
+        8.0
+       ]
+      ],
+      "heater_pin": "ebb36:PB13",
+      "inline_resistor": 0.0,
+      "instantaneous_corner_velocity": 1.0,
+      "max_extrude_cross_section": 100.0,
+      "max_extrude_only_accel": 1623.0945902517801,
+      "max_extrude_only_distance": 1001.0,
+      "max_extrude_only_velocity": 79.82432411074329,
+      "max_power": 1.0,
+      "max_temp": 400.0,
+      "microsteps": 16,
+      "min_extrude_temp": 10.0,
+      "min_temp": 5.0,
+      "nozzle_diameter": 0.4,
+      "pid_kd": 20.698,
+      "pid_ki": 12.732,
+      "pid_kp": 32.468,
+      "pressure_advance": 0.015,
+      "pressure_advance_smooth_time": 0.04,
+      "pullup_resistor": 4700.0,
+      "pwm_cycle_time": 0.1,
+      "rotation_distance": 22.67895,
+      "sensor_pin": "ebb36:PA3",
+      "sensor_type": "ATC Semitec 104NT-4-R025H42G",
+      "smooth_time": 1.0,
+      "step_pin": "ebb36:PD0"
+     },
+     "fan": {
+      "cycle_time": 0.01,
+      "hardware_pwm": false,
+      "kick_start_time": 0.5,
+      "max_power": 1.0,
+      "off_below": 0.1,
+      "pin": "ebb36:PA0",
+      "shutdown_speed": 0.0
+     },
+     "filament_group t0": {
+      "group": "oams1-0"
+     },
+     "filament_group t1": {
+      "group": "oams1-1"
+     },
+     "filament_group t2": {
+      "group": "oams1-2"
+     },
+     "filament_group t3": {
+      "group": "oams1-3"
+     },
+     "filament_switch_sensor m4_left_runout": {
+      "debounce_delay": 0.0,
+      "event_delay": 3.0,
+      "pause_delay": 0.5,
+      "pause_on_runout": false,
+      "switch_pin": "^!PG13"
+     },
+     "filament_switch_sensor my_after_sensor": {
+      "debounce_delay": 0.0,
+      "event_delay": 3.0,
+      "pause_delay": 0.5,
+      "pause_on_runout": false,
+      "switch_pin": "^PF7"
+     },
+     "filament_switch_sensor my_before_sensor": {
+      "debounce_delay": 0.0,
+      "event_delay": 3.0,
+      "pause_delay": 0.5,
+      "pause_on_runout": false,
+      "switch_pin": "^PF6"
+     },
+     "filament_switch_sensor runoutsensor": {
+      "debounce_delay": 0.0,
+      "event_delay": 3.0,
+      "pause_delay": 0.5,
+      "pause_on_runout": false,
+      "switch_pin": "^PG15"
+     },
+     "force_move": {
+      "enable_force_move": true
+     },
+     "fps": {
+      "accel": 0.0,
+      "extruder": "extruder",
+      "max_speed": 300.0,
+      "pin": "fps:PA3",
+      "report_time": 0.1,
+      "reversed": true,
+      "sample_count": 5,
+      "sample_time": 0.005,
+      "set_point": 0.5,
+      "use_kalico": false
+     },
+     "gcode_arcs": {
+      "resolution": 1.0
+     },
+     "gcode_macro _contact_activate": {
+      "description": "Check Nozzle temp",
+      "gcode": "\n{% set PROBE_TEMP = 150 %}\n{% set ACTUAL_TEMP = printer.extruder.temperature %}\n\n{% if ACTUAL_TEMP > (PROBE_TEMP + 1) %}\nM118 Extruder temperature of {ACTUAL_TEMP}\u00b0C is too high, lowering to {PROBE_TEMP}\u00b0C\nM109 S{ PROBE_TEMP }\n{% endif %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _home_x": {
+      "description": "G-Code macro",
+      "gcode": "\n\n{% set RUN_CURRENT_X = printer.configfile.settings['tmc2209 stepper_x'].run_current|float %}\n{% set RUN_CURRENT_Y = printer.configfile.settings['tmc2209 stepper_y'].run_current|float %}\n{% set HOME_CURRENT = 0.7 %}\nSET_TMC_CURRENT STEPPER=stepper_x CURRENT={HOME_CURRENT}\nSET_TMC_CURRENT STEPPER=stepper_y CURRENT={HOME_CURRENT}\n\nG28.1 X\nG91\nG1 X-10 F1200\n\nG4 P2000\nSET_TMC_CURRENT STEPPER=stepper_x CURRENT={RUN_CURRENT_X}\nSET_TMC_CURRENT STEPPER=stepper_y CURRENT={RUN_CURRENT_Y}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _home_y": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set RUN_CURRENT_X = printer.configfile.settings['tmc2209 stepper_x'].run_current|float %}\n{% set RUN_CURRENT_Y = printer.configfile.settings['tmc2209 stepper_y'].run_current|float %}\n{% set HOME_CURRENT = 0.7 %}\nSET_TMC_CURRENT STEPPER=stepper_x CURRENT={HOME_CURRENT}\nSET_TMC_CURRENT STEPPER=stepper_y CURRENT={HOME_CURRENT}\n\nG4 P2000\nG28.1 Y\nG91\nG1 Y-10 F1200\n\nG4 P2000\nSET_TMC_CURRENT STEPPER=stepper_x CURRENT={RUN_CURRENT_X}\nSET_TMC_CURRENT STEPPER=stepper_y CURRENT={RUN_CURRENT_Y}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _load_fs_in": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set fs_extruder_in = printer[\"gcode_macro _oams_macro_variables\"].fs_extruder_in %}\n{% set LANE = params.FPS|default(none) %}\n\n{% if fs_extruder_in and not printer['filament_switch_sensor extruder_in'].filament_detected %}\n{% if params.STRICT|default(0)|int == 1 %}\nOAMSM_STAGE FAILED=1 {('FPS=' ~ LANE) if LANE is not none else ''}\n{ action_raise_error(\"Filament not detected at toolhead extruder inlet\") }\n{% endif %}\nRESPOND TYPE=error MSG='Filament not detected at toolhead extruder inlet... pausing for user intervention'\nSET_GCODE_VARIABLE MACRO=_TX VARIABLE=pause_triggered VALUE=True\n{% elif fs_extruder_in and printer['filament_switch_sensor extruder_in'].filament_detected %}\nRESPOND TYPE=command MSG='Filament detected at toolhead extruder inlet... continue loading'\n{% endif %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _load_fs_out": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set fs_extruder_out = printer[\"gcode_macro _oams_macro_variables\"].fs_extruder_out %}\n{% set LANE = params.FPS|default(none) %}\n\n{% if fs_extruder_out and not printer['filament_switch_sensor extruder_out'].filament_detected %}\n{% if params.STRICT|default(0)|int == 1 %}\nOAMSM_STAGE FAILED=1 {('FPS=' ~ LANE) if LANE is not none else ''}\n{ action_raise_error(\"Filament not detected between extruder and hotend\") }\n{% endif %}\nRESPOND TYPE=error MSG='Filament not detected between toolhead extruder and hotend... pausing for user intervention'\nSET_GCODE_VARIABLE MACRO=_TX VARIABLE=pause_triggered VALUE=True\n{% elif fs_extruder_out and printer['filament_switch_sensor extruder_out'].filament_detected %}\nRESPOND TYPE=command MSG='Filament successfully loaded through extruder... continue'\n{% endif %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _oams_abort": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set LANE = params.FPS|default(none) %}\nOAMSM_STAGE FAILED=1 {('FPS=' ~ LANE) if LANE is not none else ''}\nOAMSM_FOLLOWER ENABLE=0 DIRECTION=0\n{% if params.STRICT|default(0)|int != 1 %}\nPAUSE\n{% endif %}\n_OAMS_RAISE MSG=\"{params.MSG}\"",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _oams_after_homing": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set v = printer[\"gcode_macro _oams_macro_variables\"] %}\n{% set EXTRUDER = params.EXTRUDER %}\n{% set TARGET = params.TARGET|default(0)|float %}\n{% set MINIMUM = v.minimum_extrude_temperature|default(0)|float %}\n{% set HOT = printer[EXTRUDER] %}\n\n\n{% set RESTORE = TARGET > 0 and TARGET >= MINIMUM %}\n{% if RESTORE and HOT.target|default(0)|float != TARGET %}\nRESPOND TYPE=command MSG='Homing changed the extruder target. Restoring {TARGET}'\nSET_HEATER_TEMPERATURE HEATER={EXTRUDER} TARGET={TARGET}\n{% endif %}\n{% if RESTORE %}\n\n\n{% set WAIT_MINIMUM = [TARGET - 5, MINIMUM]|max %}\n{% if HOT.temperature|default(0)|float < WAIT_MINIMUM %}\nRESPOND TYPE=command MSG='Waiting for the extruder to reach {WAIT_MINIMUM}'\nTEMPERATURE_WAIT SENSOR={EXTRUDER} MINIMUM={WAIT_MINIMUM}\n{% endif %}\n{% elif not HOT.can_extrude or HOT.temperature|default(0)|float < MINIMUM %}\n{ action_raise_error(\"Homing cooled the extruder and there is no target to restore. Heat the extruder before unloading or changing OpenAMS filament. Cutting and retracting need extrusion temperature\") }\n{% endif %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _oams_confirm_unloaded": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set manager = printer['oams_manager'] %}\n{% set LANE = params.FPS|default(none) %}\n{% set STAGED = params.STAGED|default(0)|int %}\n{% set NEW_PAUSE = printer.pause_resume.is_paused and not params.STARTED_PAUSED|default(0)|int %}\n{% set MSG = 'OpenAMS unload stopped because the printer was paused' if NEW_PAUSE else 'OpenAMS did not finish unloading. Inspect the filament path before retrying' %}\nRESTORE_GCODE_STATE NAME=oams_unload\n{% set LOADED_GROUP = manager.lanes_by_fps[LANE].group if LANE is not none else manager.current_group %}\n{% if LOADED_GROUP is not none or NEW_PAUSE %}\n_OAMS_ABORT STRICT={params.STRICT|default(0)|int} MSG=\"{MSG}\" {('FPS=' ~ LANE) if LANE is not none else ''}\n{% elif not STAGED %}\nOAMSM_STAGE DONE=1 {('FPS=' ~ LANE) if LANE is not none else ''}\n{% endif %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _oams_continue_after_inlet": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set v = printer[\"gcode_macro _oams_macro_variables\"] %}\n{% set manager = printer['oams_manager'] %}\n{% set LANE = params.FPS|default(none) %}\n{% set LANE_EXTRUDER = manager.lanes_by_fps[LANE].extruder if LANE is not none else printer.toolhead.extruder %}\n{% set RELOAD_LENGTH = v.extrusion_reload_length + v.retract_length + v.hotend_meltzone_compensation %}\n{% set NEW_PAUSE = printer.pause_resume.is_paused and not params.STARTED_PAUSED|default(0)|int %}\n{% set MSG = 'OpenAMS toolchange stopped because the printer was paused' if NEW_PAUSE else 'OpenAMS toolchange stopped at the toolhead inlet check' %}\n{% if printer[\"gcode_macro _TX\"].pause_triggered or NEW_PAUSE %}\n_OAMS_FAIL_TOOLCHANGE STRICT={params.STRICT} MSG=\"{MSG}\" {('FPS=' ~ LANE) if LANE is not none else ''}\n{% else %}\n{% if params.CLEAN|default(0)|int == 1 %}\nCLEAN_NOZZLE\nM400\n{% endif %}\nSET_STEPPER_ENABLE STEPPER={LANE_EXTRUDER} ENABLE=1\nM83\nG1 E{RELOAD_LENGTH} F{v.reload_speed}\nM400\nG4 P1000\n_LOAD_FS_OUT STRICT={params.STRICT} {('FPS=' ~ LANE) if LANE is not none else ''}\n_OAMS_FINISH_TOOLCHANGE STRICT={params.STRICT} STARTED_PAUSED={params.STARTED_PAUSED} {('FPS=' ~ LANE) if LANE is not none else ''}\n{% endif %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _oams_continue_after_load": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set manager = printer['oams_manager'] %}\n{% set LANE = params.FPS|default(none) %}\n{% set STRICT = params.STRICT|default(0)|int %}\n{% set STARTED_PAUSED = params.STARTED_PAUSED|default(0)|int %}\n{% set LOADED_GROUP = manager.lanes_by_fps[LANE].group if LANE is not none else manager.current_group %}\n{% set LOADED_SLOT = manager.lanes_by_fps[LANE].current_slot if LANE is not none else none %}\n{% set NEW_PAUSE = printer.pause_resume.is_paused and not STARTED_PAUSED %}\n{% if NEW_PAUSE %}\n_OAMS_FAIL_TOOLCHANGE STRICT={STRICT} MSG=\"OpenAMS toolchange stopped because the printer was paused\" {('FPS=' ~ LANE) if LANE is not none else ''}\n{% elif LOADED_GROUP != params.GROUP or (STRICT == 1 and LOADED_SLOT != params.SLOT|int) %}\n_OAMS_FAIL_TOOLCHANGE STRICT={STRICT} MSG=\"OpenAMS did not load {params.GROUP}. The toolhead was not reloaded\" {('FPS=' ~ LANE) if LANE is not none else ''}\n{% else %}\n_LOAD_FS_IN STRICT={STRICT} {('FPS=' ~ LANE) if LANE is not none else ''}\n_OAMS_CONTINUE_AFTER_INLET STRICT={STRICT} STARTED_PAUSED={STARTED_PAUSED} CLEAN={params.CLEAN|default(0)|int} {('FPS=' ~ LANE) if LANE is not none else ''}\n{% endif %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _oams_continue_after_unload": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set manager = printer['oams_manager'] %}\n{% set LANE = params.FPS|default(none) %}\n{% set NEW_PAUSE = printer.pause_resume.is_paused and not params.STARTED_PAUSED|default(0)|int %}\n{% set MSG = 'OpenAMS toolchange stopped because the printer was paused' if NEW_PAUSE else 'OpenAMS toolchange stopped before loading. Inspect the filament path before retrying' %}\n{% set ARGS = 'GROUP=' ~ params.GROUP ~ ' SLOT=' ~ params.SLOT ~ ' STRICT=' ~ params.STRICT ~ ' STARTED_PAUSED=' ~ params.STARTED_PAUSED ~ ((' FPS=' ~ LANE) if LANE is not none else '') %}\n{% set LOADED_GROUP = manager.lanes_by_fps[LANE].group if LANE is not none else manager.current_group %}\n{% if printer[\"gcode_macro _TX\"].pause_triggered or NEW_PAUSE or LOADED_GROUP is not none %}\n_OAMS_FAIL_TOOLCHANGE STRICT={params.STRICT} MSG=\"{MSG}\" {('FPS=' ~ LANE) if LANE is not none else ''}\n{% else %}\nOAMSM_STAGE NAME=feed {('FPS=' ~ LANE) if LANE is not none else ''}\n{% if params.STRICT|int == 1 %}\nOAMSM_LOAD_FILAMENT GROUP={params.GROUP} SLOT={params.SLOT}\n{% else %}\nOAMSM_LOAD_FILAMENT GROUP={params.GROUP}\n{% endif %}\n\n\nM400\nG4 P1000\n_OAMS_CONTINUE_AFTER_LOAD {ARGS} CLEAN=1\n{% endif %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _oams_fail_toolchange": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set LANE = params.FPS|default(none) %}\nOAMSM_STAGE FAILED=1 {('FPS=' ~ LANE) if LANE is not none else ''}\nRESTORE_GCODE_STATE NAME=oams_toolchange\n_OAMS_ABORT STRICT={params.STRICT|default(0)} MSG=\"{params.MSG}\" {('FPS=' ~ LANE) if LANE is not none else ''}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _oams_finish_toolchange": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set LANE = params.FPS|default(none) %}\n{% set NEW_PAUSE = printer.pause_resume.is_paused and not params.STARTED_PAUSED|default(0)|int %}\n{% set MSG = 'OpenAMS toolchange stopped because the printer was paused' if NEW_PAUSE else 'OpenAMS toolchange stopped at the extruder outlet check' %}\n{% if printer[\"gcode_macro _TX\"].pause_triggered or NEW_PAUSE %}\n_OAMS_FAIL_TOOLCHANGE STRICT={params.STRICT} MSG=\"{MSG}\" {('FPS=' ~ LANE) if LANE is not none else ''}\n{% else %}\nOAMSM_STAGE DONE=1 {('FPS=' ~ LANE) if LANE is not none else ''}\nRESTORE_GCODE_STATE NAME=oams_toolchange MOVE=1 MOVE_SPEED=100\n{% endif %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _oams_finish_unload": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set v = printer[\"gcode_macro _oams_macro_variables\"] %}\n{% set LANE = params.FPS|default(none) %}\n{% set STRICT = params.STRICT|default(0)|int %}\n{% set STAGED = params.STAGED|default(0)|int %}\n{% set STARTED_PAUSED = params.STARTED_PAUSED|default(0)|int %}\n{% set NEW_PAUSE = printer.pause_resume.is_paused and not STARTED_PAUSED %}\n{% set MSG = 'OpenAMS unload stopped because the printer was paused' if NEW_PAUSE else 'OpenAMS unload stopped after the toolhead sensor check' %}\n{% if not printer[\"gcode_macro SAFE_UNLOAD_FILAMENT\"].pause_triggered and not NEW_PAUSE %}\nG1 E-{v.extrusion_unload_additional_length|default(250)} F{v.additional_unload_speed|default(5000)}\n\nG4 P1000\nOAMSM_STAGE NAME=retract {('FPS=' ~ LANE) if LANE is not none else ''}\n{% if STRICT == 1 %}\nOAMSM_UNLOAD_FILAMENT STRICT=1 {('FPS=' ~ LANE) if LANE is not none else ''}\n{% else %}\nOAMSM_UNLOAD_FILAMENT {('FPS=' ~ LANE) if LANE is not none else ''}\n{% endif %}\nM400\n_OAMS_CONFIRM_UNLOADED STRICT={STRICT} STARTED_PAUSED={STARTED_PAUSED} STAGED={STAGED} {('FPS=' ~ LANE) if LANE is not none else ''}\n{% else %}\nRESTORE_GCODE_STATE NAME=oams_unload\n_OAMS_ABORT STRICT={STRICT} MSG=\"{MSG}\" {('FPS=' ~ LANE) if LANE is not none else ''}\n{% endif %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _oams_macro_variables": {
+      "description": "G-Code macro",
+      "gcode": "",
+      "render_mode": "legacy",
+      "variable_additional_unload_speed": "3000",
+      "variable_cut_speed": "1000",
+      "variable_cut_x": "7",
+      "variable_cut_y": "350",
+      "variable_extrusion_reload_length": "28.0",
+      "variable_extrusion_unload_additional_length": "150.0",
+      "variable_extrusion_unload_length": "32.0",
+      "variable_fs_extruder_in": "False",
+      "variable_fs_extruder_out": "False",
+      "variable_hotend_meltzone_compensation": "0.0",
+      "variable_minimum_extrude_temperature": "170.0",
+      "variable_post_cut_x": "57",
+      "variable_post_cut_y": "350",
+      "variable_pre_cut_speed": "9000",
+      "variable_pre_cut_x": "57",
+      "variable_pre_cut_y": "350",
+      "variable_reload_speed": "1000",
+      "variable_retract_length": "20.0",
+      "variable_unload_speed": "1000"
+     },
+     "gcode_macro _oams_raise": {
+      "description": "G-Code macro",
+      "gcode": "\n{ action_raise_error(params.MSG) }",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _toolhead_park_pause_cancel": {
+      "description": "Helper: park toolhead used in PAUSE and CANCEL_PRINT",
+      "gcode": "\n\n{% set macro_found = True if printer['gcode_macro _CLIENT_VARIABLE'] is defined else False %}\n{% set client = printer['gcode_macro _CLIENT_VARIABLE'] %}\n{% set velocity = printer.configfile.settings.pause_resume.recover_velocity %}\n{% set use_custom     = False if not macro_found\nelse False if client.use_custom_pos is not defined\nelse True  if client.use_custom_pos|lower == 'true'\nelse False %}\n{% set custom_park_x  = 0.0 if not macro_found else client.custom_park_x|default(0.0) %}\n{% set custom_park_y  = 0.0 if not macro_found else client.custom_park_y|default(0.0) %}\n{% set park_dz        = 2.0 if not macro_found else client.custom_park_dz|default(2.0)|abs %}\n{% set use_fw_retract = False if not macro_found\nelse False if client.use_fw_retract is not defined\nelse True  if client.use_fw_retract|lower == 'true' and printer.firmware_retraction is defined\nelse False %}\n{% set retract    = 1.0  if not macro_found else client.retract|default(1.0)|abs %}\n{% set sp_retract = 2100 if not macro_found else client.speed_retract|default(35) * 60 %}\n{% set sp_hop     = 900  if not macro_found else client.speed_hop|default(15) * 60 %}\n{% set sp_move    = velocity * 60 if not macro_found else client.speed_move|default(velocity) * 60 %}\n\n{% set act = printer.toolhead.position %}\n{% set max = printer.toolhead.axis_maximum %}\n{% set cone = printer.toolhead.cone_start_z|default(max.z) %}\n{% set round_bed = True if printer.configfile.settings.printer.kinematics is in ['delta','polar','rotary_delta','winch']\nelse False %}\n\n{% set z_min = params.Z_MIN|default(0)|float %}\n{% set z_park = [[(act.z + park_dz), z_min]|max, max.z]|min %}\n{% set x_park = params.X       if params.X is defined\nelse custom_park_x  if use_custom\nelse 0.0            if round_bed\nelse (max.x - 5.0) %}\n{% set y_park = params.Y       if params.Y is defined\nelse custom_park_y  if use_custom\nelse (max.y - 5.0)  if round_bed and z_park < cone\nelse 0.0            if round_bed\nelse (max.y - 5.0) %}\n\n{% if printer.extruder.can_extrude %}\n{% if use_fw_retract %}\nG10\n{% else %}\nM83\nG1 E-{retract} F{sp_retract}\n{% if printer.gcode_move.absolute_extrude %} M82 {% endif %}\n{% endif %}\n{% else %}\n{action_respond_info(\"Extruder not hot enough\")}\n{% endif %}\n{% if \"xyz\" in printer.toolhead.homed_axes %}\nG90\nG1 Z{z_park} F{sp_hop}\nG1 X{x_park} Y{y_park} F{sp_move}\n{% if not printer.gcode_move.absolute_coordinates %} G91 {% endif %}\n{% else %}\n{action_respond_info(\"Printer not homed\")}\n{% endif %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro _tx": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set v = printer[\"gcode_macro _oams_macro_variables\"] %}\n{% set manager = printer['oams_manager'] %}\n{% set GROUP = params.GROUP %}\n{% set LANE = (manager.topology.groups.get(GROUP) or {}).get('lane') %}\n{% set TARGETED = 'SLOT' in params %}\n{% set SLOT = params.SLOT|default(-1)|int %}\n{% set LOADED_GROUP = manager.lanes_by_fps[LANE].group if LANE is not none else none %}\n{% set LOADED_SLOT = manager.lanes_by_fps[LANE].current_slot if TARGETED and LANE is not none else none %}\n{% set EXCLUDED = printer.exclude_object.current_object in printer.exclude_object.excluded_objects %}\n{% set SWITCH = not EXCLUDED and not (LOADED_GROUP == GROUP and (not TARGETED or LOADED_SLOT == SLOT)) %}\n{% set LOAD_ARGS = 'GROUP=' ~ GROUP ~ ((' SLOT=' ~ SLOT) if TARGETED else '') %}\n{% set HELPER_ARGS = 'GROUP=' ~ GROUP ~ ' SLOT=' ~ SLOT ~ ' STRICT=' ~ (1 if TARGETED else 0) ~ ' STARTED_PAUSED=' ~ (1 if printer.pause_resume.is_paused else 0) ~ ((' FPS=' ~ LANE) if LANE is not none else '') %}\n{% set LANE_EXTRUDER = manager.lanes_by_fps[LANE].extruder if LANE is not none else printer.toolhead.extruder %}\n\n\n\n{% set HAS_GCO_ROUTINES = 'gco_routines' in printer and printer.configfile.settings.get('gcode_macro _tx', {}).get('render_mode', 'legacy') == 'ordered' %}\n{% if TARGETED %}\n{% if pause_triggered %}\n{ action_raise_error(\"Resolve the previous load sensor failure before retrying\") }\n{% endif %}\n\nOAMSM_VALIDATE_LOAD GROUP={GROUP} SLOT={params.SLOT}\n{% endif %}\n{% if SWITCH %}\n\n{% if not TARGETED and ('filament_group ' ~ GROUP|lower) not in printer.configfile.settings %}\n{ action_raise_error(\"Unknown OpenAMS filament group \" ~ GROUP) }\n{% endif %}\n\n{% if not printer[LANE_EXTRUDER].can_extrude or printer[LANE_EXTRUDER].temperature < v.minimum_extrude_temperature|default(0) %}\n{ action_raise_error(\"Heat the extruder before an OpenAMS toolchange. Cutting and reloading need extrusion temperature\") }\n{% endif %}\n\n\n{% if LOADED_GROUP is not none %}\nOAMSM_STAGE PLAN=cut,retract,feed {('FPS=' ~ LANE) if LANE is not none else ''}\n{% else %}\nOAMSM_STAGE PLAN=feed {('FPS=' ~ LANE) if LANE is not none else ''}\n{% endif %}\n{% endif %}\n\n\n\n\n\n\n\n{% set PRE_HOMING_TARGET = printer[LANE_EXTRUDER].target|default(0) %}\n{% if printer.toolhead.homed_axes != 'xyz' %}\nRESPOND TYPE=command MSG='Homing'\nG28\n{% if SWITCH %}\n_OAMS_AFTER_HOMING EXTRUDER={LANE_EXTRUDER} TARGET={PRE_HOMING_TARGET}\n{% endif %}\n{% endif %}\n{% if not EXCLUDED %}\n{% if not SWITCH %}\nRESPOND TYPE=command MSG='Toolhead already loaded with {GROUP}'\n{% else %}\nRESPOND TYPE=command MSG='Switching {LOADED_GROUP} -> {GROUP}'\n{% if not TARGETED %}\nSET_GCODE_VARIABLE MACRO=_TX VARIABLE=pause_triggered VALUE=False\n{% endif %}\nSAVE_GCODE_STATE NAME=oams_toolchange\n{% if LOADED_GROUP is not none %}\n{% if TARGETED %}\nSAFE_UNLOAD_FILAMENT STRICT=1 STAGED=1 FPS={LANE}\n{% else %}\nSAFE_UNLOAD_FILAMENT STAGED=1 FPS={LANE}\n{% endif %}\n{% endif %}\n\n{% if HAS_GCO_ROUTINES and not printer.pause_resume.is_paused and not printer[\"gcode_macro _TX\"].pause_triggered and (manager.lanes_by_fps[LANE].group if LANE is not none else manager.current_group) is none %}\n\n\n\nOAMSM_STAGE NAME=feed {('FPS=' ~ LANE) if LANE is not none else ''}\nSTART\nOAMSM_LOAD_FILAMENT {LOAD_ARGS}\nEND\nCLEAN_NOZZLE\nM400\nWAIT\n_OAMS_CONTINUE_AFTER_LOAD {HELPER_ARGS}\n{% else %}\n_OAMS_CONTINUE_AFTER_UNLOAD {HELPER_ARGS}\n{% endif %}\n{% endif %}\n{% endif %}",
+      "render_mode": "ordered",
+      "variable_pause_triggered": "False"
+     },
+     "gcode_macro _unload_fs_out": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set fs_extruder_out = printer[\"gcode_macro _oams_macro_variables\"].fs_extruder_out %}\n{% set LANE = params.FPS|default(none) %}\n\n{% if fs_extruder_out and printer['filament_switch_sensor extruder_out'].filament_detected %}\n{% if params.STRICT|default(0)|int == 1 %}\nOAMSM_STAGE FAILED=1 {('FPS=' ~ LANE) if LANE is not none else ''}\n{ action_raise_error(\"Filament still detected between extruder and hotend after cutting\") }\n{% endif %}\nRESPOND TYPE=error MSG='Filament detected between extruder and hotend!  This is most likely a failure to cut the filament, or the settings are incorrect and the extrusion_unload_length is insufficient to retract the remaining filament past the gears of the extruder   ... pausing for user intervention'\nSET_GCODE_VARIABLE MACRO=SAFE_UNLOAD_FILAMENT VARIABLE=pause_triggered VALUE=True\n{% elif fs_extruder_out and  not printer['filament_switch_sensor extruder_out'].filament_detected %}\nRESPOND TYPE=command MSG='Filament retracted past extruder... continue'\n{% endif %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro cancel_print": {
+      "description": "Cancel the actual running print",
+      "gcode": "\nSTOP_LED_EFFECTS\nSET_LED_EFFECT EFFECT=panel_idle\n{% set idle_timeout = printer.configfile.settings.idle_timeout.timeout %}\nSET_IDLE_TIMEOUT TIMEOUT={idle_timeout}\nSET_HEATER_TEMPERATURE HEATER=\"the_filter\" TARGET=0\nDISABLE_STEPPER_FOLLOWER\n\n{% set macro_found = True if printer['gcode_macro _CLIENT_VARIABLE'] is defined else False %}\n{% set client = printer['gcode_macro _CLIENT_VARIABLE'] %}\n{% set allow_park = False if not macro_found\nelse False if client.park_at_cancel is not defined\nelse True  if client.park_at_cancel|lower == 'true'\nelse False %}\n{% set retract    = 5.0  if not macro_found else client.cancel_retract|default(5.0)|abs %}\n{% set sp_retract = 2100 if not macro_found else client.speed_retract|default(35) * 60 %}\n\n{% if not printer.pause_resume.is_paused and allow_park %} _TOOLHEAD_PARK_PAUSE_CANCEL {% endif %}\n{% if printer.extruder.can_extrude %}\nM83\nG1 E-{retract} F{sp_retract}\n{% if printer.gcode_move.absolute_extrude %} M82 {% endif %}\n{% else %}\n{action_respond_info(\"Extruder not hot enough\")}\n{% endif %}\nSET_HEATER_TEMPERATURE HEATER=extruder\nM106 S0\nCANCEL_PRINT_BASE\n\n\nSTOP_LED_EFFECTS\nSET_LED_EFFECT EFFECT=panel_idle REPLACE=1\nSET_LED_EFFECT EFFECT=progress_bar_idle REPLACE=1\n\nOAMS_LOADED\nM117 Ready\nSTATUS_READY",
+      "rename_existing": "CANCEL_PRINT_BASE",
+      "render_mode": "legacy"
+     },
+     "gcode_macro check_filament": {
+      "description": "Report the configured runout switch state",
+      "gcode": "\n{% set filament_status = printer['filament_switch_sensor m4_left_runout'].filament_detected %}\nM117 Filament {filament_status}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro clean_nozzle": {
+      "description": "G-Code macro",
+      "gcode": "\n{% if \"xyz\" not in printer.toolhead.homed_axes %}\nG28\n{% endif %}\n\nG90\n\n\nG1 X{start_x} Y{start_y} F6000\n\n\n\n\n\n{% for wipes in range(1, (wipe_qty + 1)) %}\nG1 X{start_x + wipe_dist} F{wipe_spd * 60}\nG1 X{start_x} F{wipe_spd * 60}\n{% endfor %}",
+      "render_mode": "legacy",
+      "variable_start_x": "57",
+      "variable_start_y": "350",
+      "variable_wipe_dist": "-32",
+      "variable_wipe_qty": "5",
+      "variable_wipe_spd": "600"
+     },
+     "gcode_macro cut_filament": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set v = printer[\"gcode_macro _oams_macro_variables\"] %}\n{% if printer.toolhead.homed_axes != 'xyz' %}\nRESPOND TYPE=command MSG='Homing'\nG28\n{% endif %}\nRESPOND TYPE=command MSG='Cutting'\n\n\nG90\nG0 X{v.pre_cut_x} Y{v.pre_cut_y} F{v.pre_cut_speed}\nG0 X{v.cut_x} Y{v.cut_y} F{v.cut_speed}\nG0 X{v.post_cut_x} Y{v.post_cut_y} F{v.pre_cut_speed}\nM400",
+      "render_mode": "legacy"
+     },
+     "gcode_macro cycle_chamber_lights": {
+      "description": "Cycle chamber/rear panel lights: on -> idle -> off",
+      "gcode": "\n{% if state == \"on\" %}\nSET_LED_EFFECT EFFECT=panel_idle REPLACE=1\nSET_GCODE_VARIABLE MACRO=CYCLE_CHAMBER_LIGHTS VARIABLE=state VALUE='\"idle\"'\n{% elif state == \"idle\" %}\nSET_LED_EFFECT EFFECT=panel_off REPLACE=1\nSET_GCODE_VARIABLE MACRO=CYCLE_CHAMBER_LIGHTS VARIABLE=state VALUE='\"off\"'\n{% else %}\nSET_LED_EFFECT EFFECT=panel_on REPLACE=1\nSET_GCODE_VARIABLE MACRO=CYCLE_CHAMBER_LIGHTS VARIABLE=state VALUE='\"on\"'\n{% endif %}",
+      "render_mode": "legacy",
+      "variable_state": "\"idle\""
+     },
+     "gcode_macro extrude_volumetric": {
+      "description": "Extrude specified volume of filament using a given diameter",
+      "gcode": "\n{% set D = params.D|float %}\n{% set EXTRUDER = params.EXTRUDER|default(\"extruder\") %}\n{% set VOLUME = params.VOLUME|float %}\n{% set SPEED = params.SPEED|float %}\n\n\n{% if D <= 0 %}\nrespond_error \"Invalid filament diameter: D must be greater than 0\"\nreturn\n{% endif %}\n{% if VOLUME <= 0 %}\nrespond_error \"Invalid volume: VOLUME must be greater than 0\"\nreturn\n{% endif %}\n{% if SPEED <= 0 %}\nrespond_error \"Invalid speed: SPEED must be greater than 0\"\nreturn\n{% endif %}\n\n\n{% set area = (3.14159 * (D / 2) ** 2) %}\n\n\n{% set length = VOLUME / area %}\n\n\nrespond_info \"Extruding length of filament: {length} mm at speed { SPEED } mm/min with filament diameter {D } mm\"\n\n\nACTIVATE_EXTRUDER EXTRUDER={EXTRUDER}\nG1 E{length} F{SPEED}",
+      "render_mode": "legacy",
+      "variable_extruder_name": "\"extruder\"",
+      "variable_filament_diameter": "1.75",
+      "variable_speed": "0",
+      "variable_volume": "0"
+     },
+     "gcode_macro g28": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set home_all = 'X' not in params and 'Y' not in params and 'Z' not in params %}\n\n{% if 'z' not in printer.toolhead.homed_axes %}\nUNSAFE_LIFT_TOOLHEAD\n{% endif %}\n\n{% if home_all or 'X' in params %}\n_HOME_X\n{% endif %}\n\n{% if home_all or 'Y' in params %}\n_HOME_Y\n{% endif %}\n\n{% if home_all or 'Z' in params %}\nG28.1 Z\nG0 Z10\n{% endif %}",
+      "rename_existing": "G28.1",
+      "render_mode": "legacy"
+     },
+     "gcode_macro g32": {
+      "description": "G-Code macro",
+      "gcode": "\nSAVE_GCODE_STATE NAME=STATE_G32\nSTATUS_LEVELING\nQUAD_GANTRY_LEVEL\nG0 X175 Y175 Z30 F3600\nRESTORE_GCODE_STATE NAME=STATE_G32",
+      "render_mode": "legacy"
+     },
+     "gcode_macro grease_rails": {
+      "description": "G-Code macro",
+      "gcode": "\n{% if \"xyz\" not in printer.toolhead.homed_axes %}\nG28\n{% endif %}\nG90\n\nG0 X{x_width / 2} Y{y_width / 2} F6000\nG0 Z{safe_z_height} F{speed}\n\n{% for travels in range(0, repeat_times) %}\nG0 X0\nG0 X{x_width}\n{% endfor %}\nG0 X{x_width / 2}\n\n{% for travels in range(0, repeat_times) %}\nG0 Y0\nG0 Y{y_width}\n{% endfor %}\nG0 Y{y_width / 2}\n\n{% for travels in range(0, repeat_times) %}\nG0 Z{z_height} F{z_speed}\nG0 Z{safe_z_height}\n{% endfor %}",
+      "render_mode": "legacy",
+      "variable_repeat_times": "5",
+      "variable_safe_z_height": "10",
+      "variable_speed": "6000",
+      "variable_x_width": "350",
+      "variable_y_width": "350",
+      "variable_z_height": "280",
+      "variable_z_speed": "3000"
+     },
+     "gcode_macro m0": {
+      "description": "G-Code macro",
+      "gcode": "\nPAUSE",
+      "render_mode": "legacy"
+     },
+     "gcode_macro m600": {
+      "description": "G-Code macro",
+      "gcode": "\nPAUSE",
+      "render_mode": "legacy"
+     },
+     "gcode_macro oams_toolchange_torture_test": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set num = params.LOOPS|int %}\nG0 Z{extrusion_z_height} F30\n{% for i in range(num) %}\n{% for j in range(4) %}\nT{j}\nRESPOND TYPE=command MSG='Purging {extrusion_amount}mm of filament'\n{% endfor %}\nRESPOND TYPE=command MSG='Number of loops now {i+1}'\n{% endfor %}",
+      "render_mode": "legacy",
+      "variable_extrusion_amount": "30",
+      "variable_extrusion_speed": "300",
+      "variable_extrusion_z_height": "100"
+     },
+     "gcode_macro oams_torture_test": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set num = params.LOOPS|int %}\n{% for i in range(num) %}\n{% for j in range(4) %}\nOAMS_LOAD_SPOOL OAMS=1 SPOOL={j}\nOAMS_UNLOAD_SPOOL OAMS=1\n{% endfor %}\nRESPOND TYPE=command MSG='Number of loops now {i+1}'\n{% endfor %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro openams_load": {
+      "description": "Load a selected OpenAMS slot through the complete safe toolchange sequence",
+      "gcode": "\n{% if 'GROUP' not in params %}\n{ action_raise_error(\"OPENAMS_LOAD requires GROUP\") }\n{% elif 'SLOT' not in params %}\n{ action_raise_error(\"OPENAMS_LOAD requires SLOT\") }\n{% else %}\n_TX GROUP={params.GROUP} SLOT={params.SLOT}\n{% endif %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro openams_unload": {
+      "description": "Unload OpenAMS through the complete cutter and extruder sequence",
+      "gcode": "\n{% set manager = printer['oams_manager'] %}\n{% set ns = namespace(lane=params.FPS|default(none)) %}\n{% if ns.lane is none %}{% for name in manager.lanes_by_fps %}{% if manager.lanes_by_fps[name].extruder == printer.toolhead.extruder %}{% set ns.lane = name %}{% endif %}{% endfor %}{% endif %}\n{% if ns.lane is none and manager.lanes_by_fps|length == 1 %}{% set ns.lane = (manager.lanes_by_fps|list)[0] %}{% endif %}\n{% if ns.lane is none %}\n{ action_raise_error(\"Cannot tell which OpenAMS lane to unload; pass FPS=<name>\") }\n{% endif %}\n{% set LANE = ns.lane %}\n{% if manager.lanes_by_fps[LANE].current_slot is not none %}\nSAFE_UNLOAD_FILAMENT STRICT=1 FPS={LANE}\n{% else %}\nRESPOND TYPE=command MSG='OpenAMS is already unloaded'\n{% endif %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro pause": {
+      "description": "Pause the actual running print",
+      "gcode": "\nM117 Paused\nSTATUS_PART_READY\nPAUSE_BASE\n_TOOLHEAD_PARK_PAUSE_CANCEL {rawparams}\nSET_IDLE_TIMEOUT TIMEOUT=86400",
+      "rename_existing": "PAUSE_BASE",
+      "render_mode": "legacy"
+     },
+     "gcode_macro prime_nozzle": {
+      "description": "G-Code macro",
+      "gcode": "\nSTATUS_CLEANING\nSAVE_GCODE_STATE NAME=PRIME_NOZZLE_STATE\nM117 Priming\nG90\nM83\nG92 E0\nG1 Z10 F900\nG1 Y3 X3 F18000\nG1 Z0.2 F900\nG91\nG1 X100 E25 F1000\nG1 Y-2 F1000\nG1 X-60 E9 F1000\nG1 E-0.5 F3000\nG1 X0.5 E0 F1000\nG1 X-5.5 E0 F1000\nRESTORE_GCODE_STATE NAME=PRIME_NOZZLE_STATE",
+      "render_mode": "legacy"
+     },
+     "gcode_macro print_end": {
+      "description": "G-Code macro",
+      "gcode": "\n\n{% set th = printer.toolhead %}\n{% set x_safe = th.position.x + 20 * (1 if th.axis_maximum.x - th.position.x > 20 else -1) %}\n{% set y_safe = th.position.y + 20 * (1 if th.axis_maximum.y - th.position.y > 20 else -1) %}\n{% set z_safe = [th.position.z + 2, th.axis_maximum.z]|min %}\n\nSAVE_GCODE_STATE NAME=STATE_PRINT_END\nSET_LED_EFFECT EFFECT=panel_idle REPLACE=1\n\nM400\nG92 E0\nG1 E-5.0 F1800\n\nSET_HEATER_TEMPERATURE HEATER=\"the_filter\" TARGET=0\nSET_HEATER_TEMPERATURE HEATER=extruder\n\nG90\nG0 X{x_safe} Y{y_safe} Z{z_safe} F20000\nG0 X{th.axis_maximum.x // 2} Y{th.axis_maximum.y - 2} F3600\nM107\n\nBED_MESH_CLEAR\nRESTORE_GCODE_STATE NAME=STATE_PRINT_END\nturn_chamber_lights_off\nSTATUS_READY\nM117 Ready",
+      "render_mode": "legacy"
+     },
+     "gcode_macro print_start": {
+      "description": "G-Code macro",
+      "gcode": "\nSET_LED_EFFECT EFFECT=panel_on REPLACE=1\nSTATUS_BUSY\n\nM140 S{ params.BED }\nM190 S{ params.BED }\n\n{% set axes_homed  = 'xyz' in printer.toolhead.homed_axes %}\n{% set mesh_loaded = printer.bed_mesh.profile_name != '' %}\n\n{% if axes_homed and mesh_loaded %}\n\nM117 Skipping calibration\nSET_GCODE_OFFSET Z=0\n\nM104 S{ params.EXTRUDER }\nM109 S{ params.EXTRUDER }\n\nSET_GCODE_OFFSET Z=0.030 MOVE=1\n{% else %}\n\nBED_MESH_CLEAR\nSET_GCODE_OFFSET Z=0\n\nG28\nG0 Z4\n\nM109 S150\nG4 P20000\n\nCLEAN_NOZZLE\n\nQUAD_GANTRY_LEVEL\n\nG28.1 Z METHOD=CONTACT CALIBRATE=1\n\nBED_MESH_CALIBRATE PROFILE=\"default\"\nBED_MESH_PROFILE LOAD=default\n\nM104 S{ params.EXTRUDER }\nM109 S{ params.EXTRUDER }\n\nSET_GCODE_OFFSET Z=0.030 MOVE=1\n{% endif %}\n\nSTATUS_PRINTING\nOAMSM_FOLLOWER FPS=fps1 ENABLE=1 DIRECTION=1",
+      "render_mode": "legacy"
+     },
+     "gcode_macro purge_color": {
+      "description": "G-Code macro",
+      "gcode": "\nG0 X185 Y275 F6000\nG0 X185 Y350\nG0 Z30 F900\nM83\nG1 E200 F300\nCLEAN_NOZZLE",
+      "render_mode": "legacy"
+     },
+     "gcode_macro purge_hotend": {
+      "description": "G-Code macro",
+      "gcode": "\nSTATUS_CLEANING\nSAVE_GCODE_STATE NAME=PURGE_HOTEND_STATE\nM117 Purging\nG90\nM83\nG92 E0\nG1 Z30 F900\nG1 X170 Y350 F18000\nG1 E300 F300\nM117 Ready\nRESTORE_GCODE_STATE NAME=PURGE_HOTEND_STATE",
+      "render_mode": "legacy"
+     },
+     "gcode_macro resume": {
+      "description": "Resume the actual running print",
+      "gcode": "\n{% set idle_timeout = printer.configfile.settings.idle_timeout.timeout %}\nSET_IDLE_TIMEOUT TIMEOUT={idle_timeout}\n\n{% set macro_found = True if printer['gcode_macro _CLIENT_VARIABLE'] is defined else False %}\n{% set client = printer['gcode_macro _CLIENT_VARIABLE'] %}\n{% set velocity = printer.configfile.settings.pause_resume.recover_velocity %}\n{% set use_fw_retract = False if not macro_found\nelse False if client.use_fw_retract is not defined\nelse True  if client.use_fw_retract|lower == 'true' and printer.firmware_retraction is defined\nelse False %}\n{% set unretract    = 1.0  if not macro_found else client.unretract|default(1.0)|abs %}\n{% set sp_unretract = 2100 if not macro_found else client.speed_unretract|default(35) * 60 %}\n{% set sp_move      = velocity if not macro_found else client.speed_move|default(velocity) %}\n\n{% if printer.extruder.can_extrude %}\n{% if use_fw_retract %}\nG11\n{% else %}\nM83\nG1 E{unretract} F{sp_unretract}\n{% if printer.gcode_move.absolute_extrude %} M82 {% endif %}\n{% endif %}\n{% else %}\n{action_respond_info(\"Extruder not hot enough %s\" % use_fw_retract)}\n{% endif %}\nM117 Printing\nSTATUS_PRINTING\nRESUME_BASE VELOCITY={params.VELOCITY|default(sp_move)}",
+      "rename_existing": "RESUME_BASE",
+      "render_mode": "legacy"
+     },
+     "gcode_macro safe_unload_filament": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set v = printer[\"gcode_macro _oams_macro_variables\"] %}\n{% set manager = printer['oams_manager'] %}\n{% set ns = namespace(lane=params.FPS|default(none)) %}\n{% if ns.lane is none %}{% for name in manager.lanes_by_fps %}{% if manager.lanes_by_fps[name].extruder == printer.toolhead.extruder %}{% set ns.lane = name %}{% endif %}{% endfor %}{% endif %}\n{% if ns.lane is none and manager.lanes_by_fps|length == 1 %}{% set ns.lane = (manager.lanes_by_fps|list)[0] %}{% endif %}\n{% if ns.lane is none %}\n{ action_raise_error(\"Cannot tell which OpenAMS lane to unload; pass FPS=<name>\") }\n{% endif %}\n{% set LANE = ns.lane %}\n{% set LANE_EXTRUDER = manager.lanes_by_fps[LANE].extruder %}\n{% set STRICT = params.STRICT|default(0)|int == 1 %}\n{% set STAGED = params.STAGED|default(0)|int == 1 %}\n{% set UNLOAD_SPEED = v.unload_speed|default(1000) %}\n{% if STRICT and pause_triggered %}\n{ action_raise_error(\"Resolve the previous unload sensor failure before retrying\") }\n{% endif %}\n{% if not printer[LANE_EXTRUDER].can_extrude or printer[LANE_EXTRUDER].temperature < v.minimum_extrude_temperature|default(0) %}\n{ action_raise_error(\"Heat the extruder before unloading OpenAMS filament. Cutting and retracting need extrusion temperature\") }\n{% endif %}\n\n\n{% if not STAGED %}\nOAMSM_STAGE PLAN=cut,retract FPS={LANE}\n{% endif %}\n\n{% set PRE_HOMING_TARGET = printer[LANE_EXTRUDER].target|default(0) %}\n{% if STRICT and printer.toolhead.homed_axes != 'xyz' %}\nG28\n_OAMS_AFTER_HOMING EXTRUDER={LANE_EXTRUDER} TARGET={PRE_HOMING_TARGET}\n{% endif %}\nSAVE_GCODE_STATE NAME=oams_unload\n{% if not STRICT %}\nSET_GCODE_VARIABLE MACRO=SAFE_UNLOAD_FILAMENT VARIABLE=pause_triggered VALUE=False\n{% endif %}\nM83\nOAMSM_FOLLOWER ENABLE=1 DIRECTION=0 FPS={LANE}\nSET_STEPPER_ENABLE STEPPER={LANE_EXTRUDER} ENABLE=1\nOAMSM_STAGE NAME=cut FPS={LANE}\nG1 E-{v.retract_length} F{UNLOAD_SPEED}\nCUT_FILAMENT\n\nM83\nG1 E-{v.extrusion_unload_length} F{UNLOAD_SPEED}\nM400\n_UNLOAD_FS_OUT STRICT={1 if STRICT else 0} FPS={LANE}\n_OAMS_FINISH_UNLOAD STRICT={1 if STRICT else 0} STARTED_PAUSED={1 if printer.pause_resume.is_paused else 0} STAGED={1 if STAGED else 0} FPS={LANE}",
+      "render_mode": "legacy",
+      "variable_pause_triggered": "False"
+     },
+     "gcode_macro search_vars": {
+      "description": "G-Code macro",
+      "gcode": "\n{% set search = params.S|lower %}\n{% set ns = namespace() %}\n{% for item in printer %}\n{% if ' ' in item %}\n{% set ns.path = ['printer', \"['%s']\" % (item), ''] %}\n{% else %}\n{% set ns.path = ['printer.', item, ''] %}\n{% endif %}\n\n{% if search in ns.path|lower %}\n{ action_respond_info(ns.path|join) }\n{% endif %}\n\n{% if printer[item].items() %}\n{% for childkey, child in printer[item].items() recursive %}\n{% set ns.path = ns.path[:loop.depth|int + 1] %}\n\n{% if ' ' in childkey %}\n{% set null = ns.path.append(\"['%s']\" % (childkey)) %}\n{% else %}\n{% set null = ns.path.append(\".%s\" % (childkey)) %}\n{% endif %}\n\n{% if child is mapping %}\n{ loop(child.items()) }\n{% else %}\n{% if search in ns.path|lower %}\n{ action_respond_info(\"%s : %s\" % (ns.path|join, child)) }\n{% endif %}\n{% endif %}\n{% endfor %}\n{% endif %}\n{% endfor %}",
+      "render_mode": "legacy"
+     },
+     "gcode_macro status_busy": {
+      "description": "G-Code macro",
+      "gcode": "",
+      "render_mode": "legacy"
+     },
+     "gcode_macro status_calibrating_z": {
+      "description": "G-Code macro",
+      "gcode": "",
+      "render_mode": "legacy"
+     },
+     "gcode_macro status_cleaning": {
+      "description": "G-Code macro",
+      "gcode": "",
+      "render_mode": "legacy"
+     },
+     "gcode_macro status_cooling": {
+      "description": "G-Code macro",
+      "gcode": "",
+      "render_mode": "legacy"
+     },
+     "gcode_macro status_heating": {
+      "description": "G-Code macro",
+      "gcode": "",
+      "render_mode": "legacy"
+     },
+     "gcode_macro status_homing": {
+      "description": "G-Code macro",
+      "gcode": "",
+      "render_mode": "legacy"
+     },
+     "gcode_macro status_leveling": {
+      "description": "G-Code macro",
+      "gcode": "",
+      "render_mode": "legacy"
+     },
+     "gcode_macro status_meshing": {
+      "description": "G-Code macro",
+      "gcode": "",
+      "render_mode": "legacy"
+     },
+     "gcode_macro status_part_ready": {
+      "description": "G-Code macro",
+      "gcode": "",
+      "render_mode": "legacy"
+     },
+     "gcode_macro status_printing": {
+      "description": "G-Code macro",
+      "gcode": "\nSET_LED_EFFECT EFFECT=panel_on REPLACE=1",
+      "render_mode": "legacy"
+     },
+     "gcode_macro status_ready": {
+      "description": "G-Code macro",
+      "gcode": "\nSTOP_LED_EFFECTS\nSET_LED_EFFECT EFFECT=panel_idle REPLACE=1",
+      "render_mode": "legacy"
+     },
+     "gcode_macro t0": {
+      "description": "G-Code macro",
+      "gcode": "\n_TX GROUP=T0",
+      "render_mode": "legacy"
+     },
+     "gcode_macro t1": {
+      "description": "G-Code macro",
+      "gcode": "\n_TX GROUP=T1",
+      "render_mode": "legacy"
+     },
+     "gcode_macro t2": {
+      "description": "G-Code macro",
+      "gcode": "\n_TX GROUP=T2",
+      "render_mode": "legacy"
+     },
+     "gcode_macro t3": {
+      "description": "G-Code macro",
+      "gcode": "\n_TX GROUP=T3",
+      "render_mode": "legacy"
+     },
+     "gcode_macro turn_chamber_lights_off": {
+      "description": "Chamber/rear lights off",
+      "gcode": "\nSET_LED_EFFECT EFFECT=panel_off REPLACE=1",
+      "render_mode": "legacy"
+     },
+     "gcode_macro turn_chamber_lights_on": {
+      "description": "Chamber/rear lights solid white",
+      "gcode": "\nSET_LED_EFFECT EFFECT=panel_on REPLACE=1",
+      "render_mode": "legacy"
+     },
+     "gcode_macro unsafe_lift_toolhead": {
+      "description": "Lower the bed 10mm without homing",
+      "gcode": "\nG90\nSET_KINEMATIC_POSITION Z=0\nG0 Z10 F600\nM84",
+      "render_mode": "legacy"
+     },
+     "heater_bed": {
+      "control": "pid",
+      "heater_pin": "PA3",
+      "inline_resistor": 0.0,
+      "max_power": 1.0,
+      "max_temp": 120.0,
+      "min_extrude_temp": 170.0,
+      "min_temp": 0.0,
+      "pid_kd": 269.081,
+      "pid_ki": 2.625,
+      "pid_kp": 53.152,
+      "pullup_resistor": 4700.0,
+      "pwm_cycle_time": 0.1,
+      "sensor_pin": "PF3",
+      "sensor_type": "Generic 3950",
+      "smooth_time": 1.0
+     },
+     "heater_fan hotend_fan": {
+      "cycle_time": 0.01,
+      "fan_speed": 1.0,
+      "hardware_pwm": false,
+      "heater": [
+       "extruder"
+      ],
+      "heater_temp": 50.0,
+      "kick_start_time": 0.5,
+      "max_power": 1.0,
+      "off_below": 0.0,
+      "pin": "ebb36:PA1",
+      "shutdown_speed": 1.0
+     },
+     "heater_generic the_filter": {
+      "control": "pid",
+      "heater_pin": "multi_pin:the_filter_pins",
+      "inline_resistor": 0.0,
+      "max_power": 1.0,
+      "max_temp": 100.0,
+      "min_extrude_temp": 170.0,
+      "min_temp": 0.0,
+      "pid_kd": 0.5,
+      "pid_ki": 5.0,
+      "pid_kp": 10.0,
+      "pullup_resistor": 4700.0,
+      "pwm_cycle_time": 0.0005,
+      "sensor_pin": "PF4",
+      "sensor_type": "Generic 3950",
+      "smooth_time": 1.0
+     },
+     "idle_timeout": {
+      "gcode": "\n{% if 'heaters' in printer %}\n   TURN_OFF_HEATERS\n{% endif %}\nM84\n",
+      "timeout": 3600.0
+     },
+     "input_shaper": {
+      "damping_ratio_x": 0.1,
+      "damping_ratio_y": 0.1,
+      "damping_ratio_z": 0.1,
+      "shaper_freq_x": 61.2,
+      "shaper_freq_y": 38.8,
+      "shaper_freq_z": 0.0,
+      "shaper_type": "mzv",
+      "shaper_type_x": "mzv",
+      "shaper_type_y": "mzv",
+      "shaper_type_z": "mzv"
+     },
+     "led_effect bed_temp": {
+      "autostart": true,
+      "endstops": "",
+      "frame_rate": 60.0,
+      "heater": "heater_bed",
+      "layers": "\ntemperature 20 110 top (0.0, 0.0, 1.0),(1.0, 0.0, 0.0)",
+      "leds": "\nneopixel:bed_left\nneopixel:bed_right",
+      "recalculate": false,
+      "run_on_error": false
+     },
+     "led_effect critical_error": {
+      "autostart": false,
+      "endstops": "",
+      "frame_rate": 60.0,
+      "layers": "\nstrobe    1 1.5 add        (1.0,  1.0, 1.0)\nbreathing 2 0   difference (0.95, 0.0, 0.0)\nstatic    1 0   top        (1.0,  0.0, 0.0)",
+      "leds": "\nneopixel:chamber_lights\nneopixel:rear_lights",
+      "recalculate": false,
+      "run_on_error": true
+     },
+     "led_effect panel_idle": {
+      "autostart": true,
+      "endstops": "",
+      "frame_rate": 30.0,
+      "layers": "\ngradient 1 1 top (1.0, 0.0, 0.0),(0.0, 1.0, 0.0),(0.0, 0.0, 1.0)",
+      "leds": "\nneopixel:chamber_lights\nneopixel:rear_lights",
+      "recalculate": false,
+      "run_on_error": false
+     },
+     "led_effect panel_off": {
+      "autostart": false,
+      "endstops": "",
+      "frame_rate": 30.0,
+      "layers": "\nstatic 1 0 top (0.0, 0.0, 0.0)",
+      "leds": "\nneopixel:chamber_lights\nneopixel:rear_lights",
+      "recalculate": false,
+      "run_on_error": false
+     },
+     "led_effect panel_on": {
+      "autostart": false,
+      "endstops": "",
+      "frame_rate": 30.0,
+      "layers": "\nstatic 1 0 top (1.0, 1.0, 1.0)",
+      "leds": "\nneopixel:chamber_lights\nneopixel:rear_lights",
+      "recalculate": false,
+      "run_on_error": false
+     },
+     "led_effect progress_bar_idle": {
+      "autostart": false,
+      "endstops": "",
+      "frame_rate": 30.0,
+      "layers": "\nknightradiant 1 15 top (0.8, 0.0, 0.01)",
+      "leds": "\nneopixel:progress_bar",
+      "recalculate": false,
+      "run_on_error": false
+     },
+     "led_effect progress_bar_printing": {
+      "autostart": false,
+      "endstops": "",
+      "frame_rate": 30.0,
+      "layers": "\nprogress 4 4 top (0.0, 0.8, 1.0)",
+      "leds": "\nneopixel:progress_bar",
+      "recalculate": false,
+      "run_on_error": false
+     },
+     "mcu": {
+      "baud": 250000,
+      "restart_method": "command",
+      "serial": "/dev/serial/by-id/usb-Klipper_example_0000000000000000-if00"
+     },
+     "mcu ebb36": {
+      "canbus_interface": "can0",
+      "canbus_uuid": "0a0b0c0d0e01"
+     },
+     "mcu fps": {
+      "canbus_interface": "can0",
+      "canbus_uuid": "0a0b0c0d0e02"
+     },
+     "mcu host": {
+      "serial": "/tmp/klipper_host_mcu"
+     },
+     "mcu oams_mcu1": {
+      "canbus_interface": "can0",
+      "canbus_uuid": "0a0b0c0d0e00"
+     },
+     "menu __main __octoprint": {
+      "enable": true,
+      "name": "",
+      "type": "disabled"
+     },
+     "menu __main __temp __preheat_abs": {
+      "enable": true,
+      "name": "Preheat ABS",
+      "type": "list"
+     },
+     "menu __main __temp __preheat_abs __all": {
+      "enable": "{('extruder' in printer) and ('heater_bed' in printer)}",
+      "gcode": "\nM140 S110\nM104 S245\nSET_HEATER_TEMPERATURE HEATER=the_filter TARGET=60",
+      "name": "Preheat all",
+      "type": "command"
+     },
+     "menu __main __temp __preheat_abs __chamber": {
+      "enable": true,
+      "gcode": "SET_HEATER_TEMPERATURE HEATER=the_filter TARGET=60",
+      "name": "Preheat chamber",
+      "type": "command"
+     },
+     "menu __main __temp __preheat_abs __hotbed": {
+      "enable": "{'heater_bed' in printer}",
+      "gcode": "M140 S110",
+      "name": "Preheat hotbed",
+      "type": "command"
+     },
+     "menu __main __temp __preheat_abs __hotend": {
+      "enable": "{'extruder' in printer}",
+      "gcode": "M104 S245",
+      "name": "Preheat hotend",
+      "type": "command"
+     },
+     "menu __main __temp __the_filter": {
+      "enable": true,
+      "gcode": "\nSET_HEATER_TEMPERATURE HEATER=\"the_filter\" TARGET={menu.input}",
+      "input": "{printer[\"heater_generic the_filter\"].target}",
+      "input_max": "100",
+      "input_min": "0",
+      "input_step": 1.0,
+      "name": "Filter: {'%3.0f' % menu.input}",
+      "realtime": false,
+      "type": "input"
+     },
+     "menu __main __toggle_lights": {
+      "enable": true,
+      "gcode": "\nCYCLE_CHAMBER_LIGHTS\n{ menu.exit() }",
+      "name": "Lights: {printer['gcode_macro CYCLE_CHAMBER_LIGHTS'].state | upper}",
+      "type": "command"
+     },
+     "mfrc522 openams": {
+      "bays_a": "0,1",
+      "bays_b": "2,3",
+      "cs_pin_a": "oams_mcu1:PB3",
+      "cs_pin_b": "oams_mcu1:PB2",
+      "key": "FFFFFFFFFFFF",
+      "key_b": false,
+      "oams": 1,
+      "poll_interval": 0.5,
+      "reset_pin_a": "oams_mcu1:PD2",
+      "reset_pin_b": "oams_mcu1:PB0",
+      "spi_software_miso_pin": "oams_mcu1:PA10",
+      "spi_software_mosi_pin": "oams_mcu1:PA9",
+      "spi_software_sclk_pin": "oams_mcu1:PA8",
+      "spi_speed": 100000
+     },
+     "multi_pin the_filter_pins": {
+      "pins": [
+       "PD15",
+       "PA8",
+       "PE5"
+      ]
+     },
+     "neopixel bed_left": {
+      "chain_count": 32,
+      "color_order": [
+       "GRB"
+      ],
+      "initial_blue": 0.0,
+      "initial_green": 0.0,
+      "initial_red": 0.0,
+      "initial_white": 0.0,
+      "pin": "PB4"
+     },
+     "neopixel bed_right": {
+      "chain_count": 32,
+      "color_order": [
+       "GRB"
+      ],
+      "initial_blue": 0.0,
+      "initial_green": 0.0,
+      "initial_red": 0.0,
+      "initial_white": 0.0,
+      "pin": "PB5"
+     },
+     "neopixel btt_mini12864": {
+      "chain_count": 3,
+      "color_order": [
+       "RGB"
+      ],
+      "initial_blue": 0.71,
+      "initial_green": 0.88,
+      "initial_red": 0.0,
+      "initial_white": 0.0,
+      "pin": "EXP1_6"
+     },
+     "neopixel chamber_lights": {
+      "chain_count": 51,
+      "color_order": [
+       "GRBW"
+      ],
+      "initial_blue": 0.0,
+      "initial_green": 0.0,
+      "initial_red": 0.0,
+      "initial_white": 0.0,
+      "pin": "PB0"
+     },
+     "neopixel progress_bar": {
+      "chain_count": 24,
+      "color_order": [
+       "GRB"
+      ],
+      "initial_blue": 0.0,
+      "initial_green": 0.0,
+      "initial_red": 0.0,
+      "initial_white": 0.0,
+      "pin": "PB3"
+     },
+     "neopixel rear_lights": {
+      "chain_count": 32,
+      "color_order": [
+       "GRB"
+      ],
+      "initial_blue": 0.0,
+      "initial_green": 0.0,
+      "initial_red": 0.0,
+      "initial_white": 0.0,
+      "pin": "PA15"
+     },
+     "oams oams1": {
+      "current_kd": 0.0,
+      "current_ki": 0.0,
+      "current_kp": 3.0,
+      "current_target": 0.3,
+      "device_kind": "auto",
+      "f1s_hes_is_above": false,
+      "f1s_hes_on": "0.1, 0.1, 0.1, 0.1",
+      "fps_is_reversed": false,
+      "fps_lower_threshold": 0.3,
+      "fps_target": 0.5,
+      "fps_upper_threshold": 0.7,
+      "hub_hes_is_above": true,
+      "hub_hes_on": "0.85,0.85,0.8252441883087158,0.85",
+      "kd": 0.0,
+      "ki": 0.0,
+      "kp": 6.0,
+      "link_source_1": "manual",
+      "link_source_2": "manual",
+      "link_source_3": "manual",
+      "mcu": "oams_mcu1",
+      "oams_idx": 1,
+      "ptfe_length": 2062.0,
+      "spool_id_1": 1,
+      "spool_id_2": 2,
+      "spool_id_3": 3
+     },
+     "oams_manager": {
+      "apply_pa_on_load": false,
+      "auto_create_spoolman_spools": true,
+      "auto_reload_on_runout": true,
+      "monitor_interval": 1.0,
+      "openams_config_path": "/home/pi/printer_data/config/oams.cfg",
+      "positioning_wait": 10.0,
+      "read_tag_on_insertion": true,
+      "read_tags_at_startup": true,
+      "reload_before_toolhead_distance": 0.0,
+      "toolhead_load_macro": "LOAD_FILAMENT",
+      "toolhead_unload_macro": "UNLOAD_FILAMENT"
+     },
+     "output_pin test_pin": {
+      "pin": "host:gpio16",
+      "pwm": false,
+      "shutdown_value": 0.0,
+      "value": 0.0
+     },
+     "pause_resume": {
+      "recover_velocity": 50.0
+     },
+     "printer": {
+      "kinematics": "corexy",
+      "max_accel": 6100.0,
+      "max_velocity": 300.0,
+      "max_z_accel": 350.0,
+      "max_z_velocity": 25.0,
+      "minimum_cruise_ratio": 0.5,
+      "square_corner_velocity": 5.0
+     },
+     "quad_gantry_level": {
+      "gantry_corners": [
+       [
+        -60.0,
+        -10.0
+       ],
+       [
+        410.0,
+        420.0
+       ]
+      ],
+      "horizontal_move_z": 5.0,
+      "max_adjust": 10.0,
+      "points": [
+       [
+        300.0,
+        25.0
+       ],
+       [
+        300.0,
+        275.0
+       ],
+       [
+        50.0,
+        275.0
+       ],
+       [
+        50.0,
+        25.0
+       ]
+      ],
+      "retries": 6,
+      "retry_tolerance": 0.02,
+      "speed": 2000.0
+     },
+     "resonance_tester": {
+      "accel_chip": "adxl345",
+      "accel_chip_z": "",
+      "accel_per_hz": 60.0,
+      "accel_per_hz_z": 15.0,
+      "hz_per_sec": 1.0,
+      "max_freq": 135.0,
+      "max_freq_z": 100.0,
+      "min_freq": 5.0,
+      "move_speed": 50.0,
+      "probe_points": [
+       [
+        175.0,
+        175.0,
+        10.0
+       ]
+      ],
+      "sweeping_accel": 400.0,
+      "sweeping_accel_z": 50.0,
+      "sweeping_period": 1.2
+     },
+     "respond": {
+      "default_prefix": "echo:",
+      "default_type": "echo"
+     },
+     "stepper_x": {
+      "dir_pin": "PF12",
+      "enable_pin": "!PF14",
+      "endstop_pin": "tmc2209_stepper_x:virtual_endstop",
+      "full_steps_per_rotation": 200,
+      "gear_ratio": [],
+      "homing_positive_dir": true,
+      "homing_retract_dist": 5.0,
+      "homing_retract_speed": 20.0,
+      "homing_speed": 20.0,
+      "microsteps": 256,
+      "position_endstop": 350.0,
+      "position_max": 350.0,
+      "position_min": 0.0,
+      "rotation_distance": 40.0,
+      "second_homing_speed": 10.0,
+      "step_pin": "PF13"
+     },
+     "stepper_y": {
+      "dir_pin": "PG1",
+      "enable_pin": "!PF15",
+      "endstop_pin": "tmc2209_stepper_y:virtual_endstop",
+      "full_steps_per_rotation": 200,
+      "gear_ratio": [],
+      "homing_positive_dir": true,
+      "homing_retract_dist": 5.0,
+      "homing_retract_speed": 20.0,
+      "homing_speed": 20.0,
+      "microsteps": 256,
+      "position_endstop": 348.0,
+      "position_max": 350.0,
+      "position_min": 0.0,
+      "rotation_distance": 40.0,
+      "second_homing_speed": 10.0,
+      "step_pin": "PG0"
+     },
+     "stepper_z": {
+      "dir_pin": "PG3",
+      "enable_pin": "!PG5",
+      "endstop_pin": "probe:z_virtual_endstop",
+      "full_steps_per_rotation": 200,
+      "gear_ratio": [
+       [
+        80.0,
+        16.0
+       ]
+      ],
+      "homing_positive_dir": false,
+      "homing_retract_dist": 0.0,
+      "homing_retract_speed": 8.0,
+      "homing_speed": 8.0,
+      "microsteps": 256,
+      "position_max": 310.0,
+      "position_min": -2.0,
+      "rotation_distance": 40.0,
+      "second_homing_speed": 8.0,
+      "step_pin": "PF11"
+     },
+     "stepper_z1": {
+      "dir_pin": "!PC1",
+      "enable_pin": "!PA0",
+      "full_steps_per_rotation": 200,
+      "gear_ratio": [
+       [
+        80.0,
+        16.0
+       ]
+      ],
+      "microsteps": 256,
+      "rotation_distance": 40.0,
+      "step_pin": "PG4"
+     },
+     "stepper_z2": {
+      "dir_pin": "PF10",
+      "enable_pin": "!PG2",
+      "full_steps_per_rotation": 200,
+      "gear_ratio": [
+       [
+        80.0,
+        16.0
+       ]
+      ],
+      "microsteps": 256,
+      "rotation_distance": 40.0,
+      "step_pin": "PF9"
+     },
+     "stepper_z3": {
+      "dir_pin": "!PF0",
+      "enable_pin": "!PF1",
+      "full_steps_per_rotation": 200,
+      "gear_ratio": [
+       [
+        80.0,
+        16.0
+       ]
+      ],
+      "microsteps": 256,
+      "rotation_distance": 40.0,
+      "step_pin": "!PC13"
+     },
+     "temperature_sensor ebb36": {
+      "max_temp": 99999999.9,
+      "min_temp": -273.15,
+      "sensor_mcu": "ebb36",
+      "sensor_type": "temperature_mcu"
+     },
+     "temperature_sensor fps": {
+      "max_temp": 99999999.9,
+      "min_temp": -273.15,
+      "sensor_mcu": "fps",
+      "sensor_type": "temperature_mcu"
+     },
+     "temperature_sensor oams": {
+      "hdc1080_report_time": 5,
+      "heater_enabled": false,
+      "humidity_offset": 0.0,
+      "humidity_resolution": 14,
+      "i2c_address": 64,
+      "i2c_bus": "i2c0",
+      "i2c_mcu": "oams_mcu1",
+      "i2c_speed": 200000,
+      "max_temp": 99999999.9,
+      "min_temp": -273.15,
+      "sensor_type": "HDC1080",
+      "simulate_supported_sensor_mainsail": true,
+      "temp_offset": 0.0,
+      "temp_resolution": 14
+     },
+     "temperature_sensor octopus": {
+      "max_temp": 100.0,
+      "min_temp": 0.0,
+      "sensor_mcu": "mcu",
+      "sensor_type": "temperature_mcu"
+     },
+     "temperature_sensor raspberry_pi": {
+      "max_temp": 100.0,
+      "min_temp": 10.0,
+      "sensor_path": "/sys/class/thermal/thermal_zone0/temp",
+      "sensor_type": "temperature_host"
+     },
+     "tmc2209 extruder": {
+      "driver_freewheel": 0,
+      "driver_hend": 0,
+      "driver_hstrt": 5,
+      "driver_iholddelay": 8,
+      "driver_multistep_filt": true,
+      "driver_pwm_autograd": true,
+      "driver_pwm_autoscale": true,
+      "driver_pwm_freq": 1,
+      "driver_pwm_grad": 14,
+      "driver_pwm_lim": 12,
+      "driver_pwm_ofs": 36,
+      "driver_pwm_reg": 8,
+      "driver_sedn": 0,
+      "driver_seimin": 0,
+      "driver_semax": 0,
+      "driver_semin": 0,
+      "driver_seup": 0,
+      "driver_sgthrs": 0,
+      "driver_tbl": 2,
+      "driver_toff": 3,
+      "driver_tpowerdown": 20,
+      "hold_current": 2.0,
+      "interpolate": false,
+      "run_current": 0.65,
+      "sense_resistor": 0.11,
+      "stealthchop_threshold": 0.0,
+      "uart_address": 0,
+      "uart_pin": "ebb36:PA15"
+     },
+     "tmc2209 stepper_x": {
+      "diag_pin": "PG6",
+      "driver_freewheel": 0,
+      "driver_hend": 0,
+      "driver_hstrt": 5,
+      "driver_iholddelay": 8,
+      "driver_multistep_filt": true,
+      "driver_pwm_autograd": true,
+      "driver_pwm_autoscale": true,
+      "driver_pwm_freq": 1,
+      "driver_pwm_grad": 14,
+      "driver_pwm_lim": 12,
+      "driver_pwm_ofs": 36,
+      "driver_pwm_reg": 8,
+      "driver_sedn": 0,
+      "driver_seimin": 0,
+      "driver_semax": 0,
+      "driver_semin": 0,
+      "driver_seup": 0,
+      "driver_sgthrs": 55,
+      "driver_tbl": 2,
+      "driver_toff": 3,
+      "driver_tpowerdown": 20,
+      "hold_current": 2.0,
+      "interpolate": false,
+      "run_current": 0.8,
+      "sense_resistor": 0.11,
+      "stealthchop_threshold": 0.0,
+      "uart_address": 0,
+      "uart_pin": "PC4"
+     },
+     "tmc2209 stepper_y": {
+      "diag_pin": "PG9",
+      "driver_freewheel": 0,
+      "driver_hend": 0,
+      "driver_hstrt": 5,
+      "driver_iholddelay": 8,
+      "driver_multistep_filt": true,
+      "driver_pwm_autograd": true,
+      "driver_pwm_autoscale": true,
+      "driver_pwm_freq": 1,
+      "driver_pwm_grad": 14,
+      "driver_pwm_lim": 12,
+      "driver_pwm_ofs": 36,
+      "driver_pwm_reg": 8,
+      "driver_sedn": 0,
+      "driver_seimin": 0,
+      "driver_semax": 0,
+      "driver_semin": 0,
+      "driver_seup": 0,
+      "driver_sgthrs": 55,
+      "driver_tbl": 2,
+      "driver_toff": 3,
+      "driver_tpowerdown": 20,
+      "hold_current": 2.0,
+      "interpolate": false,
+      "run_current": 0.8,
+      "sense_resistor": 0.11,
+      "stealthchop_threshold": 0.0,
+      "uart_address": 0,
+      "uart_pin": "PD11"
+     },
+     "tmc2209 stepper_z": {
+      "driver_freewheel": 0,
+      "driver_hend": 0,
+      "driver_hstrt": 5,
+      "driver_iholddelay": 8,
+      "driver_multistep_filt": true,
+      "driver_pwm_autograd": true,
+      "driver_pwm_autoscale": true,
+      "driver_pwm_freq": 1,
+      "driver_pwm_grad": 14,
+      "driver_pwm_lim": 12,
+      "driver_pwm_ofs": 36,
+      "driver_pwm_reg": 8,
+      "driver_sedn": 0,
+      "driver_seimin": 0,
+      "driver_semax": 0,
+      "driver_semin": 0,
+      "driver_seup": 0,
+      "driver_sgthrs": 0,
+      "driver_tbl": 2,
+      "driver_toff": 3,
+      "driver_tpowerdown": 20,
+      "hold_current": 2.0,
+      "interpolate": true,
+      "run_current": 0.8,
+      "sense_resistor": 0.11,
+      "stealthchop_threshold": 999999.0,
+      "uart_address": 0,
+      "uart_pin": "PC6"
+     },
+     "tmc2209 stepper_z1": {
+      "driver_freewheel": 0,
+      "driver_hend": 0,
+      "driver_hstrt": 5,
+      "driver_iholddelay": 8,
+      "driver_multistep_filt": true,
+      "driver_pwm_autograd": true,
+      "driver_pwm_autoscale": true,
+      "driver_pwm_freq": 1,
+      "driver_pwm_grad": 14,
+      "driver_pwm_lim": 12,
+      "driver_pwm_ofs": 36,
+      "driver_pwm_reg": 8,
+      "driver_sedn": 0,
+      "driver_seimin": 0,
+      "driver_semax": 0,
+      "driver_semin": 0,
+      "driver_seup": 0,
+      "driver_sgthrs": 0,
+      "driver_tbl": 2,
+      "driver_toff": 3,
+      "driver_tpowerdown": 20,
+      "hold_current": 2.0,
+      "interpolate": true,
+      "run_current": 0.8,
+      "sense_resistor": 0.11,
+      "stealthchop_threshold": 999999.0,
+      "uart_address": 0,
+      "uart_pin": "PC7"
+     },
+     "tmc2209 stepper_z2": {
+      "driver_freewheel": 0,
+      "driver_hend": 0,
+      "driver_hstrt": 5,
+      "driver_iholddelay": 8,
+      "driver_multistep_filt": true,
+      "driver_pwm_autograd": true,
+      "driver_pwm_autoscale": true,
+      "driver_pwm_freq": 1,
+      "driver_pwm_grad": 14,
+      "driver_pwm_lim": 12,
+      "driver_pwm_ofs": 36,
+      "driver_pwm_reg": 8,
+      "driver_sedn": 0,
+      "driver_seimin": 0,
+      "driver_semax": 0,
+      "driver_semin": 0,
+      "driver_seup": 0,
+      "driver_sgthrs": 0,
+      "driver_tbl": 2,
+      "driver_toff": 3,
+      "driver_tpowerdown": 20,
+      "hold_current": 2.0,
+      "interpolate": true,
+      "run_current": 0.8,
+      "sense_resistor": 0.11,
+      "stealthchop_threshold": 999999.0,
+      "uart_address": 0,
+      "uart_pin": "PF2"
+     },
+     "tmc2209 stepper_z3": {
+      "driver_freewheel": 0,
+      "driver_hend": 0,
+      "driver_hstrt": 5,
+      "driver_iholddelay": 8,
+      "driver_multistep_filt": true,
+      "driver_pwm_autograd": true,
+      "driver_pwm_autoscale": true,
+      "driver_pwm_freq": 1,
+      "driver_pwm_grad": 14,
+      "driver_pwm_lim": 12,
+      "driver_pwm_ofs": 36,
+      "driver_pwm_reg": 8,
+      "driver_sedn": 0,
+      "driver_seimin": 0,
+      "driver_semax": 0,
+      "driver_semin": 0,
+      "driver_seup": 0,
+      "driver_sgthrs": 0,
+      "driver_tbl": 2,
+      "driver_toff": 3,
+      "driver_tpowerdown": 20,
+      "hold_current": 2.0,
+      "interpolate": true,
+      "run_current": 0.8,
+      "sense_resistor": 0.11,
+      "stealthchop_threshold": 999999.0,
+      "uart_address": 0,
+      "uart_pin": "PE4"
+     },
+     "verify_heater extruder": {
+      "check_gain_time": 20.0,
+      "enable": true,
+      "heating_gain": 2.0,
+      "hysteresis": 5.0,
+      "max_error": 120.0
+     },
+     "verify_heater heater_bed": {
+      "check_gain_time": 60.0,
+      "enable": true,
+      "heating_gain": 2.0,
+      "hysteresis": 5.0,
+      "max_error": 120.0
+     },
+     "verify_heater the_filter": {
+      "check_gain_time": 20.0,
+      "enable": false,
+      "heating_gain": 2.0,
+      "hysteresis": 5.0,
+      "max_error": 120.0
+     },
+     "virtual_sdcard": {
+      "on_error_gcode": "CANCEL_PRINT",
+      "path": "~/printer_data/gcodes"
+     }
+    },
+    "warnings": [
+     {
+      "feature": "i2c_transfer",
+      "mcu": "oams_mcu1",
+      "message": "MCU 'oams_mcu1' has deprecated code (it is missing feature 'i2c_transfer'). Recompiling and flashing is recommended (MCU version 'oams_2.0.26.1-beta-9d0bfd0', host version 'v0.13.0-867-gca147efad-dirty').",
+      "type": "deprecated_mcu_code"
+     },
+     {
+      "feature": "get_canbus_status",
+      "mcu": "fps",
+      "message": "MCU 'fps' has deprecated code (it is missing feature 'get_canbus_status'). Recompiling and flashing is recommended (MCU version 'v0.12.0-158-g36f9b26e', host version 'v0.13.0-867-gca147efad-dirty').",
+      "type": "deprecated_mcu_code"
+     }
+    ]
+   },
+   "fps": {
+    "fps_value": 0.2058119658119658
+   },
+   "mcu": {
+    "last_stats": {
+     "bytes_invalid": 0,
+     "bytes_read": 370061,
+     "bytes_retransmit": 9,
+     "bytes_write": 2147666,
+     "freq": 180001364,
+     "mcu_awake": 0.502,
+     "mcu_task_avg": 0.000151,
+     "mcu_task_stddev": 0.0,
+     "ready_bytes": 0,
+     "receive_seq": 48171,
+     "retransmit_seq": 2,
+     "rto": 0.025,
+     "rttvar": 0.001,
+     "send_seq": 48171,
+     "srtt": 0.001,
+     "upcoming_bytes": 0
+    },
+    "mcu_build_versions": "gcc: (15:8-2019-q3-1+b1) 8.3.1 20190703 (release) [gcc-8-branch revision 273027] binutils: (2.35.2-2+14+b2) 2.35.2",
+    "mcu_constants": {
+     "ADC_MAX": 4095,
+     "BUS_PINS_i2c1": "PB6,PB7",
+     "BUS_PINS_i2c1a": "PB8,PB9",
+     "BUS_PINS_i2c2": "PB10,PB11",
+     "BUS_PINS_i2c3": "PA8,PC9",
+     "BUS_PINS_sdio": "PC12,PD2,PC8,PC9,PC10,PC11",
+     "BUS_PINS_spi1": "PA6,PA7,PA5",
+     "BUS_PINS_spi1_PA6_PA7_PA5": "PA6,PA7,PA5",
+     "BUS_PINS_spi1_PB4_PB5_PB3": "PB4,PB5,PB3",
+     "BUS_PINS_spi1a": "PB4,PB5,PB3",
+     "BUS_PINS_spi2": "PB14,PB15,PB13",
+     "BUS_PINS_spi2_PB14_PB15_PB13": "PB14,PB15,PB13",
+     "BUS_PINS_spi2_PC2_PC3_PB10": "PC2,PC3,PB10",
+     "BUS_PINS_spi2_PI2_PI3_PI1": "PI2,PI3,PI1",
+     "BUS_PINS_spi2a": "PC2,PC3,PB10",
+     "BUS_PINS_spi2b": "PI2,PI3,PI1",
+     "BUS_PINS_spi3": "PB4,PB5,PB3",
+     "BUS_PINS_spi3_PB4_PB5_PB3": "PB4,PB5,PB3",
+     "BUS_PINS_spi3_PC11_PC12_PC10": "PC11,PC12,PC10",
+     "BUS_PINS_spi3a": "PC11,PC12,PC10",
+     "BUS_PINS_spi4": "PE13,PE14,PE12",
+     "BUS_PINS_spi4_PE13_PE14_PE12": "PE13,PE14,PE12",
+     "CLOCK_FREQ": 180000000,
+     "MCU": "stm32f446xx",
+     "PWM_MAX": 32768,
+     "RESERVE_PINS_USB": "PA11,PA12",
+     "RESERVE_PINS_crystal": "PH0,PH1",
+     "STATS_SUMSQ_BASE": 256,
+     "STEPPER_OPTIMIZED_EDGE": 23,
+     "STEPPER_STEP_BOTH_EDGE": 1
+    },
+    "mcu_kconfig": null,
+    "mcu_version": "v0.13.0-703-g8a93eb73f"
+   },
+   "mcu beacon": {
+    "last_stats": {
+     "adj": 31999455,
+     "bytes_invalid": 0,
+     "bytes_read": 63741,
+     "bytes_retransmit": 9,
+     "bytes_write": 1386,
+     "freq": 31999581,
+     "mcu_awake": 0.0,
+     "mcu_task_avg": 0.0,
+     "mcu_task_stddev": 0.0,
+     "ready_bytes": 0,
+     "receive_seq": 218,
+     "retransmit_seq": 2,
+     "rto": 0.025,
+     "rttvar": 0.0,
+     "send_seq": 218,
+     "srtt": 0.0,
+     "upcoming_bytes": 0
+    },
+    "mcu_build_versions": "",
+    "mcu_constants": {
+     "ADC_MAX": 4095,
+     "BEACON_ADC_SMOOTH_COUNT": 16,
+     "BEACON_REV": "D",
+     "CLOCK_FREQ": 32000000,
+     "MCU": "beacon",
+     "STATS_SUMSQ_BASE": 256
+    },
+    "mcu_kconfig": null,
+    "mcu_version": "Beacon 2.1.0"
+   },
+   "mcu ebb36": {
+    "last_stats": {
+     "adj": 63999529,
+     "bytes_invalid": 0,
+     "bytes_read": 31740,
+     "bytes_retransmit": 0,
+     "bytes_write": 3856,
+     "freq": 63999744,
+     "mcu_awake": 0.003,
+     "mcu_task_avg": 2e-05,
+     "mcu_task_stddev": 1.4e-05,
+     "ready_bytes": 0,
+     "receive_seq": 547,
+     "retransmit_seq": 0,
+     "rto": 0.025,
+     "rttvar": 0.0,
+     "send_seq": 547,
+     "srtt": 0.001,
+     "upcoming_bytes": 0
+    },
+    "mcu_build_versions": "gcc: (15:8-2019-q3-1+b1) 8.3.1 20190703 (release) [gcc-8-branch revision 273027] binutils: (2.35.2-2+14+b2) 2.35.2",
+    "mcu_constants": {
+     "ADC_MAX": 4095,
+     "BUS_PINS_i2c1_PA9_PA10": "PA9,PA10",
+     "BUS_PINS_i2c1_PB6_PB7": "PB6,PB7",
+     "BUS_PINS_i2c1_PB8_PB9": "PB8,PB9",
+     "BUS_PINS_i2c2_PA7_PA6": "PA7,PA6",
+     "BUS_PINS_i2c2_PB10_PB11": "PB10,PB11",
+     "BUS_PINS_i2c2_PB13_PB14": "PB13,PB14",
+     "BUS_PINS_i2c3_PA7_PA6": "PA7,PA6",
+     "BUS_PINS_i2c3_PB3_PB4": "PB3,PB4",
+     "BUS_PINS_i2c3_PC0_PC1": "PC0,PC1",
+     "BUS_PINS_spi1": "PA6,PA7,PA5",
+     "BUS_PINS_spi1_PA6_PA7_PA5": "PA6,PA7,PA5",
+     "BUS_PINS_spi1_PB4_PB5_PB3": "PB4,PB5,PB3",
+     "BUS_PINS_spi1a": "PB4,PB5,PB3",
+     "BUS_PINS_spi2": "PB14,PB15,PB13",
+     "BUS_PINS_spi2_PB14_PB15_PB13": "PB14,PB15,PB13",
+     "BUS_PINS_spi2_PB2_PB11_PB10": "PB2,PB11,PB10",
+     "BUS_PINS_spi2_PB6_PB7_PB8": "PB6,PB7,PB8",
+     "BUS_PINS_spi2_PC2_PC3_PB10": "PC2,PC3,PB10",
+     "BUS_PINS_spi2a": "PC2,PC3,PB10",
+     "BUS_PINS_spi3": "PB4,PB5,PB3",
+     "BUS_PINS_spi3_PB4_PB5_PB3": "PB4,PB5,PB3",
+     "BUS_PINS_spi3_PC11_PC12_PC10": "PC11,PC12,PC10",
+     "CANBUS_FREQUENCY": 1000000,
+     "CLOCK_FREQ": 64000000,
+     "MCU": "stm32g0b1xx",
+     "PWM_MAX": 32768,
+     "RECEIVE_WINDOW": 192,
+     "RESERVE_PINS_CAN": "PB0,PB1",
+     "RESERVE_PINS_crystal": "PF0,PF1",
+     "STATS_SUMSQ_BASE": 256,
+     "STEPPER_OPTIMIZED_EDGE": 8,
+     "STEPPER_STEP_BOTH_EDGE": 1
+    },
+    "mcu_kconfig": null,
+    "mcu_version": "v0.13.0-832-gc0c7ef2a5"
+   },
+   "mcu fps": {
+    "last_stats": {
+     "adj": 47998891,
+     "bytes_invalid": 0,
+     "bytes_read": 42667,
+     "bytes_retransmit": 0,
+     "bytes_write": 1900,
+     "freq": 47999029,
+     "mcu_awake": 0.325,
+     "mcu_task_avg": 1.4e-05,
+     "mcu_task_stddev": 5e-06,
+     "ready_bytes": 0,
+     "receive_seq": 285,
+     "retransmit_seq": 0,
+     "rto": 0.025,
+     "rttvar": 0.0,
+     "send_seq": 285,
+     "srtt": 0.0,
+     "upcoming_bytes": 0
+    },
+    "mcu_build_versions": "gcc: (15:12.2.rel1-1) 12.2.1 20221205 binutils: (2.39-1ubuntu1+17ubuntu1) 2.39",
+    "mcu_constants": {
+     "ADC_MAX": 4095,
+     "BUS_PINS_i2c1": "PB6,PB7",
+     "BUS_PINS_i2c1_PB6_PB7": "PB6,PB7",
+     "BUS_PINS_i2c1_PB8_PB9": "PB8,PB9",
+     "BUS_PINS_i2c1_PF1_PF0": "PF1,PF0",
+     "BUS_PINS_i2c1a": "PF1,PF0",
+     "BUS_PINS_spi1": "PA6,PA7,PA5",
+     "BUS_PINS_spi1a": "PB4,PB5,PB3",
+     "BUS_PINS_spi2": "PB14,PB15,PB13",
+     "BUS_PINS_spi2a": "PC2,PC3,PB10",
+     "CANBUS_BRIDGE": 1,
+     "CLOCK_FREQ": 48000000,
+     "MCU": "stm32f072xb",
+     "PWM_MAX": 255,
+     "RECEIVE_WINDOW": 192,
+     "RESERVE_PINS_CAN": "PB8,PB9",
+     "RESERVE_PINS_USB": "PA11,PA12",
+     "RESERVE_PINS_crystal": "PF0,PF1",
+     "STATS_SUMSQ_BASE": 256,
+     "STEPPER_BOTH_EDGE": 1
+    },
+    "mcu_kconfig": null,
+    "mcu_version": "v0.12.0-158-g36f9b26e"
+   },
+   "mcu host": {
+    "last_stats": {
+     "adj": 49999477,
+     "bytes_invalid": 0,
+     "bytes_read": 8094,
+     "bytes_retransmit": 0,
+     "bytes_write": 1919,
+     "freq": 49999630,
+     "mcu_awake": 0.0,
+     "mcu_task_avg": 7e-06,
+     "mcu_task_stddev": 9e-06,
+     "ready_bytes": 0,
+     "receive_seq": 286,
+     "retransmit_seq": 0,
+     "rto": 0.025,
+     "rttvar": 0.0,
+     "send_seq": 286,
+     "srtt": 0.0,
+     "upcoming_bytes": 0
+    },
+    "mcu_build_versions": "gcc: (Debian 10.2.1-6) 10.2.1 20210110 binutils: (GNU Binutils for Debian) 2.35.2",
+    "mcu_constants": {
+     "ADC_MAX": 4095,
+     "CLOCK_FREQ": 50000000,
+     "MCU": "linux",
+     "PCA9685_MAX": 4096,
+     "PWM_MAX": 32768,
+     "STATS_SUMSQ_BASE": 256
+    },
+    "mcu_kconfig": null,
+    "mcu_version": "v0.12.0-472-g5cb97efd6"
+   },
+   "mcu oams_mcu1": {
+    "last_stats": {
+     "adj": 47999166,
+     "bytes_invalid": 0,
+     "bytes_read": 496599,
+     "bytes_retransmit": 0,
+     "bytes_write": 333535,
+     "freq": 47999530,
+     "mcu_awake": 0.026,
+     "mcu_task_avg": 2.8e-05,
+     "mcu_task_stddev": 3e-06,
+     "ready_bytes": 0,
+     "receive_seq": 33321,
+     "retransmit_seq": 0,
+     "rto": 0.025,
+     "rttvar": 0.001,
+     "send_seq": 33322,
+     "srtt": 0.003,
+     "upcoming_bytes": 0
+    },
+    "mcu_build_versions": "",
+    "mcu_constants": {
+     "BUS_PINS_i2c0": "PB6,PB7",
+     "CLOCK_FREQ": 48000000,
+     "MCU": "oams-stm32f072rbt6",
+     "MCU_VERSION": "1.0",
+     "STATS_SUMSQ_BASE": 256,
+     "active": 0,
+     "off": 3,
+     "passive": 2,
+     "warn": 1
+    },
+    "mcu_kconfig": null,
+    "mcu_version": "oams_2.0.26.1-beta-9d0bfd0"
+   },
+   "mfrc522 openams": {
+    "oams": 1,
+    "readers": [
+     {
+      "block": null,
+      "error": "card communication did not complete",
+      "filament": null,
+      "last_read_status": "ERROR",
+      "last_read_time": 4427.529424842,
+      "oams": 1,
+      "present": false,
+      "rfid_card": 0,
+      "uid": null,
+      "version": 161
+     },
+     {
+      "block": null,
+      "error": "soft reset timed out (CommandReg=0xff)",
+      "filament": null,
+      "last_read_status": "ERROR",
+      "last_read_time": 4427.529424842,
+      "oams": 1,
+      "present": false,
+      "rfid_card": 1,
+      "uid": null,
+      "version": null
+     }
+    ]
+   },
+   "oams oams1": {
+    "bay_count": 4,
+    "bays": [
+     {
+      "calibrated": true,
+      "calibration_state": "configured",
+      "index": 0,
+      "link_source": "none",
+      "loaded": false,
+      "path_length_mm": 1808.7719298245615,
+      "positioning": false,
+      "ready": false,
+      "spool_hint": null,
+      "spool_id": null,
+      "tag": null
+     },
+     {
+      "calibrated": true,
+      "calibration_state": "configured",
+      "index": 1,
+      "link_source": "manual",
+      "loaded": false,
+      "path_length_mm": 1808.7719298245615,
+      "positioning": false,
+      "ready": true,
+      "spool_hint": null,
+      "spool_id": 1,
+      "tag": null
+     },
+     {
+      "calibrated": true,
+      "calibration_state": "configured",
+      "index": 2,
+      "link_source": "manual",
+      "loaded": false,
+      "path_length_mm": 1808.7719298245615,
+      "positioning": false,
+      "ready": true,
+      "spool_hint": null,
+      "spool_id": 2,
+      "tag": null
+     },
+     {
+      "calibrated": true,
+      "calibration_state": "configured",
+      "index": 3,
+      "link_source": "manual",
+      "loaded": false,
+      "path_length_mm": 1808.7719298245615,
+      "positioning": false,
+      "ready": true,
+      "spool_hint": null,
+      "spool_id": 3,
+      "tag": null
+     }
+    ],
+    "calibration": {
+     "path_length_mm": 1808.7719298245615,
+     "state": "configured"
+    },
+    "capabilities": {
+     "autonomous_follower": true,
+     "bays": 4,
+     "board_name": "oams-stm32f072",
+     "build_version": null,
+     "device_owned_motion_control": true,
+     "display_name": "AMS 1",
+     "dryer": false,
+     "dryer_independent_zones": false,
+     "dryer_module_count": 0,
+     "dryer_target_max_c": null,
+     "dryer_target_min_c": null,
+     "dryer_temperature_sensor_count": 0,
+     "dryer_zone_count": 0,
+     "error_led_control": true,
+     "family": "ams1",
+     "fan_count": 0,
+     "feed_motor_control": "device_owned_speed_current",
+     "firmware_capability_schema": 0,
+     "firmware_version": "1.0",
+     "heater_control": false,
+     "heater_count": 0,
+     "host_sensor_configuration": true,
+     "hub_hes_calibration": true,
+     "logger_control": true,
+     "ptfe_calibration": true,
+     "rfid": true,
+     "rfid_material_metadata": "host_owned",
+     "rfid_reader_scope": "per_bay",
+     "rfid_uid_inventory": true,
+     "runtime_pid_tuning": true,
+     "schema_version": 1,
+     "spool_drive_count": 4,
+     "spool_rotation_during_drying": false,
+     "telemetry": false,
+     "vent_count": 0
+    },
+    "capability_warnings": [],
+    "connected": true,
+    "current_kd": 0.0,
+    "current_ki": 0.0,
+    "current_kp": 3.0,
+    "current_spool": null,
+    "current_target": 0.3,
+    "dryer": null,
+    "encoder_clicks": 0,
+    "environment": {
+     "rh_pct": 23.86474609375,
+     "source": "hdc1080",
+     "temp_c": 26.63
+    },
+    "f1s_hes_value": [
+     0,
+     1,
+     1,
+     1
+    ],
+    "f1s_hes_value_0": 0,
+    "f1s_hes_value_1": 1,
+    "f1s_hes_value_2": 1,
+    "f1s_hes_value_3": 1,
+    "family": "ams1",
+    "faults": [],
+    "follower_uncertain": false,
+    "fps_lower_threshold": 0.3,
+    "fps_target": 0.5,
+    "fps_upper_threshold": 0.7,
+    "fps_value": 0.12063492089509964,
+    "gen_matched_protocol": false,
+    "hub_hes_value": [
+     0,
+     0,
+     0,
+     0
+    ],
+    "hub_hes_value_0": 0,
+    "hub_hes_value_1": 0,
+    "hub_hes_value_2": 0,
+    "hub_hes_value_3": 0,
+    "i_value": 0.0,
+    "identity": {
+     "board": "oams-stm32f072",
+     "firmware": "1.0",
+     "serial": "0a0b0c0d0e00"
+    },
+    "kd": 0.0,
+    "ki": 0.0,
+    "kp": 6.0,
+    "oams_idx": 1,
+    "protocol_version": null,
+    "schema_version": 1,
+    "supported_actions": [
+     "clear_errors",
+     "load",
+     "unload",
+     "follower",
+     "configure_pid",
+     "calibrate_ptfe",
+     "calibrate_hub_hes"
+    ],
+    "telemetry": {}
+   },
+   "oams_manager": {
+    "api_version": 1,
+    "commands": {
+     "cancel": "OAMSM_LOAD_FILAMENT_CANCEL",
+     "load": "OPENAMS_LOAD",
+     "reset": "OAMSM_CLEAR_ERRORS",
+     "unload": "OPENAMS_UNLOAD"
+    },
+    "current_group": null,
+    "devices": {
+     "oams1": {
+      "bay_count": 4,
+      "bays": [
+       {
+        "calibrated": true,
+        "calibration_state": "configured",
+        "index": 0,
+        "link_source": "none",
+        "loaded": false,
+        "path_length_mm": 1808.7719298245615,
+        "positioning": false,
+        "ready": false,
+        "spool_hint": null,
+        "spool_id": null,
+        "supported_actions": [],
+        "tag": null
+       },
+       {
+        "calibrated": true,
+        "calibration_state": "configured",
+        "index": 1,
+        "link_source": "manual",
+        "loaded": false,
+        "path_length_mm": 1808.7719298245615,
+        "positioning": false,
+        "ready": true,
+        "spool_hint": null,
+        "spool_id": 1,
+        "supported_actions": [
+         "load",
+         "calibrate_ptfe",
+         "set_spool",
+         "clear_spool"
+        ],
+        "tag": null
+       },
+       {
+        "calibrated": true,
+        "calibration_state": "configured",
+        "index": 2,
+        "link_source": "manual",
+        "loaded": false,
+        "path_length_mm": 1808.7719298245615,
+        "positioning": false,
+        "ready": true,
+        "spool_hint": null,
+        "spool_id": 2,
+        "supported_actions": [
+         "load",
+         "calibrate_ptfe",
+         "set_spool",
+         "clear_spool"
+        ],
+        "tag": null
+       },
+       {
+        "calibrated": true,
+        "calibration_state": "configured",
+        "index": 3,
+        "link_source": "manual",
+        "loaded": false,
+        "path_length_mm": 1808.7719298245615,
+        "positioning": false,
+        "ready": true,
+        "spool_hint": null,
+        "spool_id": 3,
+        "supported_actions": [
+         "load",
+         "calibrate_ptfe",
+         "set_spool",
+         "clear_spool"
+        ],
+        "tag": null
+       }
+      ],
+      "calibration": {
+       "path_length_mm": 1808.7719298245615,
+       "state": "configured"
+      },
+      "capabilities": {
+       "autonomous_follower": true,
+       "bays": 4,
+       "board_name": "oams-stm32f072",
+       "build_version": null,
+       "device_owned_motion_control": true,
+       "display_name": "AMS 1",
+       "dryer": false,
+       "dryer_independent_zones": false,
+       "dryer_module_count": 0,
+       "dryer_target_max_c": null,
+       "dryer_target_min_c": null,
+       "dryer_temperature_sensor_count": 0,
+       "dryer_zone_count": 0,
+       "error_led_control": true,
+       "family": "ams1",
+       "fan_count": 0,
+       "feed_motor_control": "device_owned_speed_current",
+       "firmware_capability_schema": 0,
+       "firmware_version": "1.0",
+       "heater_control": false,
+       "heater_count": 0,
+       "host_sensor_configuration": true,
+       "hub_hes_calibration": true,
+       "logger_control": true,
+       "ptfe_calibration": true,
+       "rfid": true,
+       "rfid_material_metadata": "host_owned",
+       "rfid_reader_scope": "per_bay",
+       "rfid_uid_inventory": true,
+       "runtime_pid_tuning": true,
+       "schema_version": 1,
+       "spool_drive_count": 4,
+       "spool_rotation_during_drying": false,
+       "telemetry": false,
+       "vent_count": 0
+      },
+      "capability_warnings": [],
+      "connected": true,
+      "current_kd": 0.0,
+      "current_ki": 0.0,
+      "current_kp": 3.0,
+      "current_spool": null,
+      "current_target": 0.3,
+      "dryer": null,
+      "encoder_clicks": 0,
+      "environment": {
+       "rh_pct": 23.86474609375,
+       "source": "hdc1080",
+       "temp_c": 26.63
+      },
+      "f1s_hes_value": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "f1s_hes_value_0": 0,
+      "f1s_hes_value_1": 1,
+      "f1s_hes_value_2": 1,
+      "f1s_hes_value_3": 1,
+      "family": "ams1",
+      "faults": [],
+      "follower_uncertain": false,
+      "fps_lower_threshold": 0.3,
+      "fps_target": 0.5,
+      "fps_upper_threshold": 0.7,
+      "fps_value": 0.12063492089509964,
+      "gen_matched_protocol": false,
+      "hub_hes_value": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "hub_hes_value_0": 0,
+      "hub_hes_value_1": 0,
+      "hub_hes_value_2": 0,
+      "hub_hes_value_3": 0,
+      "i_value": 0.0,
+      "identity": {
+       "board": "oams-stm32f072",
+       "firmware": "1.0",
+       "serial": "0a0b0c0d0e00"
+      },
+      "kd": 0.0,
+      "ki": 0.0,
+      "kp": 6.0,
+      "oams_idx": 1,
+      "protocol_version": null,
+      "schema_version": 1,
+      "supported_actions": [
+       "clear_errors",
+       "load",
+       "unload",
+       "follower",
+       "configure_pid",
+       "calibrate_ptfe",
+       "calibrate_hub_hes"
+      ],
+      "telemetry": {}
+     }
+    },
+    "groups": [
+     {
+      "lane": "fps",
+      "name": "T0",
+      "slots": [
+       0
+      ]
+     },
+     {
+      "lane": "fps",
+      "name": "T1",
+      "slots": [
+       1
+      ]
+     },
+     {
+      "lane": "fps",
+      "name": "T2",
+      "slots": [
+       2
+      ]
+     },
+     {
+      "lane": "fps",
+      "name": "T3",
+      "slots": [
+       3
+      ]
+     }
+    ],
+    "lanes": [
+     {
+      "current_group": null,
+      "current_slot": null,
+      "direction": 1,
+      "following": false,
+      "id": "fps",
+      "message": null,
+      "pressure": 0.2,
+      "set_point": 0.5,
+      "state": "unloaded"
+     }
+    ],
+    "lanes_by_fps": {
+     "fps": {
+      "current_slot": null,
+      "direction": 1,
+      "extruder": "extruder",
+      "following": false,
+      "group": null,
+      "message": null,
+      "motion_settled": true,
+      "motion_stage": null,
+      "op": "UNLOADED",
+      "pressure": 0.2,
+      "reload_target": null,
+      "runout": "idle",
+      "runout_from": null,
+      "set_point": 0.5,
+      "since": 37.231230551,
+      "stage": null,
+      "state": "unloaded",
+      "unit": null
+     }
+    },
+    "ready": true,
+    "schema": "openams.manager",
+    "schema_version": 2,
+    "settings": {
+     "apply_pa_on_load": false,
+     "auto_create_spoolman_spools": true,
+     "auto_reload_on_runout": true,
+     "read_tag_on_insertion": true,
+     "read_tags_at_startup": true
+    },
+    "topology": {
+     "fps": [
+      "fps"
+     ],
+     "groups": {
+      "T0": {
+       "bays": [
+        "oams1-0"
+       ],
+       "lane": "fps"
+      },
+      "T1": {
+       "bays": [
+        "oams1-1"
+       ],
+       "lane": "fps"
+      },
+      "T2": {
+       "bays": [
+        "oams1-2"
+       ],
+       "lane": "fps"
+      },
+      "T3": {
+       "bays": [
+        "oams1-3"
+       ],
+       "lane": "fps"
+      }
+     },
+     "oams": {
+      "oams1": {
+       "bays": 4,
+       "capabilities": {
+        "autonomous_follower": true,
+        "bays": 4,
+        "board_name": "oams-stm32f072",
+        "build_version": null,
+        "device_owned_motion_control": true,
+        "display_name": "AMS 1",
+        "dryer": false,
+        "dryer_independent_zones": false,
+        "dryer_module_count": 0,
+        "dryer_target_max_c": null,
+        "dryer_target_min_c": null,
+        "dryer_temperature_sensor_count": 0,
+        "dryer_zone_count": 0,
+        "error_led_control": true,
+        "family": "ams1",
+        "fan_count": 0,
+        "feed_motor_control": "device_owned_speed_current",
+        "firmware_capability_schema": 0,
+        "firmware_version": "1.0",
+        "heater_control": false,
+        "heater_count": 0,
+        "host_sensor_configuration": true,
+        "hub_hes_calibration": true,
+        "logger_control": true,
+        "ptfe_calibration": true,
+        "rfid": true,
+        "rfid_material_metadata": "host_owned",
+        "rfid_reader_scope": "per_bay",
+        "rfid_uid_inventory": true,
+        "runtime_pid_tuning": true,
+        "schema_version": 1,
+        "spool_drive_count": 4,
+        "spool_rotation_during_drying": false,
+        "telemetry": false,
+        "vent_count": 0
+       },
+       "family": "ams1",
+       "idx": 1,
+       "kind": "oams",
+       "lane": "fps"
+      }
+     },
+     "schema_version": 1
+    },
+    "units": [
+     {
+      "connected": true,
+      "id": "1",
+      "kind": "oams",
+      "lane": "fps",
+      "name": "oams1",
+      "slots": [
+       {
+        "bay": 0,
+        "id": 0,
+        "loaded": false,
+        "ready": false
+       },
+       {
+        "bay": 1,
+        "id": 1,
+        "loaded": false,
+        "ready": true
+       },
+       {
+        "bay": 2,
+        "id": 2,
+        "loaded": false,
+        "ready": true
+       },
+       {
+        "bay": 3,
+        "id": 3,
+        "loaded": false,
+        "ready": true
+       }
+      ],
+      "topology": "hub"
+     }
+    ]
+   },
+   "openams_ui oams1": {
+    "act": [],
+    "bays": [
+     {
+      "a": "",
+      "cal": "c",
+      "id": 0,
+      "s": "e",
+      "sp": null
+     },
+     {
+      "a": "lcad",
+      "cal": "c",
+      "id": 1,
+      "s": "r",
+      "sp": {
+       "id": 1,
+       "src": "m"
+      }
+     },
+     {
+      "a": "lcad",
+      "cal": "c",
+      "id": 2,
+      "s": "r",
+      "sp": {
+       "id": 2,
+       "src": "m"
+      }
+     },
+     {
+      "a": "lcad",
+      "cal": "c",
+      "id": 3,
+      "s": "r",
+      "sp": {
+       "id": 3,
+       "src": "m"
+      }
+     }
+    ],
+    "cal": "c",
+    "dryer": null,
+    "env": {
+     "rh": 24,
+     "t": 27
+    },
+    "family": "ams1",
+    "fault": null,
+    "groups": [
+     {
+      "b": [
+       "oams1-0"
+      ],
+      "n": "T0",
+      "s": "e"
+     },
+     {
+      "b": [
+       "oams1-1"
+      ],
+      "n": "T1",
+      "s": "r"
+     },
+     {
+      "b": [
+       "oams1-2"
+      ],
+      "n": "T2",
+      "s": "r"
+     },
+     {
+      "b": [
+       "oams1-3"
+      ],
+      "n": "T3",
+      "s": "r"
+     }
+    ],
+    "idx": 1,
+    "lane": {
+     "bay": null,
+     "ext": "extruder",
+     "from": null,
+     "group": null,
+     "id": "fps",
+     "ms": true,
+     "op": "UNLOADED",
+     "runout": "idle",
+     "stage": null,
+     "to": null
+    },
+    "nf": 0,
+    "online": true,
+    "ready": true,
+    "serial": "0a0b0c0d0e00",
+    "unit": "oams1",
+    "v": 1
+   },
+   "pause_resume": {
+    "is_paused": false
+   },
+   "print_stats": {
+    "filament_used": 0.0,
+    "filename": "",
+    "info": {
+     "current_layer": null,
+     "total_layer": null
+    },
+    "message": "",
+    "print_duration": 0.0,
+    "state": "standby",
+    "total_duration": 0.0
+   },
+   "temperature_sensor oams": {
+    "measured_max_temp": 26.75,
+    "measured_min_temp": 26.46,
+    "temperature": 26.63
+   },
+   "webhooks": {
+    "state": "ready",
+    "state_message": "Printer is ready"
+   }
+  }
+ }
+}

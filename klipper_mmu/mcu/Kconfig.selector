@@ -1,0 +1,657 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Shared-drive selector machines (include/klipper_mmu/selector.h): one gear
+# driver feeds every lane through a selector stepper and/or servo. Every
+# numeric default below is Happy Hare's own value, pinned at
+# build/upstream/happy-hare-c54c736 and cited file:line in its help text, or
+# taken from a device dossier (docs/devices/<device>.json) derived from that
+# same tree. LINEAR's per-gate positions are the one exception: Happy Hare
+# never ships a measured LINEAR offset (only MMU_CALIBRATE_SELECTOR
+# measures one), so the default there is an ESTIMATE computed from Happy
+# Hare's own CAD geometry model -- the same terms
+# _get_max_selector_movement uses (mmu_linear_selector.py:338-355) -- not a
+# measurement. Owner decision (2026-09-26 follow-up): ship that CAD
+# estimate rather than leave the setting empty, so a fresh LINEAR device
+# can start; the help text says plainly to recalibrate on real hardware.
+
+choice
+    prompt "Selector kind"
+    default KLIPPER_MMU_SELECTOR_KIND_LINEAR if KLIPPER_MMU_DEVICE_ERCF_1_1 || KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0 || KLIPPER_MMU_DEVICE_TRADRACK
+    default KLIPPER_MMU_SELECTOR_KIND_ROTARY if KLIPPER_MMU_DEVICE_CHAMELEON_3D || KLIPPER_MMU_DEVICE_MMX6 || KLIPPER_MMU_DEVICE_HTLF
+    default KLIPPER_MMU_SELECTOR_KIND_SERVO if KLIPPER_MMU_DEVICE_MMX || KLIPPER_MMU_DEVICE_LOW_RIDER || KLIPPER_MMU_DEVICE_PICO_MMU
+    default KLIPPER_MMU_SELECTOR_KIND_INDEXED if KLIPPER_MMU_DEVICE_BTT_VIVID || KLIPPER_MMU_DEVICE_CLAYMORE
+    default KLIPPER_MMU_SELECTOR_KIND_NONE
+    help
+        The shared-drive selector family this device uses (selector.h):
+        LINEAR (stepper axis + grip servo: ERCF 1.1/2.0/3.0, Tradrack),
+        ROTARY (stepper axis, per-gate gear direction: 3D Chameleon, MMX6,
+        HTLF), SERVO (no selector stepper, one angle per gate: MMX) or
+        INDEXED (stepper axis, no gate position table -- a per-gate index
+        switch instead: BTT ViViD, Claymore). NONE keeps independent
+        per-lane feeders.
+        Selecting a kind here does not enable actuation; it only shapes
+        which settings below apply.
+
+config KLIPPER_MMU_SELECTOR_KIND_NONE
+    bool "None (independent per-lane feeders)"
+
+config KLIPPER_MMU_SELECTOR_KIND_LINEAR
+    bool "Linear (stepper axis to an endstop, optional grip servo)"
+
+config KLIPPER_MMU_SELECTOR_KIND_ROTARY
+    bool "Rotary (stepper axis to an endstop, per-gate gear direction)"
+
+config KLIPPER_MMU_SELECTOR_KIND_SERVO
+    bool "Servo (no selector stepper; one servo angle selects the gate)"
+
+config KLIPPER_MMU_SELECTOR_KIND_INDEXED
+    bool "Indexed (stepper axis; a per-gate index switch, no position table)"
+
+endchoice
+
+config KLIPPER_MMU_SELECTOR_STEPPER
+    bool
+    default y if KLIPPER_MMU_SELECTOR_KIND_LINEAR || KLIPPER_MMU_SELECTOR_KIND_ROTARY || KLIPPER_MMU_SELECTOR_KIND_INDEXED
+    default n
+
+# LINEAR and ROTARY home on one selector endstop; INDEXED homes on gate 0's
+# own index switch and has none (Happy Hare mmu_indexed_selector.py:189-201).
+config KLIPPER_MMU_SELECTOR_HAS_ENDSTOP
+    bool
+    default y if KLIPPER_MMU_SELECTOR_KIND_LINEAR || KLIPPER_MMU_SELECTOR_KIND_ROTARY
+    default n
+
+config KLIPPER_MMU_SELECTOR_LINEAR_HAS_SERVO
+    bool "Linear selector grips filament with a servo"
+    depends on KLIPPER_MMU_SELECTOR_KIND_LINEAR
+    default n if KLIPPER_MMU_ERCF_JACK_RABBIT
+    default y
+    help
+        Every LINEAR device implemented today is Happy Hare's
+        LinearServoSelector, not the plain servo-less LinearSelector:
+        ERCF 1.1/2.0/3.0 and Tradrack all `select LINEAR_SERVO_SELECTOR`
+        (installer/mmu_types/Kconfig.ercf:7, Kconfig.tradrack:8). Clear this
+        only for a plain LinearSelector device: ERCF 3.0's Jack Rabbit mod
+        (`imply LINEAR_SELECTOR`, Kconfig.ercf:97-100) clears it for you by
+        selecting KLIPPER_MMU_ERCF_JACK_RABBIT above.
+
+config KLIPPER_MMU_SERVO
+    bool
+    default y if KLIPPER_MMU_SELECTOR_KIND_SERVO || (KLIPPER_MMU_SELECTOR_KIND_LINEAR && KLIPPER_MMU_SELECTOR_LINEAR_HAS_SERVO)
+    default n
+
+if KLIPPER_MMU_SELECTOR_STEPPER
+
+menu "Selector stepper axis mechanics"
+
+config KLIPPER_MMU_SELECTOR_ROTATION_DISTANCE_UM
+    int "Selector rotation distance (micrometres per output rotation)"
+    range 1 2147483647
+    default 32000 if KLIPPER_MMU_DEVICE_HTLF
+    default 360000 if KLIPPER_MMU_DEVICE_BTT_VIVID
+    default 35500 if KLIPPER_MMU_DEVICE_CLAYMORE
+    default 40000
+    help
+        Millimetres of selector travel per full rotation of the selector
+        stepper's output, in micrometres, the same quantity as Klipper's
+        stepper rotation_distance. Happy Hare's generic selector stepper
+        default is 40 mm (installer/Kconfig.selector_stepper:31-33); none of
+        ERCF 1.1/2.0/3.0, Tradrack, 3D Chameleon or MMX6 override it. HTLF
+        overrides it to 32 mm (installer/mmu_types/Kconfig.htlf:48-49). BTT
+        ViViD overrides it to 360 mm -- with its 25:10 gear ratio below,
+        exactly one selector revolution sweeps its whole 4-gate, 90 mm-pitch
+        drum once (installer/mmu_types/Kconfig.vvd:101-102). Claymore (no
+        Happy Hare dossier; AFC's own template) overrides it to 35.5 mm
+        (templates/AFC_Claymore_1-AFC_Lite.cfg's [AFC_stepper
+        Claymore_selector] rotation_distance).
+
+config KLIPPER_MMU_SELECTOR_GEAR_RATIO_A
+    int "Selector gear ratio: motor turns (A)"
+    range 1 100000
+    default 25 if KLIPPER_MMU_DEVICE_BTT_VIVID
+    default 40 if KLIPPER_MMU_DEVICE_CLAYMORE
+    default 1
+    help
+        Klipper's gear_ratio A:B: A motor revolutions turn the selector B
+        times. Happy Hare's generic default and every device's override here
+        are 1:1 (installer/Kconfig.selector_stepper:27-29;
+        installer/mmu_types/Kconfig.ercf:164-165,210-211,254-255,
+        Kconfig.htlf:46-47, Kconfig.3d_chameleon:40-41,
+        Kconfig.tradrack:63-64; MMX6 takes the unoverridden 1:1 default).
+        BTT ViViD overrides this to 25:10 (installer/mmu_types/Kconfig.vvd:99-100).
+        Claymore (AFC's own template, no Happy Hare dossier) overrides this to
+        40:20 (templates/AFC_Claymore_1-AFC_Lite.cfg's [AFC_stepper
+        Claymore_selector] gear_ratio).
+
+config KLIPPER_MMU_SELECTOR_GEAR_RATIO_B
+    int "Selector gear ratio: output turns (B)"
+    range 1 100000
+    default 10 if KLIPPER_MMU_DEVICE_BTT_VIVID
+    default 20 if KLIPPER_MMU_DEVICE_CLAYMORE
+    default 1
+    help
+        Output revolutions produced by A motor revolutions. See the A entry;
+        every device in this catalogue except BTT ViViD (25:10) and Claymore
+        (40:20) is a direct-drive 1:1 selector.
+
+config KLIPPER_MMU_SELECTOR_FULL_STEPS
+    int "Selector motor full steps per rotation"
+    range 1 1000
+    default 200
+    help
+        Full steps per revolution before microstepping: 200 for 1.8 degree,
+        400 for 0.9 degree. Happy Hare's generic selector default is 200
+        (installer/Kconfig.selector_stepper:47-49); none of the eight
+        devices here override it.
+
+config KLIPPER_MMU_SELECTOR_MICROSTEPS
+    int "Selector microsteps"
+    range 1 256
+    default 16
+    help
+        Happy Hare hardcodes the selector stepper's microsteps to 16 in its
+        config template, commented "Don't need high fidelity"
+        (config/base/mmu_hardware.cfg:417): the selector only needs to land
+        within a gate width, not the sub-step precision the gear/feeder axis
+        wants.
+
+endmenu
+
+menu "Selector motion"
+
+config KLIPPER_MMU_SELECTOR_MOVE_SPEED_MM_S
+    int "Selector move speed (mm/s)"
+    range 1 2000
+    default 50 if KLIPPER_MMU_DEVICE_HTLF
+    default 150 if KLIPPER_MMU_DEVICE_CLAYMORE
+    default 200
+    help
+        Speed for normal selector positioning between gates. Happy Hare's
+        generic default is 200 mm/s (installer/Kconfig.speeds:192-197);
+        HTLF overrides it to 50 (installer/mmu_types/Kconfig.htlf:63-64,
+        docs/devices/htlf.json:157). None of the other seven devices
+        override it (docs/devices/*.json selector_move_speed: 200).
+
+        Claymore has no Happy Hare dossier: its INDEXED kind uses this same
+        speed/accel pair for every selector move including homing (no
+        separate homing speed, docs/selectors.md), and AFC gives one number
+        for both -- extras/AFC_vivid.py:74's selector_homing_speed default,
+        150 (AFC_Claymore doesn't override it).
+
+config KLIPPER_MMU_SELECTOR_HOMING_SPEED_MM_S
+    int "Selector homing speed (mm/s)"
+    range 1 2000
+    default 60
+    help
+        Speed for the initial selector homing move to its endstop. Happy
+        Hare's generic default is 60 mm/s (installer/Kconfig.speeds:200-206)
+        and no device in this catalogue overrides it (every
+        docs/devices/*.json selector_homing_speed is 60).
+
+config KLIPPER_MMU_SELECTOR_ACCEL_MM_S2
+    int "Selector acceleration (mm/s^2)"
+    range 1 200000
+    default 50 if KLIPPER_MMU_DEVICE_HTLF
+    default 150 if KLIPPER_MMU_DEVICE_CLAYMORE
+    default 1200
+    help
+        Acceleration for selector movement, including homing. Happy Hare's
+        generic default is 1200 mm/s^2 (installer/Kconfig.speeds:220-226);
+        HTLF overrides it to 50 (installer/mmu_types/Kconfig.htlf:65-66,
+        docs/devices/htlf.json:159). Happy Hare has no separate selector
+        deceleration setting, so the core's deceleration_steps_s2 takes this
+        same converted value.
+
+        Claymore has no Happy Hare dossier: extras/AFC_vivid.py:75's
+        selector_homing_accel default, 150, is AFC's one acceleration for
+        every selector move (AFC_Claymore doesn't override it).
+
+config KLIPPER_MMU_SELECTOR_HOME_TOWARD_MIN
+    bool "Selector homes toward the low (zero) end of its gate list"
+    default y
+    help
+        Happy Hare always homes the selector to its physical endstop before
+        establishing gate offsets from there (LinearSelector.home() /
+        RotarySelector's measure-to-home flow); this firmware needs to know
+        which of the two directions that is, in the same forward/reverse
+        sense as the feeder axis. Every device catalogued here has its
+        endstop at the low end, with cad_gate0_pos measured outward from it
+        (extras/mmu/unit/selectors/mmu_linear_selector.py:71-72,
+        mmu_rotary_selector.py CAD comment), so homing moves toward
+        decreasing gate_steps by default. This is a firmware wiring
+        convention, not a Happy Hare measurement; clear it if the fitted
+        DIR polarity homes the other way.
+
+endmenu
+
+menu "Selector gate geometry (millimetres, Happy Hare's CAD constants)"
+
+config KLIPPER_MMU_SELECTOR_GATE0_POS_UM
+    int "Distance from endstop to gate 0 (micrometres)"
+    range 0 2147483647
+    default 4200 if KLIPPER_MMU_DEVICE_ERCF_1_1
+    default 2500 if KLIPPER_MMU_DEVICE_TRADRACK
+    default 4000
+    help
+        Happy Hare's cad_gate0_pos: approximate distance from the selector's
+        home endstop to the first gate. ERCF 1.1 (version < 2.0, no CAD
+        override string) takes the LinearSelector class default 4.2 mm
+        (extras/mmu/unit/selectors/mmu_linear_selector.py:80). ERCF 2.0/3.0
+        override it to 4.0 mm for version >= 2.0 (mmu_linear_selector.py:97).
+        Tradrack overrides it to 2.5 mm (mmu_linear_selector.py:111).
+        3D Chameleon, MMX6 and HTLF (RotarySelector, no per-device CAD
+        override) take that class's default, also 4.0 mm
+        (mmu_rotary_selector.py:66), which is why the fallback below is the
+        same 4000 micrometres.
+
+config KLIPPER_MMU_SELECTOR_GATE_WIDTH_UM
+    int "Centre-to-centre gate spacing (micrometres)"
+    range 1 2147483647
+    default 23000 if KLIPPER_MMU_ERCF_TRIPLE_DECKY
+    default 21000 if KLIPPER_MMU_DEVICE_ERCF_1_1
+    default 23000 if KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0
+    default 17000 if KLIPPER_MMU_DEVICE_TRADRACK
+    default 25000
+    help
+        Happy Hare's cad_gate_width. ERCF 1.1 keeps the LinearSelector class
+        default 21.0 mm (mmu_linear_selector.py:81); ERCF 2.0/3.0 override
+        to 23.0 mm (mmu_linear_selector.py:98); Tradrack overrides to
+        17.0 mm (mmu_linear_selector.py:112). 3D Chameleon, MMX6 and HTLF
+        take the RotarySelector class default 25.0 mm
+        (mmu_rotary_selector.py:67), the fallback below.
+
+        ERCF 1.1's Triple Decky mod ("t" in the version string) overrides
+        this to 23.0 mm too, the same as 2.0/3.0 (mmu_linear_selector.py:
+        103-104), so its default is listed first, ahead of the plain ERCF 1.1
+        default it would otherwise take.
+
+config KLIPPER_MMU_SELECTOR_TOLERANCE_UM
+    int "Extra selector travel allowed past the last gate (micrometres)"
+    range 0 2147483647
+    default 15000
+    help
+        Happy Hare's cad_selector_tolerance: every LINEAR and ROTARY device
+        in this catalogue takes its class's unoverridden 15.0 mm default
+        (mmu_linear_selector.py:87, mmu_rotary_selector.py:68). Feeds the
+        maximum permissible selector movement bound
+        (mmu_linear_selector.py:355-358, mmu_rotary_selector.py:327-328).
+
+config KLIPPER_MMU_SELECTOR_LAST_GATE_OFFSET_UM
+    int "Extra travel past the last gate, LINEAR only (micrometres)"
+    range 0 2147483647
+    default 1200 if KLIPPER_MMU_ERCF_SPRINGY
+    default 2000 if KLIPPER_MMU_DEVICE_ERCF_1_1
+    default 14400 if KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0
+    default 0
+    help
+        Happy Hare's cad_last_gate_offset, added only to LinearSelector's
+        whole-axis maximum travel bound (mmu_linear_selector.py:357,
+        lgate=TOOL_GATE_UNKNOWN branch); RotarySelector has no such term.
+        ERCF 1.1 keeps the class default 2.0 mm (mmu_linear_selector.py:82);
+        ERCF 2.0/3.0 override to 14.4 mm (mmu_linear_selector.py:99);
+        Tradrack overrides it to 0 (mmu_linear_selector.py:114), the
+        fallback used by every ROTARY device too (harmless there: the
+        rotary formula never adds this entry).
+
+        ERCF 1.1's Springy mod ("s" in the version string) overrides this to
+        1.2 mm instead (mmu_linear_selector.py:106-107), so its default is
+        listed first, ahead of the plain ERCF 1.1 default it would otherwise
+        take. This term never reaches an individual gate position (only the
+        whole-axis bound), so Springy leaves
+        KLIPPER_MMU_SELECTOR_GATE_POSITIONS_MM below unchanged.
+
+config KLIPPER_MMU_SELECTOR_BLOCK_WIDTH_UM
+    int "ERCF v1.1 bearing block width, LINEAR only (micrometres)"
+    range 0 2147483647
+    default 0 if KLIPPER_MMU_ERCF_TRIPLE_DECKY
+    default 5000 if KLIPPER_MMU_DEVICE_ERCF_1_1
+    default 0
+    help
+        Happy Hare's cad_block_width, added every third gate to ERCF's
+        pre-2.0 maximum travel bound only
+        (mmu_linear_selector.py:346-352: `(n // 3) * cad_block_width` when
+        version < 2.0 and "t" is not in the version string). ERCF 1.1 keeps
+        the class default 5.0 mm (mmu_linear_selector.py:83); ERCF 2.0/3.0
+        take the >= 2.0 branch, which never adds this term, so it stays 0.
+
+        ERCF 1.1's Triple Decky mod ("t" in the version string) overrides
+        this to 0 too (mmu_linear_selector.py:104-105) -- Triple Decky's own
+        block removes the need for the bearing block this term models -- so
+        its default is listed first even though it lands on the same
+        fallback value.
+        Zero for every other device is likewise harmless.
+
+config KLIPPER_MMU_SELECTOR_GATE_POSITIONS_MM
+    string "Per-gate selector positions (mm, comma list, exactly lane count)"
+    depends on !KLIPPER_MMU_SELECTOR_KIND_INDEXED
+    default "4.2,27.2,50.2,73.2,96.2,119.2,142.2,165.2,188.2" if KLIPPER_MMU_ERCF_TRIPLE_DECKY
+    default "4.2,25.2,46.2,72.2,93.2,114.2,140.2,161.2,182.2" if KLIPPER_MMU_DEVICE_ERCF_1_1
+    default "4.0,27.0,50.0,73.0,96.0,119.0,142.0,165.0" if KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0
+    default "2.5,19.5,36.5,53.5,70.5,87.5,104.5,121.5,138.5,155.5" if KLIPPER_MMU_DEVICE_TRADRACK
+    default "4.0,29.0,54.0,79.0" if KLIPPER_MMU_DEVICE_CHAMELEON_3D || KLIPPER_MMU_DEVICE_HTLF
+    default "4.0,29.0,54.0,79.0,104.0,129.0" if KLIPPER_MMU_DEVICE_MMX6
+    default ""
+    help
+        Happy Hare's selector_offsets, in millimetres, one entry per lane
+        (KLIPPER_MMU_LANE_COUNT), at most 3 decimals. Left empty means
+        "uncalibrated": startup then refuses this profile until the host
+        sends config_km_selector_gate for every gate.
+
+        ROTARY devices (3D Chameleon, MMX6, HTLF) ship a computed default:
+        `cad_gate0_pos + i * cad_gate_width`, rounded to 1 decimal, the same
+        formula Happy Hare's own "quick" calibration uses when no selector
+        endstop is configured (mmu_rotary_selector.py:575-576). 3D Chameleon
+        and HTLF share 4 gates at the RotarySelector class's 4.0/25.0 mm CAD
+        defaults (mmu_rotary_selector.py:66-67); MMX6 has 6 gates at the
+        same defaults (installer/mmu_types/Kconfig.mmx6 has no CAD
+        override).
+
+        LINEAR devices (ERCF 1.1/2.0/3.0, Tradrack) ship an ESTIMATE, not a
+        measurement: Happy Hare's LinearSelector never ships a computed
+        gate offset -- it only measures one with MMU_CALIBRATE_SELECTOR
+        (mmu_linear_selector.py's _calibrate_selector) -- but leaving this
+        empty strands a fresh device with no selector calibration operation
+        of its own yet. The estimate uses the same per-gate terms
+        _get_max_selector_movement builds its bound from
+        (mmu_linear_selector.py:338-355): `cad_gate0_pos + i * cad_gate_width`,
+        plus `(i // 3) * cad_block_width` for ERCF 1.1's bearing blocks
+        (mmu_linear_selector.py:352, version < 2.0 and no "t" in the version
+        string). `cad_last_gate_offset` is NOT part of this per-gate term:
+        reading `_get_max_selector_movement`, it is added only once, to the
+        whole-axis maximum-travel bound (`lgate == TOOL_GATE_UNKNOWN`), never
+        to an individual gate's position; `_calibrate_selector`'s own
+        extrapolation (the "distribute selector spacing" branch, saving
+        after GATE=0 and GATE=<last> are measured) confirms this -- it fits
+        a single uniform `spacing = (offsets[-1] - offsets[0]) / (num_gates
+        - 1)` between the two measured ends and never references
+        cad_block_width or cad_last_gate_offset at all. So this Kconfig
+        default is an estimate from the CAD geometry model, not what Happy
+        Hare's own calibration would produce; MEASURE THE REAL SELECTOR and
+        send config_km_selector_gate (or the future host calibration
+        operation) for accuracy before trusting a LINEAR build's positions.
+
+        ERCF 1.1: 4.2,25.2,46.2,72.2,93.2,114.2,140.2,161.2,182.2 (gate0_pos
+        4.2, gate_width 21.0, block_width 5.0 every third gate).
+        ERCF 2.0/3.0: 4.0,27.0,50.0,73.0,96.0,119.0,142.0,165.0 (gate0_pos
+        4.0, gate_width 23.0, no block term at version >= 2.0).
+        Tradrack: 2.5,19.5,36.5,53.5,70.5,87.5,104.5,121.5,138.5,155.5
+        (gate0_pos 2.5, gate_width 17.0, not an ERCF vendor so no block term).
+
+        ERCF 1.1's Triple Decky mod ("t" in the version string,
+        KLIPPER_MMU_ERCF_TRIPLE_DECKY) takes the same per-gate formula with
+        its own gate_width 23.0 mm and no block term (mmu_linear_selector.py:
+        103-105,349 -- "t" also takes the >=2.0 branch that drops the block
+        term for the per-gate estimate, same as ERCF 2.0/3.0): 4.2,27.2,50.2,
+        73.2,96.2,119.2,142.2,165.2,188.2. Springy (KLIPPER_MMU_ERCF_SPRINGY)
+        changes only KLIPPER_MMU_SELECTOR_LAST_GATE_OFFSET_UM above, never an
+        individual gate position (mmu_linear_selector.py:335-337's citation
+        there), so it leaves this list unchanged whether or not it is
+        combined with Triple Decky. Binky and Thumper Blocks change neither
+        this list nor the terms that build it.
+
+        Overriding KLIPPER_MMU_LANE_COUNT away from a device's dossier gate
+        count invalidates this default list's length; supply a matching
+        replacement list together with it.
+
+endmenu
+
+if KLIPPER_MMU_SELECTOR_KIND_INDEXED
+
+menu "Indexed selector geometry (BTT ViViD: no gate position table)"
+
+config KLIPPER_MMU_SELECTOR_GATE_ORDER
+    string "Physical gate order around the selector (comma list, exactly lane count)"
+    default "0,3,1,2" if KLIPPER_MMU_DEVICE_BTT_VIVID
+    default ""
+    help
+        Happy Hare's selector_gate_order (per-gate index sensors, no gate
+        position table -- klipper_mmu/selector.h): gate_order[i] is the lane
+        found at physical position i going forward around the selector.
+        Selection then chooses whichever of the two directions reaches the
+        target soonest along this order (mmu_indexed_selector.py:246-261
+        _best_rotation_direction). BTT ViViD's own order is 0,3,1,2
+        (installer/mmu_types/Kconfig.vvd:84-85). Left empty means
+        unconfigured: startup then refuses this profile until a real,
+        exactly-lane-count permutation is set; no number is invented for a
+        device this catalogue does not carry evidence for -- UNLESS the
+        device's own selector never picks a direction from an order at all.
+        Claymore's AFC selector always searches forward, never a shorter
+        reverse hop (extras/AFC_vivid.py:159-199 select_lane's sel_dir is
+        POS unconditionally for a normal selection), so it keeps this empty
+        on purpose. device_profile.c treats an all-zero gate_order as that
+        same "always forward" rule for any INDEXED device, not a Claymore
+        special case.
+
+config KLIPPER_MMU_SELECTOR_ENDSTOP_WIDTH_MM
+    int "Per-gate index switch width (millimetres)"
+    range 1 2147483647
+    default 10
+    help
+        Happy Hare's selector_endstop_width: how wide each gate's own index
+        switch reads as triggered, used to center on it after finding its
+        leading edge (half this value, converted to selector steps, is the
+        centering move -- mmu_indexed_selector.py:237-241). The generic
+        installer default is 10 mm (installer/Kconfig.selector_stepper:
+        140-143); BTT ViViD does not override it. Can also be measured with
+        Happy Hare's own MMU_CALIBRATE_SELECTOR_INDEXES, per gate -- this
+        firmware takes one shared value instead.
+
+config KLIPPER_MMU_SELECTOR_INDEXED_UNSELECT_MM
+    int "Distance to move off a pressed gate switch (millimetres, no gate order)"
+    depends on KLIPPER_MMU_SELECTOR_KIND_INDEXED
+    default 50 if KLIPPER_MMU_DEVICE_CLAYMORE
+    default 0
+    help
+        Used only without a gate order (AFC's forward-only rule): when the
+        wanted gate's switch is already pressed at a selection the selector
+        is not known to hold, it first moves forward this far, then searches
+        forward for the switch. Claymore: AFC's unselect_lane default, 50 mm
+        (extras/AFC_vivid.py:262), used by select_lane (:175-185). 0 refuses
+        such a profile at startup rather than inventing a distance.
+
+config KLIPPER_MMU_SELECTOR_INDEXED_MAX_TRAVEL_MM
+    int "Selector maximum travel bound (millimetres)"
+    default 720 if KLIPPER_MMU_DEVICE_BTT_VIVID
+    default 800 if KLIPPER_MMU_DEVICE_CLAYMORE
+    help
+        The whole-axis safety bound a single gate search or the homing move
+        to gate 0 is never allowed to exceed (selector_home.c's max_travel_
+        steps): Happy Hare's _get_max_selector_movement, num_gates *
+        cad_gate_width * cad_max_rotations (mmu_indexed_selector.py:184-186),
+        using its own class CAD constants (cad_gate_width 90 mm, cad_max_
+        rotations 2: mmu_indexed_selector.py:45-46, both hidden and
+        unoverridden by any device). BTT ViViD: 4 * 90 * 2 = 720 mm
+        (docs/devices/vivid.json's "gate_positions" decision). Claymore has
+        no Happy Hare CAD constants (no dossier at all): AFC's own
+        max_selector_movement default, 800 mm (extras/AFC_vivid.py:76,
+        not overridden by AFC_Claymore or its template), is this same
+        whole-axis bound by a different name -- the search primitive that
+        actually enforces it does not care which oracle a number came from.
+        Left at 0 (no device match) refuses this profile at startup rather than
+        inventing a bound for a device this catalogue does not carry CAD
+        evidence for.
+
+endmenu
+
+endif
+
+if KLIPPER_MMU_SELECTOR_KIND_ROTARY
+
+menu "Rotary selector per-gate directions and release"
+
+config KLIPPER_MMU_SELECTOR_GATE_DIRECTIONS
+    string "Gear direction when each gate is gripped (0=normal,1=reverse)"
+    default "1,1,0,0" if KLIPPER_MMU_DEVICE_CHAMELEON_3D
+    default "0,0,0,0,0,0" if KLIPPER_MMU_DEVICE_MMX6
+    default "0,0,0,0" if KLIPPER_MMU_DEVICE_HTLF
+    help
+        Happy Hare's selector_gate_directions: NOT a selector approach
+        direction. It is the GEAR (filament drive) stepper's direction for
+        gate g, applied with set_gear_direction when that gate is gripped
+        (mmu_rotary_selector.py:61-64 hidden ParamSpec,
+        installer/Kconfig.selector_stepper:98-107). set_gear_direction(d)
+        calls the gear stepper's set_dir_inverted(d) (mmu_drive.py:214-219):
+        d=0 leaves the configured DIR polarity alone (normal), d=1 inverts
+        it (reverse). This firmware maps 0 to KM_DIR_FORWARD and 1 to
+        KM_DIR_REVERSE in profile.selector.gate_direction; it is the gear's
+        direction, never the selector's own travel direction.
+
+        3D Chameleon overrides two of its four gates to reverse
+        (installer/mmu_types/Kconfig.3d_chameleon:47-48,
+        docs/devices/3d_chameleon.json:160). MMX6 and HTLF take Happy
+        Hare's generated all-normal default, one "0" per gate
+        (installer/Kconfig.selector_stepper:98-101,
+        docs/devices/mmx6.json:160, docs/devices/htlf.json:160).
+
+config KLIPPER_MMU_SELECTOR_RELEASE_GATES
+    string "Gate to select to release each gate's filament (index list)"
+    default "2,3,0,1" if KLIPPER_MMU_DEVICE_CHAMELEON_3D
+    default "1,2,3,4,5,0" if KLIPPER_MMU_DEVICE_MMX6
+    default "1,2,3,0" if KLIPPER_MMU_DEVICE_HTLF
+    help
+        Happy Hare's selector_release_gates: the gate whose selector
+        position releases gate g's filament, used when
+        filament_always_gripped is 0 (mmu_rotary_selector.py:63-64,229-257
+        hidden ParamSpec; installer/Kconfig.selector_stepper:109-117). 3D
+        Chameleon's opposing-gate design overrides this to a non-cyclic map
+        (installer/mmu_types/Kconfig.3d_chameleon:49-50,
+        docs/devices/3d_chameleon.json:161). MMX6 and HTLF restate Happy
+        Hare's generated cyclic "(i+1) mod N" default explicitly
+        (installer/mmu_types/Kconfig.mmx6:43-44,
+        installer/mmu_types/Kconfig.htlf:55-56).
+
+endmenu
+
+endif
+
+endif
+
+if KLIPPER_MMU_SERVO
+
+menu "Selector servo"
+
+config KLIPPER_MMU_SELECTOR_SERVO_MIN_PULSE_US
+    int "Servo minimum pulse width (microseconds)"
+    range 1 65535
+    default 1000
+    help
+        Happy Hare's PARAM_SERVO_MIN_PULSE_WIDTH generic default, 0.001 s
+        (installer/Kconfig.selector_servo:32-34). None of this catalogue's
+        servo devices override it (the dossiers do not render the
+        [mmu_servo] hardware section, only the [mmu_unit]/parameters that
+        pick an angle).
+
+config KLIPPER_MMU_SELECTOR_SERVO_MAX_PULSE_US
+    int "Servo maximum pulse width (microseconds)"
+    range 1 65535
+    default 2000
+    help
+        Happy Hare's PARAM_SERVO_MAX_PULSE_WIDTH generic default, 0.002 s
+        (installer/Kconfig.selector_servo:36-38).
+
+config KLIPPER_MMU_SELECTOR_SERVO_MAX_ANGLE_DEG
+    int "Servo hardware angle range (degrees)"
+    range 1 360
+    default 140 if KLIPPER_MMU_DEVICE_PICO_MMU
+    default 180
+    help
+        Happy Hare's PARAM_SERVO_MAXIMUM_ANGLE generic default: Klipper
+        scales the pulse width linearly across this many degrees
+        (installer/Kconfig.selector_servo:40-45). Every angle below is
+        converted to a pulse width with this range and the min/max pulse
+        widths above.
+
+config KLIPPER_MMU_SELECTOR_SERVO_DWELL_MS
+    int "Time to wait for the servo to reach position (milliseconds)"
+    range 1 60000
+    default 1200 if KLIPPER_MMU_DEVICE_PICO_MMU
+    default 1000 if KLIPPER_MMU_DEVICE_TRADRACK || KLIPPER_MMU_DEVICE_MMX || KLIPPER_MMU_DEVICE_LOW_RIDER
+    default 500
+    help
+        Happy Hare's servo_dwell. ERCF 1.1/2.0/3.0 all render 0.5 s
+        (docs/devices/ercf_1_1.json:170 and the 2.0/3.0 dossiers' matching
+        line). Tradrack, MMX and Low Rider render 1.0 s
+        (docs/devices/tradrack.json:166, docs/devices/mmx.json:163,
+        docs/devices/low_rider.json:163). Pico MMU renders 1.2 s
+        (docs/devices/pico_mmu.json:163).
+
+config KLIPPER_MMU_SELECTOR_SERVO_ALWAYS_ACTIVE
+    bool "Keep the servo PWM pulsing after the dwell"
+    default n
+    help
+        Happy Hare's servo_always_active. Every device in this catalogue
+        renders 0 (docs/devices/ercf_1_1.json:171, tradrack.json:167,
+        mmx.json:164, low_rider.json:164, pico_mmu.json:164): the servo is
+        not held under PWM once it reaches position, matching Happy Hare's
+        own warning that always-active can strain the servo and control
+        electronics (installer/Kconfig.selector_servo:56-63).
+
+if KLIPPER_MMU_SELECTOR_KIND_LINEAR && KLIPPER_MMU_SELECTOR_LINEAR_HAS_SERVO
+
+config KLIPPER_MMU_SELECTOR_SERVO_ENGAGE_ANGLE_DEG
+    int "Servo angle: filament gripped (Happy Hare servo_down_angle)"
+    range 0 360
+    default 100 if KLIPPER_MMU_DEVICE_ERCF_1_1 || KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0
+    default 1 if KLIPPER_MMU_DEVICE_TRADRACK
+    help
+        ERCF 1.1/2.0/3.0 all render servo_down_angle 100
+        (docs/devices/ercf_1_1.json:166 and the matching 2.0/3.0 line).
+        Tradrack renders 1 (docs/devices/tradrack.json:162).
+
+config KLIPPER_MMU_SELECTOR_SERVO_RELEASE_ANGLE_DEG
+    int "Servo angle: filament released (Happy Hare servo_up_angle)"
+    range 0 360
+    default 30 if KLIPPER_MMU_DEVICE_ERCF_1_1 || KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0
+    default 145 if KLIPPER_MMU_DEVICE_TRADRACK
+    help
+        ERCF 1.1/2.0/3.0 all render servo_up_angle 30
+        (docs/devices/ercf_1_1.json:165 and the matching 2.0/3.0 line).
+        Tradrack renders 145 (docs/devices/tradrack.json:161).
+
+config KLIPPER_MMU_SELECTOR_SERVO_MOVE_ANGLE_DEG
+    int "Servo angle while the selector travels (Happy Hare servo_move_angle)"
+    range 0 360
+    default 30 if KLIPPER_MMU_DEVICE_ERCF_1_1
+    default 50 if KLIPPER_MMU_DEVICE_ERCF_2_0 || KLIPPER_MMU_DEVICE_ERCF_3_0
+    default 145 if KLIPPER_MMU_DEVICE_TRADRACK
+    help
+        ERCF 1.1 renders servo_move_angle 30, matching its up angle
+        (docs/devices/ercf_1_1.json:167); ERCF 2.0/3.0 render 50, above
+        their own up angle of 30 (their dossiers' matching line). Tradrack
+        renders 145, matching its up angle (docs/devices/tradrack.json:163).
+
+endif
+
+if KLIPPER_MMU_SELECTOR_KIND_SERVO
+
+config KLIPPER_MMU_SELECTOR_SERVO_GATE_ANGLES_DEG
+    string "Per-gate servo selection angles (degrees, comma list, exactly lane count)"
+    default "60,0,180,120" if KLIPPER_MMU_DEVICE_MMX
+    default "30,60,90,120,150,180" if KLIPPER_MMU_DEVICE_LOW_RIDER
+    default ""
+    help
+        Happy Hare's servo_gate_angles, one entry per lane
+        (KLIPPER_MMU_LANE_COUNT). MMX renders "60,0,180,120"
+        (docs/devices/mmx.json:159,
+        installer/mmu_types/Kconfig.mmx:45-46). Low Rider renders
+        "30,60,90,120,150,180" (docs/devices/low_rider.json:159).
+        Pico MMU deliberately leaves this empty (docs/devices/pico_mmu.json:159):
+        Happy Hare calibrates its cam angles, so set them here after measuring.
+        Left empty means "uncalibrated": the firmware starts, but selecting a
+        gate is refused until its angle is measured and saved with
+        KLIPPER_MMU_CALIBRATE_SELECTOR GATE=n ANGLE=a (docs/selectors.md;
+        mcu/config.c leaves every uncalibrated gate at 0).
+
+config KLIPPER_MMU_SELECTOR_SERVO_RELEASE_ANGLE_DEG
+    int "Servo angle: filament released (Happy Hare servo_up_angle)"
+    range -1 360
+    default 0 if KLIPPER_MMU_DEVICE_LOW_RIDER
+    default -1
+    help
+        Happy Hare's servo_release_angle. Low Rider renders 0
+        (docs/devices/low_rider.json:161). MMX and Pico MMU render -1.
+
+endif
+
+endmenu
+
+endif

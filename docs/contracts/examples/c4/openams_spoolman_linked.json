@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "spoolman_online": true,
+  "edit": true,
+  "stop": true,
+  "queued_writes": 0,
+  "bays": {
+    "oams1-0": {
+      "state": "linked",
+      "spool_id": 12,
+      "source": "tag",
+      "pending_confirmation": false,
+      "error": null,
+      "spool": {
+        "material": "PLA",
+        "color_hex": "0A2989",
+        "vendor": "Bambu Lab",
+        "remaining_g": 812,
+        "remaining_pct": 81,
+        "initial_g": 1000,
+        "flow_k": 0.02
+      }
+    },
+    "oams1-1": {
+      "state": "linked",
+      "spool_id": 15,
+      "source": "manual",
+      "pending_confirmation": false,
+      "error": null,
+      "spool": {
+        "material": "PETG",
+        "color_hex": "F5F5F5",
+        "vendor": "Polymaker",
+        "remaining_g": 430,
+        "remaining_pct": 43,
+        "initial_g": 1000,
+        "flow_k": 0.04
+      }
+    },
+    "oams1-2": {
+      "state": "unlinked",
+      "spool_id": null,
+      "source": "none",
+      "pending_confirmation": false,
+      "error": null,
+      "spool": null
+    },
+    "oams1-3": {
+      "state": "unlinked",
+      "spool_id": null,
+      "source": "none",
+      "pending_confirmation": false,
+      "error": null,
+      "spool": null
+    }
+  }
+}

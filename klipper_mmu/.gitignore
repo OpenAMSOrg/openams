@@ -1,0 +1,26 @@
+/build*/
+/tests/**/build/
+__pycache__/
+*.pyc
+*.orig
+*.rej
+
+# Historical scratch work and local build artifacts are not product sources.
+/prototype/
+/test_*
+/scratch
+/debug*.diff
+/fix*.diff
+/fix*.sh
+/fix*.py
+/patch_script.py
+/run_test.sh
+/combined_info.txt
+/report.md
+/*.log
+/test.err
+/test.out
+/references/worktree/
+
+# Local API keys (e.g. LLM_API_KEY.txt); never commit.
+*_KEY.txt

@@ -1,0 +1,106 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Klipper runs on the host Python; cover the range seen in the field.
+        python-version: ["3.8", "3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Byte-compile sources (syntax check)
+        run: python -m py_compile src/*.py scripts/*.py
+      - name: Run unit tests
+        # Pure tests: no Klipper, no hardware, no third-party deps.
+        run: python -m unittest discover -s test -v
+      - name: Check relative Markdown links
+        run: python3 tools/check_links.py
+      - name: Check the license boundary
+        run: python3 tools/check_licenses.py
+
+  klipper-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install pytest
+        run: pip install pytest jinja2  # jinja2 is Klipper's gcode_macro dependency
+      - name: Read pinned Klipper revision
+        id: krev
+        run: |
+          KLIPPER_REV=$(grep -m1 'KLIPPER_REV\s*=' test/test_openams_klipper.py | sed 's/.*"\(.*\)".*/\1/')
+          echo "rev=$KLIPPER_REV" >> "$GITHUB_OUTPUT"
+      - name: Check out Klipper at pinned revision
+        uses: actions/checkout@v4
+        with:
+          repository: Klipper3d/klipper
+          ref: ${{ steps.krev.outputs.rev }}
+          path: klipper-checkout
+      - name: Run Klipper integration tests
+        run: OPENAMS_KLIPPER_DIR="${GITHUB_WORKSPACE}/klipper-checkout" python -m pytest test/test_openams_klipper.py -q
+
+  klipper-mmu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install native build tools and probe dependencies
+        # gdb, unicorn and pyelftools let the gdb_probe and thumb_cost suites
+        # run here; without them check.py reports those suites as skipped.
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential gdb
+          python -m pip install unicorn pyelftools
+      - name: Run portable software checks
+        working-directory: klipper_mmu
+        run: make check
+      - name: Keep the per-suite check logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: klipper-mmu-check-logs
+          path: klipper_mmu/build/check/
+
+  shell-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shell script syntax
+        run: bash -n install.sh install-openams.sh install_helpers/*.sh
+
+  tool-suites:
+    # Suites that need third-party packages: the mock Moonraker fixtures, the
+    # JSON-schema conformance checks and the generated contract examples.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install test dependencies
+        run: pip install aiohttp jsonschema pyyaml
+      - name: Run unit tests
+        run: python -m unittest discover -s test -v
+      - name: Check generated contract examples are up to date
+        run: python docs/contracts/check_examples.py
+      - name: Check mock Moonraker fixtures are up to date
+        run: |
+          python tools/mock_moonraker/build_fixtures.py
+          git diff --exit-code tools/mock_moonraker/fixtures

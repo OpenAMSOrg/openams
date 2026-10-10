@@ -1,0 +1,78 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 13:45:09 -0700
+Subject: [PATCH] canserial: Coalesce queued discovery queries
+
+Discovery response scheduling coalesced repeated broadcasts only after canserial_rx_task processed the first query.  Several copies received before that task ran could therefore occupy every entry in the admin ring, allowing a node-id assignment or identifier-conflict frame to be dropped as if the queue contained distinct work.  Assigned nodes also queued and later rejected every discovery broadcast.
+
+Track the one discovery query which is waiting in the admin ring and reject redundant copies before they consume a slot.  Continue suppressing queries while the randomized timer or transmit task owns the response, and discard them immediately after assignment because an assigned node has no discovery response obligation.
+
+The marker spans only the gap between interrupt-side queue publication and task-side query processing.  It is cleared after that entry establishes the existing query state, preserving the randomized response sequence and all admin wire encodings while reserving queue capacity for state-changing commands.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/generic/canserial.c b/src/generic/canserial.c
+index e54c114b..ee97c1bf 100644
+--- a/src/generic/canserial.c
++++ b/src/generic/canserial.c
+@@ -53,7 +53,7 @@ static struct canbus_data {
+     struct task_wake tx_wake;
+     struct timer query_timer;
+     uint32_t query_number;
+-    uint8_t transmit_pos, transmit_max, query_state;
++    uint8_t transmit_pos, transmit_max, query_state, query_queued;
+ 
+     // Rx data
+     struct task_wake rx_wake;
+@@ -333,6 +333,29 @@ canserial_process_data(struct canbus_msg *msg)
+     } else if (id == CANBUS_ID_ADMIN
+                || (CanData.assigned_id && id == CanData.assigned_id + 1)) {
+         // Add to admin command queue
++        int is_query = (id == CANBUS_ID_ADMIN && msg->dlc
++                        && msg->data[0] == CANBUS_CMD_QUERY_UNASSIGNED);
++        if (is_query) {
++            /*
++             * Discovery is a broadcast and scanners commonly repeat it while
++             * collecting delayed responses.  Queueing every copy until the
++             * task handles the first one can fill all eight admin slots with
++             * interchangeable work, causing a node-id assignment or conflict
++             * frame to be dropped.  Once one query is queued, timer-owned, or
++             * transmit-owned, it represents the complete discovery obligation
++             * for this node.  Assigned nodes have no obligation at all and can
++             * reject the broadcast before it consumes queue capacity.
++             *
++             * query_queued covers the interval before can_process_admin() has
++             * established query_state.  The receive interrupt is the only
++             * producer, and the task clears this marker only after processing
++             * that exact queue entry, so a newly accepted query can not hide
++             * an older response or disturb the randomized retry sequence.
++             */
++            if (CanData.assigned_id || readb(&CanData.query_queued)
++                || readb(&CanData.query_state) != CQS_IDLE)
++                return;
++        }
+         uint32_t pushp = CanData.admin_push_pos;
+         /*
+          * The queue positions are monotonically increasing uint32_t counters,
+@@ -351,6 +374,8 @@ canserial_process_data(struct canbus_msg *msg)
+             return;
+         uint32_t pos = pushp % ARRAY_SIZE(CanData.admin_queue);
+         memcpy(&CanData.admin_queue[pos], msg, sizeof(*msg));
++        if (is_query)
++            writeb(&CanData.query_queued, 1);
+         CanData.admin_push_pos = pushp + 1;
+         canserial_notify_rx();
+     }
+@@ -400,8 +425,11 @@ canserial_rx_task(void)
+         uint32_t id = msg->id;
+         if (CanData.assigned_id && id == CanData.assigned_id + 1)
+             can_id_conflict();
+-        else if (id == CANBUS_ID_ADMIN)
++        else if (id == CANBUS_ID_ADMIN) {
+             can_process_admin(msg);
++            if (msg->dlc && msg->data[0] == CANBUS_CMD_QUERY_UNASSIGNED)
++                writeb(&CanData.query_queued, 0);
++        }
+         CanData.admin_pull_pos = pullp + 1;
+     }
+ 

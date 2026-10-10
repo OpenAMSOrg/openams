@@ -1,0 +1,98 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Saved STM32 feeder electrical levels and timing (not an H723-only binding).
+menu "Feeder electrical levels and timing"
+
+config KLIPPER_MMU_FEEDER_ENABLE_HIGH
+    string "ENABLE active level by lane (1=high, 0=low)"
+    default "0,0,0,0" if KLIPPER_MMU_BOARD_AFC_LITE
+    default ""
+    help
+        Comma-separated 0 or 1, exactly one per configured lane, no spaces.
+        An active-low ENABLE is held high when disabled.
+
+config KLIPPER_MMU_FEEDER_STEP_HIGH
+    string "STEP active level by lane (1=high, 0=low)"
+    default "1,1,1,1" if KLIPPER_MMU_BOARD_AFC_LITE
+    default ""
+
+config KLIPPER_MMU_FEEDER_FORWARD_HIGH
+    string "DIR level for forward travel by lane (1=high, 0=low)"
+    default "0,0,0,0" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default ""
+    help
+        BoxTurtle defaults follow the AFC template's inverted DIR pins.
+        Other mechanisms and rewired motors require an explicit choice.
+
+config KLIPPER_MMU_STEP_HIGH_US
+    int "Minimum active STEP pulse (us)"
+    range 1 65535
+    default 3 if KLIPPER_MMU_DEVICE_BOXTURTLE || KLIPPER_MMU_HH_MOTION_DEFAULTS
+    default 10
+    help
+        Timing defaults are development starting values, not measured board
+        guarantees. Validate driver requirements and actual interrupt cost
+        before enabling motion. Timing settings apply to every feeder lane.
+
+        BoxTurtle's 3 us is the companion of its 200 mm/s ceiling: the
+        firmware refuses a driver ceiling above
+        1000000 / (STEP_HIGH_US + STEP_LOW_US) steps/s, so a 200 mm/s
+        calibrated LOAD (about 145000 steps/s at the reference mechanics)
+        cannot be configured at the old 10 us/10 us. The reference AFC Lite
+        drivers accept a 3 us pulse; check the fitted driver's datasheet
+        before trusting that number. The Happy Hare devices (and Claymore,
+        cited from AFC instead) take the same 3 us: this firmware drives
+        their feeders through the same TMC2209 step/dir path, and each
+        device's own driver ceiling above -- 100 mm/s for most of them, and
+        higher for HTLF, EMU, Claymore and QIDI Box -- needs it.
+
+config KLIPPER_MMU_STEP_LOW_US
+    int "Minimum inactive STEP interval (us)"
+    range 1 65535
+    default 3 if KLIPPER_MMU_DEVICE_BOXTURTLE || KLIPPER_MMU_HH_MOTION_DEFAULTS
+    default 10
+
+config KLIPPER_MMU_STEP_MAX_SPEED_MM_S
+    int "Feeder driver speed ceiling (mm/s)"
+    range 1 300
+    default 200 if KLIPPER_MMU_DEVICE_BOXTURTLE
+    default 120 if KLIPPER_MMU_DEVICE_QIDI_BOX
+    default 135 if KLIPPER_MMU_DEVICE_HTLF
+    default 250 if KLIPPER_MMU_DEVICE_EMU
+    default 300 if KLIPPER_MMU_DEVICE_CLAYMORE
+    default 100 if KLIPPER_MMU_HH_MOTION_DEFAULTS
+    default 28
+    help
+        The fastest the driver may be asked to step, in millimetres of
+        filament per second. It must fit the sum of the minimum active and
+        inactive pulse durations; the firmware also refuses a ceiling above
+        1000000 / (STEP_HIGH_US + STEP_LOW_US) steps/s. Feed and retract
+        speeds must not exceed this driver ceiling, which is still compared
+        in microsteps per second, and the calibrated LOAD's cruise ceiling
+        must fit under it too (mcu/feeder_mechanics.h).
+
+        BoxTurtle's 200 mm/s is the calibrated LOAD cruise ceiling, not a
+        speed every move uses: at the reference mechanics it is about
+        2700 motor RPM on the pancake stepper, which needs qualification
+        before anyone trusts it on hardware. The fallback 28 mm/s is the
+        rounded value that reproduces the old 20000 steps/s default at the
+        reference mechanics in the motion menu, so it is a re-label rather
+        than a measurement: check it against the fitted driver's pulse
+        budget. The Happy Hare devices take 100 mm/s, their dossier's fastest
+        gear speed (gear_load_speed), so their retract and FPS cruise fit.
+
+        QIDI Box's, HTLF's and EMU's own gear_load_speed is faster than that
+        shared bucket -- 120 mm/s (docs/devices/qidi_box.md), 135 mm/s
+        (docs/devices/htlf.json:162) and 250 mm/s (docs/devices/emu.json:176)
+        -- so each takes its own default here instead. EMU's own
+        rotation-distance and gear-ratio overrides above (mcu/Kconfig.control)
+        are what let 250 mm/s actually clear the pulse budget below; without
+        them it would inherit the wrong, much slower-geared mechanics and
+        this ceiling would be unreachable.
+
+        Claymore has no Happy Hare dossier; its faster phase is AFC's own
+        long_moves_speed, 300 mm/s (templates/AFC_Claymore_1-AFC_Lite.cfg:17,
+        unoverridden), well above the short_moves_speed feed/retract default
+        (mcu/Kconfig.control), so it takes that as its own ceiling too. The
+        range above was 275 before Claymore's 300 mm/s needed it raised.
+
+endmenu

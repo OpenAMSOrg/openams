@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Calibration · klipper-mmu</title>
+<meta name="description" content="Calibrate the buffer, measure the Bowden tube and calibrate selector gates for klipper-mmu.">
+<link rel="stylesheet" href="assets/site.css">
+<script>
+  try { var t = localStorage.getItem('kmmu-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</head>
+<body data-page="calibration">
+
+<header class="bar" id="bar">
+  <a class="brand" href="./" aria-label="klipper-mmu home">
+    <svg class="brand-mark" viewBox="0 0 26 26" aria-hidden="true" fill="none" stroke-width="2.4" stroke-linecap="round">
+      <path d="M2 4 C 10 4, 12 13, 17 13" stroke="var(--lane-1)"/>
+      <path d="M2 10 C 9 10, 11 13, 17 13" stroke="var(--lane-2)"/>
+      <path d="M2 16 C 9 16, 11 13, 17 13" stroke="var(--lane-3)"/>
+      <path d="M2 22 C 10 22, 12 13, 17 13" stroke="var(--lane-4)"/>
+      <path d="M17 13 H 24" stroke="var(--ink)"/>
+    </svg>
+    klipper-mmu <small>docs</small>
+  </a>
+  <div class="bar-tools">
+    <button class="toc-toggle" id="toc-toggle" type="button" aria-expanded="false" aria-controls="toc">Contents</button>
+    <button class="theme-toggle" id="theme-toggle" type="button">Dark</button>
+  </div>
+  <div class="bar-progress" id="bar-progress" aria-hidden="true"><span id="bar-progress-fill"></span></div>
+</header>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<div class="page" id="page">
+  <nav class="toc" id="toc" aria-label="Manual"></nav>
+
+  <main class="content">
+<section class="hero" id="start" data-lane="1" data-station="overview">
+      <p class="eyebrow"><b>Calibration</b> &nbsp;/&nbsp; buffer, tube and selector</p>
+      <h1>Measure once, <em>on your machine.</em></h1>
+      <p class="lede">The unit decides when filament has arrived, and whether a failed load was a blockage or a slip, from measurements only you can take: what your buffer reads relaxed and compressed, and how long your Bowden tube is. Selector units also need their gate positions.</p>
+      <ol>
+        <li><strong>The buffer</strong>, by hand, with the safe image and motor power off.</li>
+        <li><strong>The Bowden tube</strong>, measured by the unit. Needs the motion image, and a calibrated buffer, because arrival is read from the buffer.</li>
+        <li><strong>Selector gates</strong>, on linear, rotary and servo selector units.</li>
+      </ol>
+    </section>
+
+    <section id="buffer" data-lane="2" data-station="the buffer">
+      <h2>The buffer</h2>
+      <p>The OpenAMS buffer sits between the unit and the extruder. Its sensor sends two voltages, which klipper-mmu turns into one number from 0 to 1000:</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Reading</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td data-label="Reading">0</td><td data-label="Meaning">Relaxed. Slack and tension both read 0; the buffer only senses compression.</td></tr>
+<tr><td data-label="Reading">about 500</td><td data-label="Meaning">Printing. The unit feeds faster or slower to hold the middle.</td></tr>
+<tr><td data-label="Reading">700</td><td data-label="Meaning">Arrived. During a load, passing 700 and staying there means the tip has reached the extruder.</td></tr>
+<tr><td data-label="Reading">1000</td><td data-label="Meaning">Fully compressed. A load that gets here stops with an error.</td></tr>
+</tbody>
+</table></div>
+      <p>Every sensor and magnet gives slightly different voltages, so you show the unit what 0 and 1000 look like on yours. The unit will not finish starting up until you do.</p>
+
+      <h3 id="readings" data-station="taking readings">Taking readings</h3>
+      <p>Flash the safe image, switch off motor power, and use only the probe in <code>printer.cfg</code>:</p>
+      <pre><code class="language-ini">[klipper_mmu box]
+mcu: mcu
+diff_probe: True</code></pre>
+      <p>Restart Klipper. Hold the buffer still at a known position and read it:</p>
+      <pre><code class="language-gcode">KLIPPER_MMU_DIFF_PROBE MMU=box</code></pre>
+      <p>Note <code>a_raw</code>, <code>b_raw</code> and the position. Take 2 to 8 readings, in order from relaxed to fully compressed, always including both ends. Three to five is plenty. Let the buffer settle before each reading, and skip any reading identical to the previous one.</p>
+
+      <h3 id="file" data-station="the file">The calibration file</h3>
+      <p>Write the readings to a file such as <code>~/printer_data/config/box-diff-calibration.json</code>:</p>
+      <pre><code class="language-json">{
+  "channel_map": "a_low_b_high",
+  "vref_mv": 3300,
+  "min_valid_mv": LOWEST_GOOD_MV,
+  "max_valid_mv": HIGHEST_GOOD_MV,
+  "path_tolerance_counts": TOLERANCE,
+  "points": [
+    { "a_raw": A_RELAXED,  "b_raw": B_RELAXED,  "position_permille": 0 },
+    { "a_raw": A_HALFWAY,  "b_raw": B_HALFWAY,  "position_permille": 500 },
+    { "a_raw": A_SQUASHED, "b_raw": B_SQUASHED, "position_permille": 1000 }
+  ]
+}</code></pre>
+      <div class="table-wrap"><table>
+<thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td data-label="Field"><code>points</code></td><td data-label="Meaning">Your readings, in order. <code>a_raw</code>/<code>b_raw</code> as printed by the probe; <code>position_permille</code> from 0 (relaxed) to 1000 (fully compressed).</td></tr>
+<tr><td data-label="Field"><code>channel_map</code></td><td data-label="Meaning">Which signal is the low one. <code>a_low_b_high</code> on a standard BoxTurtle; <code>b_low_a_high</code> if <code>b_raw</code> is the smaller number.</td></tr>
+<tr><td data-label="Field"><code>vref_mv</code></td><td data-label="Meaning">The ADC range: 3300 for 0&ndash;3.3&nbsp;V.</td></tr>
+<tr><td data-label="Field"><code>min_valid_mv</code>, <code>max_valid_mv</code></td><td data-label="Meaning">The lowest and highest voltage a healthy sensor produces. Outside them means a broken wire or short, and the reading is rejected.</td></tr>
+<tr><td data-label="Field"><code>path_tolerance_counts</code></td><td data-label="Meaning">How far the two signals may disagree with the calibration before a reading counts as broken (1&ndash;4095).</td></tr>
+</tbody>
+</table></div>
+      <p>Klipper checks the file at start-up and refuses it if a rule is broken:</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Rule</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td data-label="Rule">Point count</td><td data-label="Detail">2 to 8</td></tr>
+<tr><td data-label="Rule">Positions</td><td data-label="Detail">First is 0, last is 1000, each one further than the one before</td></tr>
+<tr><td data-label="Rule">Raw values</td><td data-label="Detail">Whole numbers 0&ndash;4095, exactly as printed (not millivolts)</td></tr>
+<tr><td data-label="Rule">Order</td><td data-label="Detail">Neither raw value goes down from one point to the next, and no two points are identical</td></tr>
+</tbody>
+</table></div>
+      <p>Reset the board (the probe holds the sensor until then), and replace <code>diff_probe: True</code> with:</p>
+      <pre><code class="language-ini">diagnostic_startup: True
+diff_calibration_file: ~/printer_data/config/box-diff-calibration.json</code></pre>
+      <div class="note" style="--note: var(--lane-3)">
+  <span class="note-label">Use your own readings</span>
+  <p>Readings from an example or another buffer describe a different magnet. They will produce a confident, wrong calibration.</p>
+</div>
+
+      <h3 id="check" data-station="checking it">Checking it</h3>
+      <p>Restart Klipper. <code>KLIPPER_MMU_QUERY MMU=box</code> should show <code>startup_state=ready</code>. Then run the buffer check, and within about 10 seconds push the buffer fully in and release it:</p>
+      <pre><code class="language-gcode">KLIPPER_MMU_COMMISSION MMU=box STEP=fps</code></pre>
+      <p>A good calibration rises from near 0 past 900 and returns near its start. The <a href="quick-start.html#c-fps">quick start</a> lists what each complaint means.</p>
+    </section>
+
+    <section id="tube" data-lane="3" data-station="the Bowden tube">
+      <h2>The Bowden tube</h2>
+      <p>LOAD is refused until the tube from the hub to the extruder has been measured. This moves filament, so it needs the motion image and the OpenAMS settings from the <a href="quick-start.html#c-lanes">quick start</a>. Add a file for the result:</p>
+      <pre><code class="language-ini">bowden_estimate_file: ~/printer_data/config/box-bowden.json</code></pre>
+      <p>Restart Klipper. With nothing past the hub and filament in any lane <code>n</code>:</p>
+      <pre><code class="language-gcode">KLIPPER_MMU_CALIBRATE MMU=box BAY=n</code></pre>
+      <p>The unit feeds past the hub at crawl speed until the buffer sees arrival, retracts behind the hub, and reports the length in millimetres. Put that number in <code>openams_path_length_mm</code>. The path is shared, so one lane calibrates all lanes. The result is used immediately, saved to the file, and restored at every restart. A measurement never retries: if it fails, it stops and says why.</p>
+
+      <h3 id="window" data-station="the arrival window">The arrival window</h3>
+      <p>After calibration, a load must see arrival within &plusmn;50&nbsp;mm of the measured length (<code>KLIPPER_MMU_LOAD_WINDOW_MM</code> in the menu). Before calibration the only bounds are 100&ndash;1900&nbsp;mm past the hub.</p>
+      <ul>
+        <li><strong>Too early:</strong> something is in the way (a kink, a closed idler), or the tube is now shorter.</li>
+        <li><strong>Too late:</strong> the drive is slipping, a tube came loose, or the buffer is not responding.</li>
+      </ul>
+      <p>The measurement includes a little compression and slip, so it is close to the tube&#39;s length, not exact. Measure with a clean, straight path.</p>
+
+      <h3 id="when" data-station="when to redo it">When to measure again</h3>
+      <ul>
+        <li><strong>Buffer:</strong> after replacing or moving the buffer, its magnet, sensor, cable or board, or when the buffer check is no longer clean.</li>
+        <li><strong>Tube:</strong> after changing or re-routing the tube, recalibrating the buffer, or changing the firmware.</li>
+      </ul>
+      <p>The unit discards a saved tube length by itself when the buffer calibration file or the firmware&#39;s settings change. It cannot notice a new tube.</p>
+
+      <h3 id="rotation" data-station="per-lane rotation distance">Per-lane rotation distance</h3>
+      <p>Every lane&#39;s drive gear is assumed identical, but real gears vary a little from wear or printed-part tolerance. If one lane consistently over- or under-feeds, calibrate lane 0 first, then check each other lane against it with <code>SAVE=0</code> so it does not disturb lane 0&#39;s saved tube length (they share one measurement), and adjust that lane&#39;s own <code>feeder_rotation_distances</code> entry:</p>
+      <pre><code class="language-gcode">KLIPPER_MMU_CALIBRATE MMU=box BAY=0
+KLIPPER_MMU_CALIBRATE MMU=box BAY=1 SAVE=0</code></pre>
+      <p>The second command's report names the suggested new rotation distance for lane 1. Put it in <code>feeder_rotation_distances</code> (millimetres, one per lane, blank entries keep the firmware&#39;s own default), restart Klipper, and calibrate lane 0 again to check the whole path is still within its arrival window.</p>
+    </section>
+
+    <section id="selectors" data-lane="4" data-station="selector gates">
+      <h2>Selector gates</h2>
+      <p>Linear, rotary and servo selector units ship with default gate positions from Happy Hare&#39;s configuration. For linear selectors (ERCF, Tradrack) these are estimates from CAD geometry, not measurements. Calibrate before trusting them. Add a file for the results:</p>
+      <pre><code class="language-ini">selector_calibration_file: ~/printer_data/config/box-selector.json</code></pre>
+      <div class="table-wrap"><table>
+<thead><tr><th>Selector kind</th><th>How to calibrate</th></tr></thead>
+<tbody>
+<tr><td data-label="Selector kind">Linear, rotary</td><td data-label="How to calibrate">Run <code>KLIPPER_MMU_MOTORS_OFF</code>, move the selector by hand to gate <code>n</code>, then run <code>KLIPPER_MMU_CALIBRATE_SELECTOR GATE=n</code>. It homes, measures the travel and saves it. Do gate 0 and the last gate first; the gates between are spaced evenly.</td></tr>
+<tr><td data-label="Selector kind">Servo</td><td data-label="How to calibrate">Find each gate&#39;s angle with <code>KLIPPER_MMU_SERVO ANGLE=a</code>, then save it with <code>KLIPPER_MMU_CALIBRATE_SELECTOR GATE=n ANGLE=a</code>. Add <code>SPACING=s</code> to fill the other gates <code>s</code> degrees apart.</td></tr>
+<tr><td data-label="Selector kind">Indexed</td><td data-label="How to calibrate">Nothing to calibrate. Each gate is found by its own switch. Set the gate order and switch width in the menu.</td></tr>
+</tbody>
+</table></div>
+      <p>Add <code>SAVE=0</code> to measure without saving. A position outside the selector&#39;s travel or angle range is refused. The saved table is tied to your firmware build and is not applied to a different image. A gate with no calibration can still be configured; only selecting it is refused.</p>
+      <p>You can also enter positions directly, in selector microsteps, one per gate: <code>selector_gate_steps: 320, 2160, 4000, &hellip;</code>. Saved calibration takes precedence.</p>
+    </section>
+
+    <section id="trouble" data-lane="1" data-station="when it complains">
+      <h2>When it complains</h2>
+      <div class="table-wrap"><table>
+<thead><tr><th>Message or symptom</th><th>What to do</th></tr></thead>
+<tbody>
+<tr><td data-label="Message or symptom">Startup never reaches <code>ready</code></td><td data-label="What to do">No calibration, or the file was refused. Check <code>diff_calibration_file</code> and the rules above.</td></tr>
+<tr><td data-label="Message or symptom">Probe reports no fresh reading</td><td data-label="What to do">Wait and ask again. If it persists, check <code>diff_probe: True</code> and the buffer cable.</td></tr>
+<tr><td data-label="Message or symptom">Probe stops working after a config change</td><td data-label="What to do">The probe holds the sensor until the board resets. Reset the board, then restart Klipper.</td></tr>
+<tr><td data-label="Message or symptom">Load stops &ldquo;before the calibrated minimum&rdquo;</td><td data-label="What to do">Arrived too early: a kink or obstruction, or the tube got shorter. Fix it, then measure the tube again if you changed it.</td></tr>
+<tr><td data-label="Message or symptom">Load stops with &ldquo;no resistance&rdquo; past the hub</td><td data-label="What to do">Arrived too late: slipping drive, loose tube, or the buffer is not responding. Run the buffer check first.</td></tr>
+<tr><td data-label="Message or symptom">Load reaches fully compressed</td><td data-label="What to do">The buffer calibration is usually off. Take the readings again.</td></tr>
+<tr><td data-label="Message or symptom">Tube measurement failed</td><td data-label="What to do">It never retries. Read the reason, fix it, and run it again.</td></tr>
+<tr><td data-label="Message or symptom">&ldquo;gate N is not calibrated&rdquo;</td><td data-label="What to do">That selector gate has no saved position or angle. Calibrate it.</td></tr>
+</tbody>
+</table></div>
+      <p>For anything else, <code>KLIPPER_MMU_DIAGNOSE MMU=box</code> explains the current state, and <a href="troubleshooting.html">When things go wrong</a> has the recovery order.</p>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <p>klipper-mmu is an optional add-on to Klipper, a separate project with its own authors and license (GPL-3.0). It builds on the work of the Happy Hare, AFC, BoxTurtle and OpenAMS projects.</p>
+  <p>Set in Bricolage Grotesque, Source Serif 4 and JetBrains Mono (SIL Open Font License), served from this site.</p>
+</footer>
+
+<script src="assets/site.js" defer></script>
+</body>
+</html>

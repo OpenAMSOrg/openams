@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: MIT
+# Installed by OpenAMS (install.sh) from file_templates/cortex_bridge/.
+# Re-run ~/openams/install.sh instead of editing this copy.
+[Unit]
+Description=OpenAMS Cortex Bridge relay (one Klipper serial port per AMS)
+Documentation=https://github.com/OpenAMSOrg/openams/blob/main/docs/guide/cortex-bridge-setup.md
+After=systemd-tmpfiles-setup.service systemd-udev-settle.service
+Before=@KLIPPER_SERVICE@.service
+
+[Service]
+# READY is sent once the AMS roster is in (at most 60 s), or at once when no
+# bridge is plugged in, so Klipper is never held back by a missing bridge.
+Type=notify
+NotifyAccess=main
+User=@USER@
+Group=@GROUP@
+SupplementaryGroups=dialout
+WorkingDirectory=@OPENAMS@
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=@PYTHON@ -m cortex_bridge.relay --log-file @LOG_FILE@
+RuntimeDirectory=cortex-bridge
+RuntimeDirectoryMode=0755
+Restart=always
+RestartSec=2
+TimeoutStartSec=90
+TimeoutStopSec=10
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

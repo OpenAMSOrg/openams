@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How it works inside · klipper-mmu</title>
+<meta name="description" content="Inside klipper-mmu: the 1 ms loop, ramps, Klipper steps, buffer following, arrival, the host lease and faults.">
+<link rel="stylesheet" href="assets/site.css">
+<script>
+  try { var t = localStorage.getItem('kmmu-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</head>
+<body data-page="inside">
+
+<header class="bar" id="bar">
+  <a class="brand" href="./" aria-label="klipper-mmu home">
+    <svg class="brand-mark" viewBox="0 0 26 26" aria-hidden="true" fill="none" stroke-width="2.4" stroke-linecap="round">
+      <path d="M2 4 C 10 4, 12 13, 17 13" stroke="var(--lane-1)"/>
+      <path d="M2 10 C 9 10, 11 13, 17 13" stroke="var(--lane-2)"/>
+      <path d="M2 16 C 9 16, 11 13, 17 13" stroke="var(--lane-3)"/>
+      <path d="M2 22 C 10 22, 12 13, 17 13" stroke="var(--lane-4)"/>
+      <path d="M17 13 H 24" stroke="var(--ink)"/>
+    </svg>
+    klipper-mmu <small>docs</small>
+  </a>
+  <div class="bar-tools">
+    <button class="toc-toggle" id="toc-toggle" type="button" aria-expanded="false" aria-controls="toc">Contents</button>
+    <button class="theme-toggle" id="theme-toggle" type="button">Dark</button>
+  </div>
+  <div class="bar-progress" id="bar-progress" aria-hidden="true"><span id="bar-progress-fill"></span></div>
+</header>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<div class="page" id="page">
+  <nav class="toc" id="toc" aria-label="Manual"></nav>
+
+  <main class="content">
+<section class="hero" id="start" data-lane="1" data-station="overview">
+      <p class="eyebrow"><b>How it works inside</b> &nbsp;/&nbsp; for the curious</p>
+      <h1>What the unit <em>is doing.</em></h1>
+      <p class="lede">You do not need this chapter to load filament. It explains what the unit saw when it stopped, and why it behaves as it does. In short: the unit&#39;s microcontroller reads its sensors, adjusts its motors and checks its limits every millisecond, without waiting for the host.</p>
+    </section>
+
+    <section id="loop" data-lane="2" data-station="every millisecond">
+      <h2>The 1 ms loop</h2>
+      <p>Every millisecond the unit:</p>
+      <ol>
+        <li><strong>reads</strong> every switch, the buffer, the encoder and the drivers&#39; status;</li>
+        <li><strong>compares</strong> them with the operation in progress: is the filament where it should be, is the buffer too compressed, did a switch change unexpectedly;</li>
+        <li><strong>adjusts</strong> the motor speeds, or stops everything.</li>
+      </ol>
+      <p>Nothing in the loop waits for the host. <a href="index.html#why">Start here</a> shows why that matters, with numbers.</p>
+    </section>
+
+    <section id="ramps" data-lane="3" data-station="smooth speed">
+      <h2>Ramps</h2>
+      <p>The unit never sets a speed directly. It sets a target, and the actual speed moves toward it within limits on acceleration and on the change of acceleration (jerk), so moves start and end smoothly. The target can change at any moment; the speed bends toward the new one from where it is.</p>
+      <p>To stop at an exact distance, the unit keeps computing where it would stop if it braked now. When that matches the distance left, it brakes, crawls the last bit and lands on the mark. It never overshoots and backs up.</p>
+      <p>A load uses this to go fast and stop precisely: it accelerates toward 200&nbsp;mm/s (BoxTurtle), slows to a 20&nbsp;mm/s crawl before the toolhead, and stops on arrival.</p>
+    </section>
+
+    <section id="steps" data-lane="4" data-station="klipper's steps">
+      <h2>Steps come from Klipper</h2>
+      <p>The unit decides speeds; Klipper&#39;s own stepper code makes the pulses, the same code that moves your toolhead. Every millisecond the unit turns its speed into &ldquo;this many steps over the next millisecond&rdquo; and queues it, staying a couple of milliseconds ahead. A piece that arrives late is a fault, and everything stops.</p>
+    </section>
+
+    <section id="follow" data-lane="1" data-station="following">
+      <h2>Following the buffer while printing</h2>
+      <p>The extruder pulls filament at whatever speed the print needs and does not tell the unit. The buffer between them reports 0 (relaxed) to 1000 (fully compressed), and the unit keeps it near 500.</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Buffer</th><th>How the unit follows it</th></tr></thead>
+<tbody>
+<tr><td data-label="Buffer">Switched (two switches)</td><td data-label="How the unit follows it">Like a thermostat. The switch reached when the buffer wants filament means feed; the other means stop; neither means keep doing the same. Positions read as 250, 750 and 500.</td></tr>
+<tr><td data-label="Buffer">Tension-only (one switch, QIDI Box)</td><td data-label="How the unit follows it">The switch, reached under tension, means feed; without it the reading is the middle (500). The missing compression switch is never assumed.</td></tr>
+<tr><td data-label="Buffer">Analog (OpenAMS FPS)</td><td data-label="How the unit follows it">Proportional. The further the reading is from 500, the more the feed speed changes (<code>KLIPPER_MMU_BUFFER_GAIN_UM_S</code>), with a small deadband around the middle (10&permil;).</td></tr>
+</tbody>
+</table></div>
+      <p>Fully compressed while following means the toolhead stopped taking filament or the path is blocked. The unit stops and reports it; it does not push harder.</p>
+      <p>On units with a filament encoder (ERCF), the unit also counts encoder clicks while it feeds. If the gear moves 10&nbsp;mm with no click, the filament is not moving: a clog or a slip. The rule is distance, not time, so it works at any print speed.</p>
+    </section>
+
+    <section id="arrival" data-lane="2" data-station="arrival">
+      <h2>Detecting arrival</h2>
+      <p>During a load the tip reaches the extruder&#39;s gears, which are not turning yet. The unit keeps pushing, so the buffer compresses. Three readings in a row past 700 mean arrival. One reading is not enough: it could be a bump or noise.</p>
+      <p>The unit also checks where arrival happened. After the <a href="calibration.html#tube">Bowden tube is measured</a>, arrival must fall within &plusmn;50&nbsp;mm of that length. Earlier means an obstruction; later means slipping or a loose tube. Units without an analog buffer end the load on a toolhead switch wired to their own board instead.</p>
+    </section>
+
+    <section id="split" data-lane="3" data-station="who decides">
+      <h2>The host asks, the unit acts</h2>
+      <ul>
+        <li><strong>The host</strong> (Klipper and OpenAMS) chooses the lane, spool and tool, pauses the printer, and keeps your calibration.</li>
+        <li><strong>The unit</strong> owns every motor output and sensor reading. The host can ask for a load; it cannot move a motor itself.</li>
+        <li><strong>The unit refuses what it cannot do.</strong> If an operation needs a sensor the unit does not have, it is refused. A missing sensor is never assumed to have said something.</li>
+      </ul>
+    </section>
+
+    <section id="leash" data-lane="4" data-station="the lease">
+      <h2>The 2-second lease</h2>
+      <p>The unit may move motors only while the host keeps sending a heartbeat. Each one renews a lease. After 2 seconds without one, the lease expires and the unit stops everything, mid-move if necessary. Silence usually means Klipper crashed, restarted or is overloaded, or a cable came out; in every case nobody is watching.</p>
+      <p>Inside the unit there is a shorter check: the part that decides speeds must check in with the part that queues steps every few milliseconds, or the motor outputs stop.</p>
+    </section>
+
+    <section id="faults" data-lane="1" data-station="faults">
+      <h2>Faults stop everything</h2>
+      <p>A driver error, an impossible switch reading, a fully compressed buffer, a deadline missed: the response is always the same. Motor outputs off, fault recorded, wait. The unit does not retry by itself or clear a fault after a timeout, because after a sudden stop nobody knows for certain where the filament is.</p>
+      <div class="note" style="--note: var(--lane-3)">
+  <span class="note-label">Acknowledging is not clearing</span>
+  <p>Acknowledging a fault only records that you have seen it. The unit moves again only after you have said where the filament is. See the <a href="troubleshooting.html#recovery">recovery order</a>.</p>
+</div>
+      <p>The one planned retry is inside a load: up to three attempts within a fixed time budget, each starting by backing off to a known point. If all three fail, it stops and reports each one.</p>
+      <p>Selectors follow the same caution. A selector that lost its position (after start-up, a fault, or motors off) homes before its next selection, and it never moves with filament in the shared path.</p>
+    </section>
+
+    <section id="safe" data-lane="2" data-station="safe firmware">
+      <h2>The safe firmware</h2>
+      <p>The safe image has the same wiring, start-up and sensors as the motion image, and runs every check. It cannot start a motor: the ability is not built into it, so no setting or command can turn it on. Use it for the first power-on and whenever you want to check wiring with nothing able to move.</p>
+    </section>
+
+    <section id="qualified" data-lane="3" data-station="not qualified yet">
+      <h2>What &ldquo;not qualified&rdquo; means</h2>
+      <p>The firmware runs in a whole-system simulation with the real Klipper and OpenAMS on top: loads, unloads, preloads, ejects, calibration and deliberately broken hardware. That has found real bugs. It cannot tell how much torque your motor has at speed, whether it brakes without losing steps, how noisy your cables are, or how strong your buffer&#39;s magnet is.</p>
+      <div class="note" style="--note: var(--lane-3)">
+  <span class="note-label">Until then</span>
+  <p>Qualified means a person has watched it work on a real unit many times and measured how it stops. Until that happens, trust the logic, not the physics, and watch your first loads.</p>
+</div>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <p>klipper-mmu is an optional add-on to Klipper, a separate project with its own authors and license (GPL-3.0). It builds on the work of the Happy Hare, AFC, BoxTurtle and OpenAMS projects.</p>
+  <p>Set in Bricolage Grotesque, Source Serif 4 and JetBrains Mono (SIL Open Font License), served from this site.</p>
+</footer>
+
+<script src="assets/site.js" defer></script>
+</body>
+</html>

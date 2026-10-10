@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 12:02:33 -0700
+Subject: [PATCH] serialhdl: Close CAN sockets after assignment errors
+
+Opening a python-can SocketCAN bus and transmitting the initial node-assignment frame are part of one retry block.  If socket creation succeeded but bus.send() failed, the exception path retained that bus and opened another one five seconds later.  A persistent transmit failure could therefore leak a socket and its kernel CAN filters on every attempt.
+
+Track whether the bus was created and shut it down before pausing for a retry.  Keep cleanup failures from hiding the original transport error, and describe the broader operation as CAN access because the failure may occur after open.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/klippy/serialhdl.py b/klippy/serialhdl.py
+index bab6eb89..f7558d10 100644
+--- a/klippy/serialhdl.py
++++ b/klippy/serialhdl.py
+@@ -148,13 +148,32 @@ class SerialReader:
+         while 1:
+             if self.reactor.monotonic() > start_time + 90.:
+                 self._error("Unable to connect")
++            bus = None
+             try:
+                 bus = can.interface.Bus(channel=canbus_iface,
+                                         can_filters=filters,
+                                         bustype='socketcan')
+                 bus.send(set_id_msg)
+             except (can.CanError, os.error, IOError) as e:
+-                logging.warning("%sUnable to open CAN port: %s",
++                if bus is not None:
++                    # Socket construction and the first assignment send share
++                    # one retry block, but they do not share resource
++                    # ownership.  Once construction succeeds, bus owns a raw
++                    # SocketCAN socket and the receive filters installed for
++                    # it, even if the first frame can not be queued.  Leaving
++                    # that partially initialized object open is especially
++                    # costly here: the retry loop may run for 90 seconds and
++                    # would create another socket and filter set on every
++                    # attempt.  Test the acquisition state explicitly and
++                    # release it before pausing.  Cleanup is best-effort and
++                    # logged separately so a shutdown error can not replace
++                    # the CAN access error which caused this retry.
++                    try:
++                        bus.shutdown()
++                    except Exception:
++                        logging.exception("%sUnable to close CAN port",
++                                          self.warn_prefix)
++                logging.warning("%sUnable to access CAN port: %s",
+                                 self.warn_prefix, e)
+                 self.reactor.pause(self.reactor.monotonic() + 5.)
+                 continue

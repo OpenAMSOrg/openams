@@ -1,0 +1,40 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Fri, 4 Sep 2026 14:18:28 -0700
+Subject: [PATCH] usb_canbus: Restart interrupted stall deadlines
+
+Shutdown removes all scheduler timers before invoking the shutdown
+callbacks.  If the bridge is waiting for transmit capacity at that
+point, it retains BSS_BLOCKING without a timer to expire the wait.  A
+controller that remains full can then block the host queue indefinitely,
+including messages intended for the local bridge MCU.
+
+Reset a blocked wait to BSS_READY in usb_shutdown().  The existing task
+wakeup retries the pending frame and arms a fresh 50ms deadline if the
+controller is still full.  Preserve an already reported discard state
+so recovery notifications remain paired.  CAN framing is unchanged.
+
+A native fault-injection harness reproduces the missing deadline before
+this change and passes afterwards.  It also checks timeout discards,
+recovery notifications, and successful cancellation when capacity
+returns.  The RP2040 USB-CAN firmware build passes.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+(cherry picked from commit 86df7533c0bce3396de4b0535d384616f796a65e)
+
+diff --git a/src/generic/usb_canbus.c b/src/generic/usb_canbus.c
+index ab1f59ce..a355de18 100644
+--- a/src/generic/usb_canbus.c
++++ b/src/generic/usb_canbus.c
+@@ -995,6 +995,11 @@ DECL_TASK(usb_ep0_task);
+ void
+ usb_shutdown(void)
+ {
++    // Shutdown removed the stall timer; let the task arm a new deadline.
++    if (UsbCan.bus_send_state == BSS_BLOCKING) {
++        UsbCan.bus_send_state = BSS_READY;
++        writeb(&UsbCan.bus_send_timed_out, 0);
++    }
+     wake_usbcan_task();
+     usb_notify_ep0();
+ }

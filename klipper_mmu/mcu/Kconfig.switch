@@ -1,0 +1,162 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+menu "Local switch electrical settings"
+
+config KLIPPER_MMU_LOAD_ACTIVE_HIGH
+    string "LOAD active levels by lane (0=low, 1=high)"
+    depends on KLIPPER_MMU_LOAD_SENSORS
+    default "1,1,1,1" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default ""
+    help
+        Exactly one value per lane. Empty means unconfigured.
+
+config KLIPPER_MMU_LOAD_PULL
+    string "LOAD input pulls by lane (-1=down, 0=none, 1=up)"
+    depends on KLIPPER_MMU_LOAD_SENSORS
+    default "1,1,1,1" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default ""
+
+config KLIPPER_MMU_BAY_ACTIVE_HIGH
+    string "Bay active levels by lane (0=low, 1=high)"
+    depends on KLIPPER_MMU_BAY_SENSORS
+    default "0,0,0,0" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default ""
+    help
+        Comma-separated 0 or 1, exactly one per lane, without spaces.
+        BoxTurtle defaults follow the AFC Turtle preparation switches.
+        Empty means unconfigured. Saved overrides survive preset changes.
+
+config KLIPPER_MMU_BAY_PULL
+    string "Bay input pulls by lane (-1=down, 0=none, 1=up)"
+    depends on KLIPPER_MMU_BAY_SENSORS
+    default "1,1,1,1" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default ""
+    help
+        Pull selection is separate from the signal's active level. Confirm
+        suitability for the connected sensor and board. Empty means unset.
+
+config KLIPPER_MMU_HUB_ACTIVE_HIGH
+    int "Hub active level (-1=unset, 0=low, 1=high)"
+    depends on !KLIPPER_MMU_VIRTUAL_HUB
+    range -1 1
+    default 1 if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default -1
+
+config KLIPPER_MMU_HUB_PULL
+    int "Hub input pull (-2=unset, -1=down, 0=none, 1=up)"
+    depends on !KLIPPER_MMU_VIRTUAL_HUB
+    range -2 1
+    default 1 if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default -2
+
+config KLIPPER_MMU_TOOLHEAD_ACTIVE_HIGH
+    int "Arrival sensor active level (-1=unset, 0=low, 1=high)"
+    depends on KLIPPER_MMU_TOOLHEAD_SENSOR
+    range -1 1
+    default 0 if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default -1
+    help
+        This is the local arrival pin already selected in the pin menu.
+        The BoxTurtle AFC Lite preset uses active-low and a pull-up, the same
+        electrical class as its preparation switches, so the factory can
+        validate. Confirm the actual arrival sensor's polarity and bias.
+
+config KLIPPER_MMU_TOOLHEAD_PULL
+    int "Arrival sensor pull (-2=unset, -1=down, 0=none, 1=up)"
+    depends on KLIPPER_MMU_TOOLHEAD_SENSOR
+    range -2 1
+    default 1 if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default -2
+
+config KLIPPER_MMU_SELECTOR_ENDSTOP_ACTIVE_HIGH
+    int "Selector home endstop active level (-1=unset, 0=low, 1=high)"
+    depends on KLIPPER_MMU_SELECTOR_HAS_ENDSTOP
+    range -1 1
+    default -1
+
+config KLIPPER_MMU_SELECTOR_ENDSTOP_PULL
+    int "Selector home endstop pull (-2=unset, -1=down, 0=none, 1=up)"
+    depends on KLIPPER_MMU_SELECTOR_HAS_ENDSTOP
+    range -2 1
+    default -2
+
+config KLIPPER_MMU_SELECTOR_GATE_ACTIVE_HIGH
+    string "Per-gate index switch active levels by lane (0=low, 1=high)"
+    depends on KLIPPER_MMU_SELECTOR_KIND_INDEXED
+    default ""
+    help
+        Exactly one value per lane, comma separated, no spaces -- same shape
+        as KLIPPER_MMU_BAY_ACTIVE_HIGH above. No device in this catalogue's
+        dossier evidence covers this per-switch electrical wiring; empty
+        means unconfigured, and startup refuses an INDEXED profile until set.
+
+config KLIPPER_MMU_SELECTOR_GATE_PULL
+    string "Per-gate index switch input pulls by lane (-1=down, 0=none, 1=up)"
+    depends on KLIPPER_MMU_SELECTOR_KIND_INDEXED
+    default ""
+    help
+        Pull selection is separate from the signal's active level. Confirm
+        suitability for the connected switch and board. Empty means unset.
+
+if !KLIPPER_MMU_DIFF_BUFFER
+config KLIPPER_MMU_BUFFER_SINGLE_SWITCH
+    bool "Tension-only buffer (second/compression switch not wired)"
+    default n
+    help
+        Some devices (QIDI Box: docs/devices/qidi_box.md's [mmu_buffer]
+        wires only tension_pin, no compression_pin) have just one physical
+        buffer switch. Enabling this drops KLIPPER_MMU_PINS_BUFFER_B and the
+        buffer-input choice below: KLIPPER_MMU_PINS_BUFFER_A is always the
+        low/tension switch, and KLIPPER_MMU_BUFFER_ACTIVE_HIGH/_PULL each
+        take one value instead of two.
+
+        The missing compression switch is never fabricated as active. This
+        matches Happy Hare's own degraded single-switch sync-feedback
+        mapping (extras/mmu/unit/mmu_buffer.py sync_tension_callback,
+        compression_enabled=False branch): the tension switch active means
+        tension/-1 (feed forward, low position 250 here); inactive means
+        neutral/0 (position 500). The compressed/+1 state cannot be
+        reported, so this build never produces it either
+        (src/buffer_sensor.c, mcu/switch_gpio.c).
+
+config KLIPPER_MMU_BUFFER_ACTIVE_HIGH
+    string "Buffer active levels, A then B (0=low, 1=high)"
+    default "0,0" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default ""
+    help
+        Exactly two values matching the buffer A/B pins, without spaces --
+        or exactly one value with KLIPPER_MMU_BUFFER_SINGLE_SWITCH, for the
+        sole A pin. These are electrical levels, separate from the
+        mechanical mapping selected below. Both switches active is treated
+        as invalid feedback.
+
+config KLIPPER_MMU_BUFFER_PULL
+    string "Buffer pulls, A then B (-1=down, 0=none, 1=up)"
+    default "1,1" if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default ""
+    help
+        Same count as KLIPPER_MMU_BUFFER_ACTIVE_HIGH above: two values, or
+        one with KLIPPER_MMU_BUFFER_SINGLE_SWITCH.
+
+if !KLIPPER_MMU_BUFFER_SINGLE_SWITCH
+choice
+    prompt "Buffer input that requests forward feeding"
+    default KLIPPER_MMU_BUFFER_LOW_A if KLIPPER_MMU_BOARD_AFC_LITE && KLIPPER_MMU_DEVICE_BOXTURTLE
+    default KLIPPER_MMU_BUFFER_LOW_UNSET
+    help
+        Explicitly choose the switch reached when the buffer needs more
+        filament fed forward. It maps to low normalized position (250).
+        The other switch maps to high position (750); neither active is 500.
+        Check the mechanical direction; names such as advance/trailing alone
+        are not a verified physical mapping. This is not electrical inversion.
+
+config KLIPPER_MMU_BUFFER_LOW_UNSET
+    bool "Unconfigured"
+config KLIPPER_MMU_BUFFER_LOW_A
+    bool "Buffer A"
+config KLIPPER_MMU_BUFFER_LOW_B
+    bool "Buffer B"
+endchoice
+endif
+endif
+
+endmenu

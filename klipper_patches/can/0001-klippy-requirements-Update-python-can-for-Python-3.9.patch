@@ -1,0 +1,29 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Sun, 23 Aug 2026 22:59:18 -0700
+Subject: [PATCH] klippy-requirements: Update python-can for Python 3.9+
+
+python-can 3.3.4 imports pkg_resources and required a runtime
+setuptools pin on recent Python versions.  That pin now carries a
+known vulnerability and is unnecessary with current python-can.
+
+Keep 3.3.4 for older interpreters, use 4.6.1 on Python 3.9 and newer,
+and drop the setuptools runtime dependency.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/scripts/klippy-requirements.txt b/scripts/klippy-requirements.txt
+index a3ae2f28..924aca11 100644
+--- a/scripts/klippy-requirements.txt
++++ b/scripts/klippy-requirements.txt
+@@ -15,7 +15,8 @@ markupsafe==1.1.1       # Needed by Jinja2
+ # pyserial is used by serialhdl.py (for USB and UART mcu connections)
+ pyserial==3.4
+ # python-can is used by serialhdl.py (for canbus mcu connections)
+-python-can==3.3.4
+-setuptools==78.1.1 ; python_version >= '3.12' # Needed by python-can
++# Newer python-can releases require Python 3.9 or later
++python-can==3.3.4 ; python_version < '3.9'
++python-can==4.6.1 ; python_version >= '3.9'
+ # msgspec is an optional dependency of webhooks.py
+ msgspec==0.19.0 ; python_version >= '3.9'

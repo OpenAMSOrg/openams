@@ -1,0 +1,667 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 1344" width="1100" height="1344" role="img" aria-labelledby="wd-title wd-desc">
+<title id="wd-title">Cortex Bridge Rev A4 wiring diagram</title>
+<desc id="wd-desc">A Raspberry Pi 5 running Klipper connects from one of its USB-A ports to the Cortex Bridge USB-C port J1 with a USB-A to USB-C data cable. Two wires run from spare + and &#8722; terminals on the printer&#8217;s own 24 V power supply to the PWR IN screw terminal P1, + to + and &#8722; to &#8722;. The BUFFER connector CN1 connects to the 4-pin connector of the original Bambu Lab AMS filament buffer with the 4-pin buffer cable (24 V and RS-485). The buffer&#8217;s 6-pin connector goes to the first AMS unit only; up to four AMS units are daisy-chained on their 6-pin cables. Up to the coupler, filament runs in PTFE tube, 3 mm inside and 4 mm outside diameter: from each AMS outlet into an optional printed PTFE splitter (only with more than one AMS), into the buffer, into the 3 mm side of a printed PTFE tube coupler v5; from its other side, 3 mm or 2 mm ID tube runs to the toolhead extruder, where a filament cutter is required. J4 PRGRM and J7 stay empty. The Klipper computer keeps its existing USB or CAN link to the printer.</desc>
+<style>
+text{font-family:"Helvetica Neue",Helvetica,Arial,"Liberation Sans","Nimbus Sans","DejaVu Sans",sans-serif;font-size:15px;fill:#162027}
+.tref,.silk,.silk-big{font-family:"DejaVu Sans Mono",Menlo,Consolas,"Liberation Mono",monospace}
+.bg{fill:#f9fbfa;stroke:#d2dad8;stroke-width:1.5}
+.frame{fill:#edf1f0;stroke:#bac5c3;stroke-width:1.5}
+.box{fill:#ffffff;stroke:#8f9ca0;stroke-width:1.5}
+.opt-outline{fill:none;stroke:#8f9ca0;stroke-width:1.5;stroke-dasharray:7 5}
+.legend{fill:#ffffff;stroke:#d2dad8;stroke-width:1.2}
+.th{font-size:17.5px;font-weight:700}
+.tb{font-size:16px;font-weight:700}
+.ts{font-size:15px;fill:#4b575f}
+.tw{font-size:15px;font-weight:700;fill:#9e4806}
+.tref{font-size:15px;font-weight:700;fill:#162027}
+.tpol{font-size:15px;font-weight:700;fill:#b4321a}
+.tnum{font-size:15px;font-weight:700;fill:#162027}
+.tlink{font-size:15px;font-weight:700;fill:#1d6a47;text-decoration:underline}
+.tdots{font-size:34px;font-weight:700;fill:#4b575f;letter-spacing:2px}
+.silk{font-size:15px;font-weight:700;fill:#f1f5ee}
+.silk-big{font-size:19px;font-weight:700;fill:#f1f5ee}
+.silk-note{font-size:15px;font-style:italic;fill:#c2dccc}
+.ann{font-size:15px;font-weight:700;fill:#f1f5ee}
+.dev-t{font-size:15px;font-weight:700;fill:#172026}
+.metal-t{font-size:16px;font-weight:700;fill:#172026}
+.metal-ts{font-size:15px;fill:#172026}
+.leader{fill:none;stroke:#8f9ca0;stroke-width:1.2;stroke-dasharray:2 3}
+.fitting{fill:#d9dfe1;stroke:#8f9ca0;stroke-width:1}
+.pcb{fill:#1f5b3e;stroke:#123f2a;stroke-width:2}
+.silk-line{fill:none;stroke:#f1f5ee;stroke-width:1.2}
+.silk-faint{fill:none;stroke:#86ae98;stroke-width:1.2;stroke-dasharray:4 3}
+.metal{fill:#cdd3d7;stroke:#6f7a80;stroke-width:1.2}
+.metal-in{fill:#59636a}
+.term{fill:#52c98e;stroke:#23784f;stroke-width:1.2}
+.screw{fill:#dfe3e5;stroke:#5d686d;stroke-width:1.2}
+.slot{stroke:#5d686d;stroke-width:2;stroke-linecap:round}
+.conn-white{fill:#f6f6f1;stroke:#6f7a80;stroke-width:1.2}
+.conn-white-in{fill:#c9cbc2}
+.pin{stroke:#9c7c22;stroke-width:1.6}
+.conn-dark{fill:#2b3034;stroke:#121517;stroke-width:1.2}
+.cavity{fill:#121517;stroke:#6f7a80;stroke-width:1}
+.fuse{fill:#efe9d8;stroke:#6f7a80;stroke-width:1}
+.fuse-cap{fill:#cdd3d7}
+.pad{fill:#d9b44a;stroke:#9c7c22;stroke-width:1}
+.led-w{fill:#ffffff;stroke:#6f7a80;stroke-width:1}
+.led-g{fill:#3ddc74;stroke:#123f2a;stroke-width:1}
+.led-r{fill:#ff4632;stroke:#123f2a;stroke-width:1}
+.halo-w{fill:#ffffff;fill-opacity:.42}
+.halo-g{fill:#3ddc74;fill-opacity:.38}
+.halo-r{fill:#ff4632;fill-opacity:.4}
+.dev{fill:#e6eaec;stroke:#7d8a8f;stroke-width:1.5}
+.pi{fill:#2f8a45;stroke:#1c5e2c;stroke-width:1.5}
+.hole-ring{fill:#d9b44a;stroke:#9c7c22;stroke-width:.8}
+.hole{fill:#f9fbfa}
+.gpin{fill:#d9b44a}
+.usb3t{fill:#2f6fd6}
+.usb2t{fill:#3a4146}
+.fin{stroke:#6f7a80;stroke-width:1.4}
+.chip{fill:#2b3034}
+.psu{fill:#cdd3d7;stroke:#6f7a80;stroke-width:1.5}
+.vent{fill:#98a3a9}
+.wire-stub{stroke:#86929a;stroke-width:3;stroke-linecap:round}
+.lid{fill:#8fa7b4;fill-opacity:.32;stroke:#7d8a8f;stroke-width:1.5}
+.flange{fill:#cfd6da;stroke:#7d8a8f;stroke-width:1}
+.sp1{fill:#d9534f}
+.sp2{fill:#f0b429}
+.sp3{fill:#3d8bd4}
+.sp4{fill:#4fae6c}
+.spring{fill:none;stroke:#6f7a80;stroke-width:1.6;stroke-linejoin:round}
+.slider{fill:#cdd3d7;stroke:#6f7a80;stroke-width:1.2}
+.gear{fill:#cdd3d7;stroke:#6f7a80;stroke-width:1.2}
+.gear-teeth{fill:none;stroke:#6f7a80;stroke-width:4;stroke-dasharray:3 3}
+.nozzle{fill:#d9b44a;stroke:#9c7c22;stroke-width:1}
+.cutter{fill:#9e4806}
+.faded{opacity:.55}
+.w-usb{fill:none;stroke:#1f62c4;stroke-width:4;stroke-linejoin:round;stroke-linecap:round}
+.plug-usb{fill:#1f62c4}
+.w-pwr{fill:none;stroke:#c9381d;stroke-width:3;stroke-linejoin:round}
+.w-4{fill:none;stroke:#7a45c8;stroke-width:7}
+.plug-4{fill:#7a45c8}
+.w-6{fill:none;stroke:#0b8676;stroke-width:7;stroke-linejoin:round}
+.plug-6{fill:#0b8676}
+.w-6opt{fill:none;stroke:#0b8676;stroke-width:5;stroke-dasharray:10 7;stroke-linejoin:round}
+.slash{stroke:#162027;stroke-width:2}
+.tube{fill:none;stroke:#f2d9a7;stroke-width:15;stroke-linejoin:round}
+.fil{fill:none;stroke:#d98a00;stroke-width:4;stroke-dasharray:9 6;stroke-linejoin:round}
+.tube-s{fill:none;stroke:#f2d9a7;stroke-width:10;stroke-linejoin:round}
+.fil-s{fill:none;stroke:#d98a00;stroke-width:3;stroke-dasharray:7 5;stroke-linejoin:round}
+.fil-head{fill:#d98a00}
+.rib{stroke:#7d8a8f;stroke-width:1.5}
+.w-exist{fill:none;stroke:#86929a;stroke-width:2.2;stroke-dasharray:6 5}
+@media (prefers-color-scheme: dark){
+text{fill:#e2e9ea}
+.bg{fill:#11191c;stroke:#2a373b}
+.frame{fill:#162024;stroke:#304046}
+.box{fill:#1a2428;stroke:#5f7076}
+.opt-outline{stroke:#5f7076}
+.legend{fill:#1a2428;stroke:#2a373b}
+.ts{fill:#a7b4b9}
+.tw{fill:#ffac6a}
+.tref{fill:#e2e9ea}
+.tpol{fill:#ff8e74}
+.tnum{fill:#e2e9ea}
+.tlink{fill:#62cf9a}
+.tdots{fill:#a7b4b9}
+.silk{fill:#eef3ec}
+.silk-big{fill:#eef3ec}
+.silk-note{fill:#b3d2c0}
+.ann{fill:#eef3ec}
+.dev-t{fill:#e2e9ea}
+.metal-t{fill:#172026}
+.metal-ts{fill:#172026}
+.leader{stroke:#5f7076}
+.fitting{fill:#33424a;stroke:#5f7076}
+.pcb{fill:#1c4e36;stroke:#3a7f5c}
+.silk-line{stroke:#eef3ec}
+.silk-faint{stroke:#6f9a83}
+.metal{fill:#aeb6bc;stroke:#5e6970}
+.metal-in{fill:#3f474d}
+.term{fill:#3fb27b;stroke:#1f6b47}
+.screw{fill:#c9ced1;stroke:#4a5458}
+.slot{stroke:#4a5458}
+.conn-white{fill:#e6e6df;stroke:#5e6970}
+.conn-white-in{fill:#a9aca2}
+.pin{stroke:#8a6c1c}
+.conn-dark{fill:#16191c;stroke:#050607}
+.cavity{fill:#050607;stroke:#5e6970}
+.fuse{fill:#d6cfbb;stroke:#5e6970}
+.fuse-cap{fill:#aeb6bc}
+.pad{fill:#c9a540;stroke:#8a6c1c}
+.led-w{fill:#ffffff;stroke:#5e6970}
+.led-g{fill:#3ddc74;stroke:#3a7f5c}
+.led-r{fill:#ff4632;stroke:#3a7f5c}
+.halo-w{fill:#ffffff}
+.halo-g{fill:#3ddc74}
+.halo-r{fill:#ff4632}
+.dev{fill:#2a353b;stroke:#71838a}
+.pi{fill:#2a7039;stroke:#56a565}
+.hole-ring{fill:#c9a540;stroke:#8a6c1c}
+.hole{fill:#11191c}
+.gpin{fill:#c9a540}
+.usb3t{fill:#4d8ef0}
+.usb2t{fill:#2c3237}
+.fin{stroke:#5e6970}
+.chip{fill:#16191c}
+.psu{fill:#aeb6bc;stroke:#5e6970}
+.vent{fill:#6a777e}
+.wire-stub{stroke:#7d8b92}
+.lid{fill:#7d97a5;stroke:#71838a}
+.flange{fill:#8e999f;stroke:#71838a}
+.sp1{fill:#d9534f}
+.sp2{fill:#f0b429}
+.sp3{fill:#3d8bd4}
+.sp4{fill:#4fae6c}
+.spring{stroke:#5e6970}
+.slider{fill:#aeb6bc;stroke:#5e6970}
+.gear{fill:#aeb6bc;stroke:#5e6970}
+.gear-teeth{stroke:#5e6970}
+.nozzle{fill:#c9a540;stroke:#8a6c1c}
+.cutter{fill:#ffac6a}
+.w-usb{stroke:#6fa7ff}
+.plug-usb{fill:#6fa7ff}
+.w-pwr{stroke:#ff7a5c}
+.w-4{stroke:#b893ff}
+.plug-4{fill:#b893ff}
+.w-6{stroke:#3ccfb8}
+.plug-6{fill:#3ccfb8}
+.w-6opt{stroke:#3ccfb8}
+.slash{stroke:#e2e9ea}
+.tube{stroke:#4f3d1c}
+.fil{stroke:#ffb63a}
+.tube-s{stroke:#4f3d1c}
+.fil-s{stroke:#ffb63a}
+.fil-head{fill:#ffb63a}
+.rib{stroke:#71838a}
+.w-exist{stroke:#7d8b92}
+}
+</style>
+<rect class="bg" x="1" y="1" width="1098" height="1342" rx="18"/>
+<!-- Printer: 24 V supply, mainboard, toolhead (existing, unchanged) -->
+<g id="printer">
+<rect class="frame" x="16" y="16" width="1068" height="210" rx="14"/>
+<text class="th" x="34" y="44">Printer</text>
+<rect class="psu" x="34" y="56" width="180" height="104" rx="4"/>
+<rect class="vent" x="44" y="64" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="62.4" y="64" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="80.8" y="64" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="99.2" y="64" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="117.6" y="64" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="136" y="64" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="154.4" y="64" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="172.8" y="64" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="191.2" y="64" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="44" y="75" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="62.4" y="75" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="80.8" y="75" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="99.2" y="75" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="117.6" y="75" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="136" y="75" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="154.4" y="75" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="172.8" y="75" width="12" height="5" rx="2.5"/>
+<rect class="vent" x="191.2" y="75" width="12" height="5" rx="2.5"/>
+<text class="metal-t" x="124" y="112" text-anchor="middle">24 V power supply</text>
+<text class="metal-ts" x="124" y="132" text-anchor="middle">(the printer&#8217;s own)</text>
+<text class="metal-t" x="52" y="154" text-anchor="middle">+</text>
+<text class="metal-t" x="76" y="154" text-anchor="middle">&#8722;</text>
+<rect class="conn-dark" x="34" y="160" width="180" height="26" rx="2"/>
+<circle class="screw" cx="52" cy="173" r="8"/>
+<line class="slot" x1="46.8" y1="178.2" x2="57.2" y2="167.8"/>
+<circle class="screw" cx="76" cy="173" r="8"/>
+<line class="slot" x1="70.8" y1="178.2" x2="81.2" y2="167.8"/>
+<circle class="screw" cx="100" cy="173" r="8"/>
+<line class="slot" x1="94.8" y1="178.2" x2="105.2" y2="167.8"/>
+<circle class="screw" cx="124" cy="173" r="8"/>
+<line class="slot" x1="118.8" y1="178.2" x2="129.2" y2="167.8"/>
+<circle class="screw" cx="148" cy="173" r="8"/>
+<line class="slot" x1="142.8" y1="178.2" x2="153.2" y2="167.8"/>
+<circle class="screw" cx="172" cy="173" r="8"/>
+<line class="slot" x1="166.8" y1="178.2" x2="177.2" y2="167.8"/>
+<circle class="screw" cx="196" cy="173" r="8"/>
+<line class="slot" x1="190.8" y1="178.2" x2="201.2" y2="167.8"/>
+<line class="wire-stub" x1="100" y1="187" x2="100" y2="197"/>
+<line class="wire-stub" x1="124" y1="187" x2="124" y2="197"/>
+<line class="wire-stub" x1="148" y1="187" x2="148" y2="197"/>
+<line class="wire-stub" x1="172" y1="187" x2="172" y2="197"/>
+<line class="wire-stub" x1="196" y1="187" x2="196" y2="197"/>
+<rect class="box" x="380" y="56" width="180" height="130" rx="10"/>
+<text class="tb" x="470" y="116" text-anchor="middle">Mainboard</text>
+<text class="ts" x="470" y="138" text-anchor="middle">unchanged</text>
+<rect class="fitting" x="862" y="61" width="16" height="11" rx="1.5"/>
+<rect class="dev" x="825" y="72" width="90" height="68" rx="8"/>
+<circle class="gear-teeth" cx="870" cy="106" r="19"/>
+<circle class="gear" cx="870" cy="106" r="16"/>
+<circle class="metal-in" cx="870" cy="106" r="5"/>
+<rect class="metal" x="848" y="140" width="44" height="24" rx="2"/>
+<polygon class="nozzle" points="860,164 880,164 870,181"/>
+<rect class="cutter" x="798" y="93" width="30" height="11" rx="3"/>
+<polygon class="cutter" points="826,91 841,98.5 826,106"/>
+<line class="leader" x1="790" y1="117" x2="800" y2="104"/>
+<text class="tb" x="788" y="86" text-anchor="end">Toolhead</text>
+<text class="ts" x="788" y="106" text-anchor="end">extruder</text>
+<text class="tw" x="788" y="128" text-anchor="end">filament cutter</text>
+<text class="tw" x="788" y="147" text-anchor="end">(required)</text>
+</g>
+<!-- Existing, unchanged link -->
+<line class="w-exist" x1="470" y1="290" x2="470" y2="186"/>
+<text class="ts" x="458" y="250" text-anchor="end">existing USB or CAN link</text>
+<text class="ts" x="458" y="268" text-anchor="end">to mainboard and toolhead,</text>
+<text class="tw" x="458" y="286" text-anchor="end">unchanged</text>
+<!-- Klipper computer: Raspberry Pi 5 (conceptual) -->
+<g id="pi5">
+<rect class="pi" x="440" y="290" width="255" height="168" rx="9"/>
+<circle class="hole-ring" cx="684.5" cy="300.5" r="8"/>
+<circle class="hole" cx="684.5" cy="300.5" r="4.2"/>
+<circle class="hole-ring" cx="684.5" cy="447.5" r="8"/>
+<circle class="hole" cx="684.5" cy="447.5" r="4.2"/>
+<circle class="hole-ring" cx="510.5" cy="300.5" r="8"/>
+<circle class="hole" cx="510.5" cy="300.5" r="4.2"/>
+<circle class="hole-ring" cx="510.5" cy="447.5" r="8"/>
+<circle class="hole" cx="510.5" cy="447.5" r="4.2"/>
+<rect class="chip" x="521.3" y="439.5" width="152.4" height="16" rx="1.5"/>
+<rect class="gpin" x="523.51" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="523.51" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="531.13" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="531.13" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="538.75" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="538.75" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="546.37" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="546.37" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="553.99" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="553.99" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="561.61" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="561.61" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="569.23" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="569.23" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="576.85" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="576.85" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="584.47" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="584.47" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="592.09" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="592.09" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="599.71" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="599.71" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="607.33" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="607.33" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="614.95" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="614.95" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="622.57" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="622.57" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="630.19" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="630.19" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="637.81" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="637.81" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="645.43" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="645.43" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="653.05" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="653.05" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="660.67" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="660.67" y="449.72" width="3.2" height="3.2"/>
+<rect class="gpin" x="668.29" y="442.1" width="3.2" height="3.2"/>
+<rect class="gpin" x="668.29" y="449.72" width="3.2" height="3.2"/>
+<rect class="metal" x="568" y="333" width="48" height="48" rx="3"/>
+<line class="fin" x1="574" y1="338" x2="574" y2="376"/>
+<line class="fin" x1="580" y1="338" x2="580" y2="376"/>
+<line class="fin" x1="586" y1="338" x2="586" y2="376"/>
+<line class="fin" x1="592" y1="338" x2="592" y2="376"/>
+<line class="fin" x1="598" y1="338" x2="598" y2="376"/>
+<line class="fin" x1="604" y1="338" x2="604" y2="376"/>
+<line class="fin" x1="610" y1="338" x2="610" y2="376"/>
+<rect class="chip" x="624" y="336" width="36" height="22" rx="2"/>
+<rect class="chip" x="512" y="356" width="28" height="28" rx="2"/>
+<rect class="conn-white" x="626" y="394" width="28" height="10" rx="1.5"/>
+<circle class="gpin" cx="631" cy="399" r="1.6"/>
+<circle class="gpin" cx="637" cy="399" r="1.6"/>
+<circle class="gpin" cx="643" cy="399" r="1.6"/>
+<circle class="gpin" cx="649" cy="399" r="1.6"/>
+<rect class="metal" x="647.9" y="286" width="27" height="18" rx="5"/>
+<rect class="metal-in" x="652.4" y="288" width="18" height="5" rx="2.5"/>
+<rect class="metal" x="606" y="287" width="22" height="16" rx="2"/>
+<rect class="metal-in" x="609" y="289" width="16" height="4" rx="1"/>
+<rect class="metal" x="565.5" y="287" width="22" height="16" rx="2"/>
+<rect class="metal-in" x="568.5" y="289" width="16" height="4" rx="1"/>
+<rect class="metal" x="432" y="296" width="63" height="48" rx="2"/>
+<rect class="cavity" x="434" y="302" width="12" height="36" rx="1.5"/>
+<rect class="cavity" x="446" y="316" width="5" height="8"/>
+<rect class="metal" x="432" y="351" width="51" height="39" rx="2"/>
+<rect class="cavity" x="434" y="355" width="20" height="14" rx="1.5"/>
+<rect class="usb3t" x="437" y="359" width="15" height="5" rx="1"/>
+<rect class="cavity" x="434" y="372" width="20" height="14" rx="1.5"/>
+<rect class="usb3t" x="437" y="376" width="15" height="5" rx="1"/>
+<rect class="metal" x="432" y="397" width="51" height="39" rx="2"/>
+<rect class="cavity" x="434" y="401" width="20" height="14" rx="1.5"/>
+<rect class="usb2t" x="437" y="405" width="15" height="5" rx="1"/>
+<rect class="cavity" x="434" y="418" width="20" height="14" rx="1.5"/>
+<rect class="usb2t" x="437" y="422" width="15" height="5" rx="1"/>
+</g>
+<text class="tb" x="708" y="330">Klipper computer</text>
+<text class="ts" x="708" y="350">(e.g. Raspberry Pi 5)</text>
+<!-- 24 V from the printer's power supply to P1 -->
+<path class="w-pwr" d="M76 186 V654 H411"/>
+<path class="w-pwr" d="M52 186 V684 H411"/>
+<text class="ts" x="88" y="246">spare terminals</text>
+<text class="tpol" x="405" y="648" text-anchor="end">&#8722; 0 V</text>
+<text class="tpol" x="405" y="678" text-anchor="end">+24 V</text>
+<text class="tb" x="92" y="722">24 V from the printer&#8217;s</text>
+<text class="tb" x="92" y="742">power supply</text>
+<text class="ts" x="92" y="764">+ to +, &#8722; to &#8722;</text>
+<text class="ts" x="92" y="786">needs spare capacity for the AMS</text>
+<text class="ts" x="92" y="806">units, which draw most while drying</text>
+<!-- USB data cable, USB-A to USB-C -->
+<path class="w-usb" d="M414 426 H380 V594 H392"/>
+<rect class="plug-usb" x="414" y="419" width="18" height="14" rx="2"/>
+<rect class="plug-usb" x="392" y="587" width="22" height="14" rx="2"/>
+<text class="tb" x="368" y="480" text-anchor="end">USB data cable</text>
+<text class="ts" x="368" y="500" text-anchor="end">(USB-A to USB-C)</text>
+<text class="ts" x="368" y="522" text-anchor="end">not charge-only</text>
+<!-- Cortex Bridge Rev A4 (55 x 38 mm, 6 px/mm) -->
+<g id="bridge">
+<rect class="pcb" x="420" y="510" width="330" height="228" rx="18"/>
+<rect class="silk-faint" x="629" y="527" width="113" height="92" rx="2"/>
+<text class="silk" x="686" y="524" text-anchor="middle">10BASE-T</text>
+<text class="silk-note" x="686" y="579" text-anchor="middle">not fitted</text>
+<rect class="conn-white" x="515" y="505" width="78" height="31" rx="3"/>
+<rect class="conn-white-in" x="523" y="508" width="62" height="12" rx="1.5"/>
+<line class="pin" x1="535.3" y1="523" x2="535.3" y2="533"/>
+<line class="pin" x1="542.8" y1="523" x2="542.8" y2="533"/>
+<line class="pin" x1="550.3" y1="523" x2="550.3" y2="533"/>
+<line class="pin" x1="557.8" y1="523" x2="557.8" y2="533"/>
+<line class="pin" x1="565.3" y1="523" x2="565.3" y2="533"/>
+<line class="pin" x1="572.8" y1="523" x2="572.8" y2="533"/>
+<text class="silk" x="510" y="532" text-anchor="end">PRGRM</text>
+<rect class="metal" x="412" y="567" width="44" height="54" rx="6"/>
+<rect class="metal-in" x="416" y="574" width="7" height="40" rx="3"/>
+<text class="silk" x="463" y="561" text-anchor="middle">USBC</text>
+<text class="silk" x="424" y="635">PWR IN</text>
+<rect class="term" x="411" y="638" width="61" height="62" rx="3"/>
+<circle class="screw" cx="446" cy="654" r="10"/>
+<line class="slot" x1="439.5" y1="660.5" x2="452.5" y2="647.5"/>
+<circle class="screw" cx="446" cy="684" r="10"/>
+<line class="slot" x1="439.5" y1="690.5" x2="452.5" y2="677.5"/>
+<text class="silk-big" x="447" y="723" text-anchor="middle">+</text>
+<rect class="fuse" x="458" y="714" width="38" height="15" rx="2"/>
+<rect class="fuse-cap" x="458" y="714" width="7" height="15"/>
+<rect class="fuse-cap" x="489" y="714" width="7" height="15"/>
+<text class="silk" x="500" y="727">5A</text>
+<text class="silk" x="706" y="636" text-anchor="middle">BUFFER</text>
+<rect class="conn-dark" x="698" y="641" width="61" height="58" rx="3"/>
+<rect class="cavity" x="720" y="653" width="13" height="13" rx="1.5"/>
+<rect class="cavity" x="738" y="653" width="13" height="13" rx="1.5"/>
+<rect class="cavity" x="720" y="674" width="13" height="13" rx="1.5"/>
+<rect class="cavity" x="738" y="674" width="13" height="13" rx="1.5"/>
+<rect class="silk-line" x="632" y="717" width="76" height="15" rx="1"/>
+<rect class="pad" x="635.2" y="720" width="9" height="9"/>
+<circle class="pad" cx="655" cy="724.5" r="4.5"/>
+<circle class="pad" cx="670.2" cy="724.5" r="4.5"/>
+<circle class="pad" cx="685.4" cy="724.5" r="4.5"/>
+<circle class="pad" cx="700.6" cy="724.5" r="4.5"/>
+<circle class="halo-w" cx="495" cy="620" r="11"/>
+<rect class="led-w" x="490.5" y="617" width="9" height="6" rx="1"/>
+<text class="ann" x="511" y="626">D9 5 V</text>
+<circle class="halo-g" cx="591" cy="641" r="11"/>
+<rect class="led-g" x="586.5" y="638" width="9" height="6" rx="1"/>
+<text class="ann" x="591" y="668" text-anchor="middle">D10 3.3 V</text>
+<circle class="halo-r" cx="605" cy="729" r="10"/>
+<rect class="led-r" x="600.5" y="726" width="9" height="6" rx="1"/>
+<text class="ann" x="605" y="711" text-anchor="middle">D8 24 V</text>
+<text class="tref" x="406" y="562" text-anchor="end">J1</text>
+<text class="tref" x="405" y="722" text-anchor="end">P1</text>
+<text class="tref" x="765" y="722">CN1</text>
+<text x="554" y="497" text-anchor="middle"><tspan class="tref">J4 PRGRM</tspan><tspan class="tw" dx="8">leave empty</tspan></text>
+<line class="leader" x1="477" y1="731" x2="477" y2="746"/>
+<text class="ts" x="477" y="763" text-anchor="middle">5 A fuse</text>
+<line class="leader" x1="670" y1="734" x2="670" y2="746"/>
+<text x="670" y="763" text-anchor="middle"><tspan class="tref">J7</tspan><tspan class="tw" dx="7">leave empty</tspan></text>
+<text class="th" x="420" y="792">Cortex Bridge <tspan class="ts" font-weight="400">Rev A4</tspan></text>
+<text class="ts" x="420" y="812">seen from above</text>
+</g>
+<!-- 4-pin buffer cable -->
+<line class="w-4" x1="770" y1="670" x2="925" y2="670"/>
+<rect class="plug-4" x="759" y="660" width="16" height="20" rx="2"/>
+<rect class="plug-4" x="921" y="660" width="16" height="20" rx="2"/>
+<line class="slash" x1="898" y1="682" x2="908" y2="658"/>
+<text class="tnum" x="912" y="702">4</text>
+<text class="tb" x="846" y="650" text-anchor="middle">4-pin buffer cable</text>
+<text class="ts" x="842" y="700" text-anchor="middle">(24 V + RS-485)</text>
+<!-- AMS filament buffer (conceptual) -->
+<g id="buffer">
+<rect class="dev" x="945" y="560" width="120" height="230" rx="12"/>
+<rect class="fitting" x="1032" y="550" width="16" height="10" rx="1.5"/>
+<rect class="fitting" x="967" y="790" width="16" height="10" rx="1.5"/>
+<rect class="cavity" x="999" y="590" width="14" height="170" rx="7"/>
+<polyline class="spring" points="1001,596 1011,603 1001,610 1011,617 1001,624 1011,631 1001,638 1011,645 1001,652"/>
+<rect class="slider" x="995" y="658" width="22" height="26" rx="4"/>
+<rect class="conn-dark" x="937" y="660" width="8" height="20" rx="1.5"/>
+<text class="dev-t" x="951" y="676">4-pin</text>
+<rect class="conn-dark" x="1065" y="740" width="8" height="20" rx="1.5"/>
+<text class="dev-t" x="1059" y="756" text-anchor="end">6-pin</text>
+</g>
+<text class="tb" x="1025" y="478" text-anchor="end">AMS filament buffer</text>
+<text class="ts" x="1025" y="498" text-anchor="end">original Bambu Lab part</text>
+<text class="tw" x="1025" y="520" text-anchor="end">fit the supplied</text>
+<text class="tw" x="1025" y="540" text-anchor="end">stronger spring</text>
+<!-- Filament path: buffer -> PTFE tube coupler v5 -> toolhead -->
+<path class="tube" d="M1040 550 V62 Q1040 40 1018 40 H892 Q870 40 870 61"/>
+<path class="fil" d="M1040 546 V62 Q1040 40 1018 40 H892 Q870 40 870 58"/>
+<polygon class="fil-head" points="1032,345 1040,330 1048,345"/>
+<rect class="dev" x="1029" y="234" width="22" height="34" rx="4"/>
+<line class="rib" x1="1029" y1="245" x2="1051" y2="245"/>
+<line class="rib" x1="1029" y1="257" x2="1051" y2="257"/>
+<a href="https://github.com/OpenAMSOrg/openams/blob/main/hardware/ptfe-coupler/ptfe_coupler_v5.stl" target="_blank" rel="noopener">
+<text class="tlink" x="1018" y="256" text-anchor="end">PTFE tube coupler v5 (printed)</text>
+</a>
+<text class="ts" x="1018" y="276" text-anchor="end">3 mm ID in &#8594; 3 mm or 2 mm ID out</text>
+<text class="tw" x="1024" y="160" text-anchor="end">PTFE 3 mm ID</text>
+<text class="ts" x="1024" y="178" text-anchor="end">(or 2 mm ID if</text>
+<text class="ts" x="1024" y="196" text-anchor="end">the extruder</text>
+<text class="ts" x="1024" y="214" text-anchor="end">needs it)</text>
+<text class="tb" x="1025" y="392" text-anchor="end">Filament (PTFE tube)</text>
+<text class="tw" x="1025" y="412" text-anchor="end">PTFE 3 mm ID / 4 mm OD</text>
+<text class="ts" x="1025" y="432" text-anchor="end">from the buffer to the coupler</text>
+<!-- 6-pin AMS cable, buffer to unit 1 only -->
+<path class="w-6" d="M1079 750 H1086 V1041 H923"/>
+<rect class="plug-6" x="1073" y="742" width="10" height="16" rx="2"/>
+<rect class="plug-6" x="913" y="1033" width="12" height="16" rx="2"/>
+<line class="slash" x1="1076" y1="966" x2="1096" y2="954"/>
+<text class="tnum" x="1070" y="972" text-anchor="end">6</text>
+<text class="tb" x="1074" y="994" text-anchor="end">6-pin AMS cable</text>
+<text class="ts" x="1074" y="1014" text-anchor="end">buffer to unit 1</text>
+<!-- PTFE splitter (printed, optional: only with more than one AMS) -->
+<path class="tube" d="M975 822 V800"/>
+<path class="fil" d="M975 820 V802"/>
+<rect class="fitting" x="967" y="822" width="16" height="8" rx="1.5"/>
+<rect class="dev" x="940" y="830" width="70" height="34" rx="7"/>
+<rect class="fitting" x="942.5" y="864" width="10" height="7" rx="1.5"/>
+<rect class="fitting" x="957.5" y="864" width="10" height="7" rx="1.5"/>
+<rect class="fitting" x="972.5" y="864" width="10" height="7" rx="1.5"/>
+<rect class="fitting" x="987.5" y="864" width="10" height="7" rx="1.5"/>
+<text class="tb" x="925" y="790" text-anchor="end">PTFE splitter</text>
+<text class="ts" x="925" y="810" text-anchor="end">(printed, optional: only with</text>
+<text class="ts" x="925" y="830" text-anchor="end">more than one AMS)</text>
+<a href="https://makerworld.com/en/models/816201-2-to-5-way-ptfe-splitter#profileId-2452271" target="_blank" rel="noopener">
+<text class="tlink" x="925" y="850" text-anchor="end">2 to 5 way PTFE splitter (MakerWorld)</text>
+</a>
+<!-- AMS units in a row: unit 1, unit 2, ..., unit 4, daisy-chained on 6-pin cables -->
+<g id="ams1" transform="translate(755 940) scale(0.72)">
+<rect class="fitting" x="188" y="-12" width="16" height="16" rx="1.5"/>
+<rect class="flange" x="9" y="14" width="5" height="92" rx="2"/>
+<rect class="flange" x="46" y="14" width="5" height="92" rx="2"/>
+<rect class="sp1" x="14" y="24" width="32" height="72" rx="3"/>
+<rect class="flange" x="59" y="14" width="5" height="92" rx="2"/>
+<rect class="flange" x="96" y="14" width="5" height="92" rx="2"/>
+<rect class="sp2" x="64" y="24" width="32" height="72" rx="3"/>
+<rect class="flange" x="109" y="14" width="5" height="92" rx="2"/>
+<rect class="flange" x="146" y="14" width="5" height="92" rx="2"/>
+<rect class="sp3" x="114" y="24" width="32" height="72" rx="3"/>
+<rect class="flange" x="159" y="14" width="5" height="92" rx="2"/>
+<rect class="flange" x="196" y="14" width="5" height="92" rx="2"/>
+<rect class="sp4" x="164" y="24" width="32" height="72" rx="3"/>
+<path class="lid" d="M4 84 V28 Q4 4 28 4 H182 Q206 4 206 28 V84 Z"/>
+<rect class="dev" x="0" y="76" width="210" height="104" rx="12"/>
+<rect class="dev" x="88" y="70" width="34" height="10" rx="3"/>
+<rect class="cavity" x="17" y="100" width="26" height="12" rx="4"/>
+<circle class="fitting" cx="30" cy="132" r="4"/>
+<rect class="cavity" x="67" y="100" width="26" height="12" rx="4"/>
+<circle class="fitting" cx="80" cy="132" r="4"/>
+<rect class="cavity" x="117" y="100" width="26" height="12" rx="4"/>
+<circle class="fitting" cx="130" cy="132" r="4"/>
+<rect class="cavity" x="167" y="100" width="26" height="12" rx="4"/>
+<circle class="fitting" cx="180" cy="132" r="4"/>
+<line class="leader" x1="10" y1="154" x2="200" y2="154"/>
+<rect class="conn-dark" x="-8" y="130" width="8" height="20" rx="1.5"/>
+<rect class="conn-dark" x="210" y="130" width="8" height="20" rx="1.5"/>
+<rect class="conn-dark" x="14" y="180" width="26" height="6" rx="2"/>
+<rect class="conn-dark" x="170" y="180" width="26" height="6" rx="2"/>
+</g>
+<g id="ams2" transform="translate(540 940) scale(0.72)" class="faded">
+<rect class="fitting" x="188" y="-12" width="16" height="16" rx="1.5"/>
+<rect class="flange" x="9" y="14" width="5" height="92" rx="2"/>
+<rect class="flange" x="46" y="14" width="5" height="92" rx="2"/>
+<rect class="sp1" x="14" y="24" width="32" height="72" rx="3"/>
+<rect class="flange" x="59" y="14" width="5" height="92" rx="2"/>
+<rect class="flange" x="96" y="14" width="5" height="92" rx="2"/>
+<rect class="sp2" x="64" y="24" width="32" height="72" rx="3"/>
+<rect class="flange" x="109" y="14" width="5" height="92" rx="2"/>
+<rect class="flange" x="146" y="14" width="5" height="92" rx="2"/>
+<rect class="sp3" x="114" y="24" width="32" height="72" rx="3"/>
+<rect class="flange" x="159" y="14" width="5" height="92" rx="2"/>
+<rect class="flange" x="196" y="14" width="5" height="92" rx="2"/>
+<rect class="sp4" x="164" y="24" width="32" height="72" rx="3"/>
+<path class="lid" d="M4 84 V28 Q4 4 28 4 H182 Q206 4 206 28 V84 Z"/>
+<rect class="dev" x="0" y="76" width="210" height="104" rx="12"/>
+<rect class="dev" x="88" y="70" width="34" height="10" rx="3"/>
+<rect class="cavity" x="17" y="100" width="26" height="12" rx="4"/>
+<circle class="fitting" cx="30" cy="132" r="4"/>
+<rect class="cavity" x="67" y="100" width="26" height="12" rx="4"/>
+<circle class="fitting" cx="80" cy="132" r="4"/>
+<rect class="cavity" x="117" y="100" width="26" height="12" rx="4"/>
+<circle class="fitting" cx="130" cy="132" r="4"/>
+<rect class="cavity" x="167" y="100" width="26" height="12" rx="4"/>
+<circle class="fitting" cx="180" cy="132" r="4"/>
+<line class="leader" x1="10" y1="154" x2="200" y2="154"/>
+<rect class="conn-dark" x="-8" y="130" width="8" height="20" rx="1.5"/>
+<rect class="conn-dark" x="210" y="130" width="8" height="20" rx="1.5"/>
+<rect class="conn-dark" x="14" y="180" width="26" height="6" rx="2"/>
+<rect class="conn-dark" x="170" y="180" width="26" height="6" rx="2"/>
+</g>
+<g id="ams4" transform="translate(230 940) scale(0.72)" class="faded">
+<rect class="fitting" x="188" y="-12" width="16" height="16" rx="1.5"/>
+<rect class="flange" x="9" y="14" width="5" height="92" rx="2"/>
+<rect class="flange" x="46" y="14" width="5" height="92" rx="2"/>
+<rect class="sp1" x="14" y="24" width="32" height="72" rx="3"/>
+<rect class="flange" x="59" y="14" width="5" height="92" rx="2"/>
+<rect class="flange" x="96" y="14" width="5" height="92" rx="2"/>
+<rect class="sp2" x="64" y="24" width="32" height="72" rx="3"/>
+<rect class="flange" x="109" y="14" width="5" height="92" rx="2"/>
+<rect class="flange" x="146" y="14" width="5" height="92" rx="2"/>
+<rect class="sp3" x="114" y="24" width="32" height="72" rx="3"/>
+<rect class="flange" x="159" y="14" width="5" height="92" rx="2"/>
+<rect class="flange" x="196" y="14" width="5" height="92" rx="2"/>
+<rect class="sp4" x="164" y="24" width="32" height="72" rx="3"/>
+<path class="lid" d="M4 84 V28 Q4 4 28 4 H182 Q206 4 206 28 V84 Z"/>
+<rect class="dev" x="0" y="76" width="210" height="104" rx="12"/>
+<rect class="dev" x="88" y="70" width="34" height="10" rx="3"/>
+<rect class="cavity" x="17" y="100" width="26" height="12" rx="4"/>
+<circle class="fitting" cx="30" cy="132" r="4"/>
+<rect class="cavity" x="67" y="100" width="26" height="12" rx="4"/>
+<circle class="fitting" cx="80" cy="132" r="4"/>
+<rect class="cavity" x="117" y="100" width="26" height="12" rx="4"/>
+<circle class="fitting" cx="130" cy="132" r="4"/>
+<rect class="cavity" x="167" y="100" width="26" height="12" rx="4"/>
+<circle class="fitting" cx="180" cy="132" r="4"/>
+<line class="leader" x1="10" y1="154" x2="200" y2="154"/>
+<rect class="conn-dark" x="-8" y="130" width="8" height="20" rx="1.5"/>
+<rect class="conn-dark" x="210" y="130" width="8" height="20" rx="1.5"/>
+<rect class="conn-dark" x="14" y="180" width="26" height="6" rx="2"/>
+<rect class="conn-dark" x="170" y="180" width="26" height="6" rx="2"/>
+</g>
+<text class="tdots" x="465" y="1050" text-anchor="middle">&#8230;</text>
+<path class="w-6opt" d="M749 1040.8 H697.2"/>
+<path class="w-6opt" d="M534 1040.8 H498"/>
+<path class="w-6opt" d="M432 1040.8 H387.2"/>
+<g>
+<path class="tube-s" d="M896.12 931.36 V921 H992.5 V871"/>
+<path class="fil-s" d="M896.12 931.36 V921 H992.5 V871"/>
+</g>
+<g  class="faded">
+<path class="tube-s" d="M681.12 931.36 V906 H977.5 V871"/>
+<path class="fil-s" d="M681.12 931.36 V906 H977.5 V871"/>
+</g>
+<g  class="faded">
+<path class="tube-s" d="M465 1012 V891 H962.5 V871"/>
+<path class="fil-s" d="M465 1012 V891 H962.5 V871"/>
+</g>
+<g  class="faded">
+<path class="tube-s" d="M371.12 931.36 V876 H947.5 V871"/>
+<path class="fil-s" d="M371.12 931.36 V876 H947.5 V871"/>
+</g>
+<text class="ts" x="380" y="864">Filament, PTFE 3 mm ID / 4 mm OD</text>
+<text class="tb" x="830.6" y="1100" text-anchor="middle">Unit 1</text>
+<text class="ts" x="615.6" y="1100" text-anchor="middle">Unit 2, optional</text>
+<text class="ts" x="465" y="1100" text-anchor="middle">Unit 3</text>
+<text class="ts" x="305.6" y="1100" text-anchor="middle">Unit 4, optional</text>
+<text class="tb" x="568" y="1132" text-anchor="middle">Up to 4 AMS units, daisy-chained on their 6-pin cables</text>
+<text class="ts" x="568" y="1154" text-anchor="middle">Each unit: AMS 1, AMS 2 Pro or AMS HT</text>
+<text class="ts" x="568" y="1174" text-anchor="middle">on stock Bambu Lab firmware, not opened or flashed</text>
+<text class="ts" x="568" y="1194" text-anchor="middle">add units 2 to 4 after the first one works</text>
+<!-- Inset: PTFE splitter detail -->
+<g id="splitter-detail">
+<rect class="legend" x="24" y="836" width="188" height="250" rx="10"/>
+<text class="tb" x="40" y="862">Splitter detail</text>
+<text class="ts" x="118" y="886" text-anchor="middle">1 output, to buffer</text>
+<path class="tube-s" d="M118 896 V912"/>
+<path class="fil-s" d="M118 896 V912"/>
+<rect class="fitting" x="110" y="912" width="16" height="8" rx="1.5"/>
+<rect class="dev" x="50" y="920" width="136" height="56" rx="8"/>
+<path class="tube-s" d="M70 976 C70 946 118 948 118 920"/>
+<path class="fil-s" d="M70 976 C70 946 118 948 118 920"/>
+<path class="tube-s" d="M102 976 C102 946 118 948 118 920"/>
+<path class="fil-s" d="M102 976 C102 946 118 948 118 920"/>
+<path class="tube-s" d="M134 976 C134 946 118 948 118 920"/>
+<path class="fil-s" d="M134 976 C134 946 118 948 118 920"/>
+<path class="tube-s" d="M166 976 C166 946 118 948 118 920"/>
+<path class="fil-s" d="M166 976 C166 946 118 948 118 920"/>
+<rect class="fitting" x="65" y="976" width="10" height="7" rx="1.5"/>
+<path class="tube-s" d="M70 983 V1002"/>
+<path class="fil-s" d="M70 983 V1002"/>
+<rect class="fitting" x="97" y="976" width="10" height="7" rx="1.5"/>
+<path class="tube-s" d="M102 983 V1002"/>
+<path class="fil-s" d="M102 983 V1002"/>
+<rect class="fitting" x="129" y="976" width="10" height="7" rx="1.5"/>
+<path class="tube-s" d="M134 983 V1002"/>
+<path class="fil-s" d="M134 983 V1002"/>
+<rect class="fitting" x="161" y="976" width="10" height="7" rx="1.5"/>
+<path class="tube-s" d="M166 983 V1002"/>
+<path class="fil-s" d="M166 983 V1002"/>
+<text class="ts" x="118" y="1026" text-anchor="middle">up to 4 inputs,</text>
+<text class="ts" x="118" y="1046" text-anchor="middle">one per AMS</text>
+<text class="ts" x="118" y="1070" text-anchor="middle">(printed)</text>
+</g>
+<!-- Legend -->
+<g id="legend">
+<rect class="legend" x="24" y="1212" width="1052" height="120" rx="10"/>
+<text class="tb" x="42" y="1238">Legend</text>
+<line class="w-usb" x1="44" y1="1264" x2="98" y2="1264"/>
+<text class="ts" x="114" y="1269">USB data cable (USB-A to USB-C)</text>
+<line class="w-pwr" x1="42" y1="1286" x2="100" y2="1286"/>
+<line class="w-pwr" x1="42" y1="1294" x2="100" y2="1294"/>
+<text class="ts" x="114" y="1295">24 V from the printer&#8217;s supply</text>
+<line class="w-4" x1="42" y1="1316" x2="100" y2="1316"/>
+<line class="slash" x1="66" y1="1325" x2="74" y2="1307"/>
+<text class="ts" x="114" y="1321">4-pin buffer cable (24 V + RS-485)</text>
+<line class="w-6" x1="420" y1="1264" x2="478" y2="1264"/>
+<line class="slash" x1="444" y1="1273" x2="452" y2="1255"/>
+<text class="ts" x="492" y="1269">6-pin AMS cable</text>
+<line class="tube" x1="420" y1="1290" x2="478" y2="1290"/>
+<line class="fil" x1="422" y1="1290" x2="476" y2="1290"/>
+<text class="ts" x="492" y="1295">Filament, PTFE 3 mm ID / 4 mm OD</text>
+<line class="w-exist" x1="420" y1="1316" x2="478" y2="1316"/>
+<text class="ts" x="492" y="1321">Existing link, unchanged</text>
+<line class="w-6opt" x1="780" y1="1264" x2="838" y2="1264"/>
+<text class="ts" x="852" y="1269">Optional: dashed or faded</text>
+<text class="ts" x="780" y="1295">One AMS: its tube goes straight</text>
+<text class="ts" x="780" y="1321">to the buffer, no splitter</text>
+</g>
+</svg>

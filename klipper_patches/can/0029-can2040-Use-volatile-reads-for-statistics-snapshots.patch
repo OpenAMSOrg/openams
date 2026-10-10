@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 12:21:11 -0700
+Subject: [PATCH] can2040: Use volatile reads for statistics snapshots
+
+The CAN interrupt handler updates can2040 statistics asynchronously while task code reads them.  The snapshot routine copied the non-volatile structure with memcpy and compared it with memcmp, but ordinary library accesses do not tell the C compiler that an interrupt can change the source.  Loads could be combined or reused and the stability check could accept an inconsistent snapshot.
+
+Read each naturally aligned 32-bit counter through the existing volatile readl helper, then compare the captured values with a second set of volatile reads.  Retry if any counter changed.  This preserves a consistent snapshot without disabling the latency-sensitive CAN interrupt.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/lib/can2040/can2040.c b/lib/can2040/can2040.c
+index 1f874031..00a3a966 100644
+--- a/lib/can2040/can2040.c
++++ b/lib/can2040/can2040.c
+@@ -1476,9 +1476,26 @@ can2040_stop(struct can2040 *cd)
+ void
+ can2040_get_statistics(struct can2040 *cd, struct can2040_stats *stats)
+ {
++    /*
++     * The PIO interrupt handler updates these counters asynchronously.  Plain
++     * memcpy followed by memcmp is not a synchronization mechanism: because
++     * cd->stats is not volatile, the compiler may combine or reuse loads and
++     * make the apparent stability check succeed with fields from different
++     * interrupt generations.  Read every 32-bit field through readl() so each
++     * access is both atomic on this MCU and visible to the compiler, then
++     * verify the snapshot against a second set of volatile reads.  Retrying on
++     * any change returns a mutually consistent set without holding off the
++     * latency-sensitive CAN interrupt.
++     */
+     for (;;) {
+-        memcpy(stats, &cd->stats, sizeof(*stats));
+-        if (memcmp(stats, &cd->stats, sizeof(*stats)) == 0)
++        stats->rx_total = readl(&cd->stats.rx_total);
++        stats->tx_total = readl(&cd->stats.tx_total);
++        stats->tx_attempt = readl(&cd->stats.tx_attempt);
++        stats->parse_error = readl(&cd->stats.parse_error);
++        if (stats->rx_total == readl(&cd->stats.rx_total)
++            && stats->tx_total == readl(&cd->stats.tx_total)
++            && stats->tx_attempt == readl(&cd->stats.tx_attempt)
++            && stats->parse_error == readl(&cd->stats.parse_error))
+             // Successfully copied data
+             return;
+         // Raced with irq handler update - retry copy

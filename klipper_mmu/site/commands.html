@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Commands · klipper-mmu</title>
+<meta name="description" content="Every KLIPPER_MMU_* G-code command: what it does, whether it moves anything, and which option enables it.">
+<link rel="stylesheet" href="assets/site.css">
+<script>
+  try { var t = localStorage.getItem('kmmu-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</head>
+<body data-page="commands">
+
+<header class="bar" id="bar">
+  <a class="brand" href="./" aria-label="klipper-mmu home">
+    <svg class="brand-mark" viewBox="0 0 26 26" aria-hidden="true" fill="none" stroke-width="2.4" stroke-linecap="round">
+      <path d="M2 4 C 10 4, 12 13, 17 13" stroke="var(--lane-1)"/>
+      <path d="M2 10 C 9 10, 11 13, 17 13" stroke="var(--lane-2)"/>
+      <path d="M2 16 C 9 16, 11 13, 17 13" stroke="var(--lane-3)"/>
+      <path d="M2 22 C 10 22, 12 13, 17 13" stroke="var(--lane-4)"/>
+      <path d="M17 13 H 24" stroke="var(--ink)"/>
+    </svg>
+    klipper-mmu <small>docs</small>
+  </a>
+  <div class="bar-tools">
+    <button class="toc-toggle" id="toc-toggle" type="button" aria-expanded="false" aria-controls="toc">Contents</button>
+    <button class="theme-toggle" id="theme-toggle" type="button">Dark</button>
+  </div>
+  <div class="bar-progress" id="bar-progress" aria-hidden="true"><span id="bar-progress-fill"></span></div>
+</header>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<div class="page" id="page">
+  <nav class="toc" id="toc" aria-label="Manual"></nav>
+
+  <main class="content">
+<section class="hero" id="start" data-lane="1" data-station="overview">
+      <p class="eyebrow"><b>Commands</b> &nbsp;/&nbsp; every <code>KLIPPER_MMU_*</code> command</p>
+      <h1>Every command, <em>in one place.</em></h1>
+      <p class="lede">Every command takes <code>MMU=</code> with the name of your <code>[klipper_mmu &hellip;]</code> section; the examples use <code>MMU=box</code>. A command either does what it says or refuses and says why. The <em>Moves</em> column says whether it can move anything.</p>
+    </section>
+
+    <section id="look" data-lane="2" data-station="looking">
+      <h2>Looking</h2>
+      <div class="table-wrap"><table>
+<thead><tr><th>Command</th><th>What it does</th><th>Moves</th></tr></thead>
+<tbody>
+<tr><td data-label="Command"><code>KLIPPER_MMU_QUERY</code></td><td data-label="What it does">Is the board connected, and did start-up finish (<code>startup_state</code>, with <code>diagnostic_startup</code>)?</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_SENSORS</code></td><td data-label="What it does">Every BAY, LOAD, HUB and toolhead switch, right now.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_DIAGNOSE</code></td><td data-label="What it does">What is wrong, in plain words, or <code>no problems found</code>. Safe any time.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_PHYSICAL</code></td><td data-label="What it does">Every sensor, plus which lane the unit thinks is in the shared path. Check before <code>RECONCILE_PATH</code>.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_STATS</code></td><td data-label="What it does">Completed, failed and cancelled operations per lane since Klipper started.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_SNAPSHOT</code></td><td data-label="What it does">Full internal state at one moment. Useful in a bug report.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_EVENT</code></td><td data-label="What it does">The next event waiting to be delivered, without acknowledging it.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_TERMINAL</code></td><td data-label="What it does">Look up one past result by its exact identity (<code>CLIENT SESSION REQUEST OPERATION LANE</code>), e.g. from a log line.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_SWITCH_DELAY</code></td><td data-label="What it does">Time between sampling the switches and acting on them, in microseconds.</td><td data-label="Moves">No</td></tr>
+</tbody>
+</table></div>
+    </section>
+
+    <section id="move" data-lane="3" data-station="moving filament">
+      <h2>Moving filament</h2>
+      <p>Your prints load through OpenAMS, not through these commands:</p>
+      <pre><code class="language-gcode">OAMSM_LOAD_TO_TOOLHEAD GROUP=T0</code></pre>
+      <p><code>GROUP</code> is a tool from your <code>filament_group</code> sections. OpenAMS picks the lane; klipper-mmu does the feeding, watches the buffer and stops on arrival, with up to three attempts. Unloading and tool changes are OpenAMS commands too.</p>
+      <p>The spool commands below take <code>BAY=n</code> (lanes count from 0) to start. Without <code>BAY</code> they report the current or last result; <code>CANCEL=1</code> cancels one that is running.</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Command</th><th>What it does</th><th>Moves</th></tr></thead>
+<tbody>
+<tr><td data-label="Command"><code>KLIPPER_MMU_PRELOAD BAY=n</code></td><td data-label="What it does">Pull a newly inserted spool into its bay and park it, checking the lane grips and sees it.</td><td data-label="Moves">Yes</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_UNPRELOAD BAY=n</code></td><td data-label="What it does">Back a parked spool out of the feeder.</td><td data-label="Moves">Yes</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_EJECT BAY=n</code></td><td data-label="What it does">Wind a lane&#39;s filament all the way back so the spool can come out. Refused while that lane is in the shared path. Units without BAY switches back out a set distance instead.</td><td data-label="Moves">Yes</td></tr>
+</tbody>
+</table></div>
+    </section>
+
+    <section id="selector" data-lane="4" data-station="selector">
+      <h2>Selector</h2>
+      <p>Only on units with a selector. See <a href="calibration.html#selectors">Calibration</a>.</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Command</th><th>What it does</th><th>Moves</th></tr></thead>
+<tbody>
+<tr><td data-label="Command"><code>KLIPPER_MMU_HOME</code></td><td data-label="What it does">Home the selector. Rarely needed: the first selection after start-up or a fault homes by itself. Refused with filament in the shared path.</td><td data-label="Moves">Selector</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_MOTORS_OFF</code></td><td data-label="What it does">Release the selector motor so you can move it by hand. The next selection homes again. Refused while anything is moving.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_CALIBRATE_SELECTOR GATE=n</code></td><td data-label="What it does">Linear/rotary: home from a hand-placed gate and save its position. With <code>ANGLE=a</code> (servo): save that angle; <code>SPACING=s</code> fills the other gates. <code>SAVE=0</code> only reports. Refused on indexed selectors.</td><td data-label="Moves">Selector</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_SERVO ANGLE=a</code></td><td data-label="What it does">Move a servo selector to a test angle. Selects nothing and saves nothing.</td><td data-label="Moves">Servo</td></tr>
+</tbody>
+</table></div>
+    </section>
+
+    <section id="setup" data-lane="1" data-station="setting up">
+      <h2>Setting up and checking</h2>
+      <div class="table-wrap"><table>
+<thead><tr><th>Command</th><th>What it does</th><th>Moves</th></tr></thead>
+<tbody>
+<tr><td data-label="Command"><code>KLIPPER_MMU_DIFF_PROBE</code></td><td data-label="What it does">Read the analog buffer&#39;s raw pair once, for the calibration file.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_COMMISSION STEP=switches</code></td><td data-label="What it does">Check every switch with no filament loaded.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_COMMISSION STEP=fps</code></td><td data-label="What it does">Sample the buffer for about 10 s while you push it.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_COMMISSION STEP=lane LANE=n</code></td><td data-label="What it does">Wait for filament in lane <code>n</code>, then preload and eject it. Record the spool&#39;s rewind with <code>ANSWER=yes|no</code>.</td><td data-label="Moves">Yes</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_CALIBRATE BAY=n</code></td><td data-label="What it does">Measure the Bowden tube from the hub to arrival. Required before LOAD.</td><td data-label="Moves">Yes</td></tr>
+</tbody>
+</table></div>
+    </section>
+
+    <section id="recover" data-lane="2" data-station="recovering">
+      <h2>Recovering</h2>
+      <p>Use them in this order: diagnose, <code>ACK_FAULT</code>, <code>RESTART_DRIVER</code> if a driver failed, <code>RECONCILE_PATH</code>, then <code>RECOVER_SESSION</code>. None of them moves anything or resumes a print by itself.</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Command</th><th>What it does</th><th>Moves</th></tr></thead>
+<tbody>
+<tr><td data-label="Command"><code>KLIPPER_MMU_ACK_FAULT</code></td><td data-label="What it does">Acknowledge a fault once the lane has stopped. Does not clear the fault.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_RESTART_DRIVER LANE=n</code></td><td data-label="What it does">Restart a lane&#39;s motor driver after fixing the cause. <code>SELECTOR=1</code> restarts the selector&#39;s driver instead. Never enables a motor.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_RECONCILE_PATH ACTION=CLEAR</code></td><td data-label="What it does">State that the shared path is empty. Fresh sensor readings must agree. Clears a stopped fault once everything is acknowledged.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_RECONCILE_PATH ACTION=ADOPT LANE=n</code></td><td data-label="What it does">State that lane <code>n</code> is in the shared path. Checked the same way.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_RECOVER_SESSION</code></td><td data-label="What it does">Release the old connection record so a new print session can start.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_RECOVER_LOCAL</code></td><td data-label="What it does">After a dropped connection or a host stall over 2 s: finish a stranded preload, unpreload or eject result. <code>DIAGNOSE</code> names the case.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_RECOVER_WAITER</code></td><td data-label="What it does">The same, for a request that was still waiting for its outcome.</td><td data-label="Moves">No</td></tr>
+</tbody>
+</table></div>
+    </section>
+
+    <section id="notes" data-lane="3" data-station="your notes">
+      <h2>Your own notes</h2>
+      <p>Information you record yourself. The unit does not infer it from sensors, except gate status on units without BAY switches.</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Command</th><th>What it does</th><th>Moves</th></tr></thead>
+<tbody>
+<tr><td data-label="Command"><code>KLIPPER_MMU_SET_GATE_METADATA GATE=n</code></td><td data-label="What it does">Record <code>NAME</code>, <code>MATERIAL</code>, <code>COLOR</code> and <code>AVAILABLE</code> for a gate. On units without BAY switches, <code>AVAILABLE</code> is the gate status (see <a href="devices.html#no-bay">Supported units</a>).</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_TOOL_MAP TOOL=t GATE=n</code></td><td data-label="What it does">Map a slicer tool to a gate. <code>CLEAR=1</code> removes it; no <code>GATE</code> reports it.</td><td data-label="Moves">No</td></tr>
+<tr><td data-label="Command"><code>KLIPPER_MMU_MAINTENANCE</code></td><td data-label="What it does">Your own wear counters: <code>COUNTER=name</code> with <code>INCR</code>, <code>RESET=1</code>, <code>LIMIT</code>, <code>WARNING</code>. No arguments lists them.</td><td data-label="Moves">No</td></tr>
+</tbody>
+</table></div>
+    </section>
+
+    <section id="enable" data-lane="4" data-station="switching commands on">
+      <h2>Switching commands on</h2>
+      <p>If Klipper says it does not know a command, the option that enables it is probably missing. Restart Klipper after adding one.</p>
+      <div class="table-wrap"><table>
+<thead><tr><th>Option in <code>[klipper_mmu box]</code></th><th>Enables</th></tr></thead>
+<tbody>
+<tr><td data-label="Option in [klipper_mmu box]"><code>diff_probe: True</code></td><td data-label="Enables"><code>DIFF_PROBE</code>. For buffer calibration only; remove it afterwards or start-up waits for more readings.</td></tr>
+<tr><td data-label="Option in [klipper_mmu box]"><code>diagnostic_startup: True</code></td><td data-label="Enables">Hosted start-up and the <code>startup_state</code> fields.</td></tr>
+<tr><td data-label="Option in [klipper_mmu box]"><code>openams_motion: True</code> + OpenAMS options</td><td data-label="Enables">Preload, unpreload, eject, calibrate, the lane check, selector commands and recovery.</td></tr>
+<tr><td data-label="Option in [klipper_mmu box]"><code>bowden_estimate_file</code></td><td data-label="Enables">Saving the measured tube length.</td></tr>
+<tr><td data-label="Option in [klipper_mmu box]"><code>selector_calibration_file</code></td><td data-label="Enables">Saving selector gate calibration.</td></tr>
+<tr><td data-label="Option in [klipper_mmu box]"><code>driver_restart: True</code></td><td data-label="Enables"><code>RESTART_DRIVER</code></td></tr>
+<tr><td data-label="Option in [klipper_mmu box]"><code>path_reconciliation: True</code></td><td data-label="Enables"><code>RECONCILE_PATH</code></td></tr>
+<tr><td data-label="Option in [klipper_mmu box]"><code>gate_metadata_file</code>, <code>tool_mapping_file</code>, <code>maintenance_counters_file</code></td><td data-label="Enables">The three note-keeping commands.</td></tr>
+</tbody>
+</table></div>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <p>klipper-mmu is an optional add-on to Klipper, a separate project with its own authors and license (GPL-3.0). It builds on the work of the Happy Hare, AFC, BoxTurtle and OpenAMS projects.</p>
+  <p>Set in Bricolage Grotesque, Source Serif 4 and JetBrains Mono (SIL Open Font License), served from this site.</p>
+</footer>
+
+<script src="assets/site.js" defer></script>
+</body>
+</html>

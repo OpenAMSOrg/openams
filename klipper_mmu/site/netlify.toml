@@ -1,0 +1,5 @@
+# The docs are static files: no build step. Deploy this folder as it is
+# (Netlify Drop, or `netlify deploy --dir .` from here). Headers live in
+# _headers; Netlify serves 404.html for unknown addresses.
+[build]
+  publish = "."

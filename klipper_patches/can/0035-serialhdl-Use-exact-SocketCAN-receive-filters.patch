@@ -1,0 +1,40 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 13:31:09 -0700
+Subject: [PATCH] serialhdl: Use exact SocketCAN receive filters
+
+The per-MCU SocketCAN filter selected an 11-bit identifier and distinguished standard from extended frames, but it did not include CAN_RTR_FLAG in the kernel mask.  A remote frame with the response identifier could therefore wake the serialqueue thread before its full can_id check discarded it.
+
+Linux also reserves its direct-indexed standard-identifier receive table for filters which mask the identifier, EFF flag, and RTR flag exactly.  Klipper opens one raw socket per CAN MCU, so leaving these subscriptions on the general filter list makes kernel dispatch work grow with the number of configured nodes.
+
+Include CAN_RTR_FLAG in the python-can filter mask.  The existing extended selector supplies CAN_EFF_FLAG, producing an exact standard data-frame subscription without changing the accepted Klipper response stream.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/klippy/serialhdl.py b/klippy/serialhdl.py
+index f7558d10..a49fc7de 100644
+--- a/klippy/serialhdl.py
++++ b/klippy/serialhdl.py
+@@ -128,7 +128,21 @@ class SerialReader:
+         if canbus_nodeid < 0 or canbus_nodeid > 0xff:
+             self._error("Invalid CAN nodeid")
+         txid = canbus_nodeid * 2 + 256
+-        filters = [{"can_id": txid+1, "can_mask": 0x7ff, "extended": False}]
++        # python-can adds CAN_EFF_FLAG to the kernel mask when "extended" is
++        # present, but a bare 11-bit mask still permits a remote-transmission
++        # request with the same identifier.  serialqueue would discard that
++        # frame after waking its poll thread, and Linux would place this socket
++        # on a general receive-filter list.  Include CAN_RTR_FLAG in the mask so
++        # the subscription describes exactly one standard data-frame id.  In
++        # addition to rejecting the unused frame type in the kernel, this is
++        # the mask shape SocketCAN uses for its direct-indexed standard-id
++        # receive table.  That distinction matters here because Klipper opens
++        # one filtered raw socket per CAN MCU; a general-list lookup otherwise
++        # grows with the number of configured nodes on every received frame.
++        CAN_RTR_FLAG = 0x40000000
++        filters = [{"can_id": txid+1,
++                    "can_mask": 0x7ff | CAN_RTR_FLAG,
++                    "extended": False}]
+         # Prep for SET_NODEID command
+         try:
+             uuid = int(canbus_uuid, 16)

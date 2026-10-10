@@ -1,0 +1,83 @@
+{
+  "v": 1,
+  "unit": "amsht",
+  "idx": 0,
+  "family": "ams_ht",
+  "serial": "000000000000000000000004",
+  "online": true,
+  "ready": false,
+  "cal": "c",
+  "lane": {
+    "id": "fps",
+    "ext": "extruder",
+    "op": "UNLOADED",
+    "group": null,
+    "bay": null,
+    "stage": [
+      [
+        "cut",
+        "retract",
+        "feed"
+      ],
+      2,
+      "feed",
+      null,
+      {}
+    ],
+    "runout": "idle",
+    "from": null,
+    "to": null,
+    "ms": false
+  },
+  "bays": [
+    {
+      "id": 0,
+      "s": "x",
+      "cal": "c",
+      "a": "ad",
+      "sp": {
+        "id": 44,
+        "src": "m"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "n": "T0",
+      "b": [
+        "amsht-0"
+      ],
+      "s": "r"
+    }
+  ],
+  "env": {
+    "t": 61,
+    "rh": 12
+  },
+  "dryer": {
+    "state": "fault",
+    "target": 80,
+    "min": 0,
+    "heat": 0,
+    "fan": 100,
+    "fault": "heater_overtemperature",
+    "adapter": null
+  },
+  "fault": {
+    "sev": "stop",
+    "code": "heater_overtemperature",
+    "text": "Dryer heater over temperature",
+    "unit": "amsht",
+    "bay": null,
+    "act": [
+      "clear_fault"
+    ]
+  },
+  "nf": 2,
+  "act": [
+    "dryer_start",
+    "dryer_stop",
+    "clear_fault",
+    "rfid_scan"
+  ]
+}

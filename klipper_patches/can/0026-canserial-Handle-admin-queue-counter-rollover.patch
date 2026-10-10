@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 12:16:19 -0700
+Subject: [PATCH] canserial: Handle admin queue counter rollover
+
+The admin queue uses monotonically increasing uint32_t producer and consumer positions.  Its full test added the queue depth to the consumer position before comparing it with the producer.  Near UINT32_MAX that sum wrapped to a small value, causing an empty queue to be classified as full.
+
+Once the false-full condition occurred the interrupt-side producer stopped advancing, so the queue could remain unable to accept node assignment, bootloader, and conflict-detection messages indefinitely.  Sustained CAN traffic can reach the rollover during the lifetime of an embedded node.
+
+Test fullness using the unsigned producer-consumer distance instead.  The distance is bounded by the eight-entry queue, so modulo uint32_t subtraction remains correct across rollover.  Add a detailed comment to preserve the non-obvious wraparound requirement.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/src/generic/canserial.c b/src/generic/canserial.c
+index c5c1977f..e54c114b 100644
+--- a/src/generic/canserial.c
++++ b/src/generic/canserial.c
+@@ -334,7 +334,19 @@ canserial_process_data(struct canbus_msg *msg)
+                || (CanData.assigned_id && id == CanData.assigned_id + 1)) {
+         // Add to admin command queue
+         uint32_t pushp = CanData.admin_push_pos;
+-        if (pushp >= CanData.admin_pull_pos + ARRAY_SIZE(CanData.admin_queue))
++        /*
++         * The queue positions are monotonically increasing uint32_t counters,
++         * so they necessarily wrap on a sufficiently busy or long-lived bus.
++         * Adding the queue depth to admin_pull_pos before comparing can wrap
++         * that right-hand side first.  Near UINT32_MAX an empty queue would
++         * then appear full; because the producer stops advancing when full,
++         * admin reception could remain wedged permanently.  Unsigned
++         * subtraction preserves the small producer-consumer distance across
++         * rollover, which is safe because that distance is bounded by this
++         * eight-entry queue.
++         */
++        if (pushp - CanData.admin_pull_pos
++            >= ARRAY_SIZE(CanData.admin_queue))
+             // No space - drop message
+             return;
+         uint32_t pos = pushp % ARRAY_SIZE(CanData.admin_queue);

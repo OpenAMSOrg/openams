@@ -1,0 +1,109 @@
+<!doctype html><html><head><meta charset="utf-8"><title>case render</title>
+<style>html,body{margin:0;background:transparent;overflow:hidden}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+</head><body>
+<script type="module">
+import * as THREE from "three";
+import {STLLoader} from "three/addons/loaders/STLLoader.js";
+
+const q = new URLSearchParams(location.search);
+const sceneName = q.get("scene") || "assembled";
+const W = +(q.get("w") || 1600), H = +(q.get("h") || 1200);
+const bg = q.get("bg");   // hex without '#', or absent for transparent
+
+const CASE = 0x2b2f33, LETTER = 0xf2f2ee, PCB = 0x1f6b45, CLIP = 0x8c939a, SCREW = 0xb9bec2;
+// Assembly pose: x = KiCad x, y = -KiCad y, z up (mm).
+const HOLES = [[161.6256, -68.0244], [113.0256, -68.0244], [138.54, -40.41]];
+const CLIP_SCREWS = [[113.10, -52.23], [164.40, -52.23]];
+const Z_FLOOR_BOT = -6.0, Z_FLOOR_TOP = -4.0;
+
+const scenes = {
+  assembled: {parts: [["base", CASE], ["lid", CASE], ["lettering", LETTER], ["DIN_clip", CLIP]], view: [-1.0, -1.25, 1.05]},
+  assembled_right: {parts: [["base", CASE], ["lid", CASE], ["lettering", LETTER], ["DIN_clip", CLIP]], view: [1.1, -1.15, 1.0]},
+  top: {parts: [["base", CASE], ["lid", CASE], ["lettering", LETTER]], view: [0.0001, -0.0001, 1], ortho: true},
+  exploded: {parts: [["DIN_clip", CLIP, -26], ["base", CASE, 0], ["board", PCB, 14], ["lid", CASE, 40], ["lettering", LETTER, 40]],
+             screws: true, view: [-1.0, -1.3, 0.85]},
+  print_base: {parts: [["print/bridge_case_base_standard", CASE]], view: [-1, -1.2, 1.1]},
+  print_lid: {parts: [["print/bridge_case_lid_standard", CASE], ["print/bridge_case_lid_standard_letters", LETTER]], view: [-1, -1.2, 1.1]},
+  print_clip: {parts: [["print/din_clip", CLIP]], view: [-1, -1.2, 1.1]},
+};
+const spec = scenes[sceneName];
+
+const renderer = new THREE.WebGLRenderer({antialias: true, preserveDrawingBuffer: true, alpha: !bg});
+renderer.setPixelRatio(1);
+renderer.setSize(W, H);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+if (bg) renderer.setClearColor(parseInt(bg, 16), 1); else renderer.setClearColor(0x000000, 0);
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.add(new THREE.HemisphereLight(0xffffff, 0x9aa3ab, 1.25));
+const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(-0.6, -0.9, 1.4); scene.add(key);
+const rim = new THREE.DirectionalLight(0xffffff, 0.9); rim.position.set(1.2, 0.8, 0.6); scene.add(rim);
+
+function material(color) {
+  return new THREE.MeshStandardMaterial({color, roughness: 0.62, metalness: color === SCREW ? 0.6 : 0.02});
+}
+
+// Cylinders in three.js run along y; turn them to run along z.
+function zcyl(rTop, rBottom, h, x, y, zMid) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBottom, h, 32), material(SCREW));
+  m.rotation.x = Math.PI / 2;
+  m.position.set(x, y, zMid);
+  return m;
+}
+// Pan-head screw driven upward from below: head under zHead, shank above it.
+function screwUp(x, y, zHead, length) {
+  const g = new THREE.Group();
+  g.add(zcyl(1.9, 1.9, 1.3, x, y, zHead - 0.65));
+  g.add(zcyl(1.0, 1.0, length, x, y, zHead + length / 2));
+  return g;
+}
+// Flat-head screw driven downward: countersunk head above zHead, shank below.
+function screwDown(x, y, zHead, length) {
+  const g = new THREE.Group();
+  // CylinderGeometry(radiusTop, radiusBottom): after the x-rotation "top" points to -z,
+  // so the narrow end (1.0) is listed first to sit at the bottom of the cone.
+  g.add(zcyl(1.0, 2.0, 1.2, x, y, zHead + 0.6));
+  g.add(zcyl(1.0, 1.0, length, x, y, zHead - length / 2));
+  return g;
+}
+
+const loader = new STLLoader();
+const group = new THREE.Group();
+Promise.all(spec.parts.map(([file, color, dz]) => new Promise((ok, fail) => {
+  loader.load(`mesh/${file}.stl`, (geo) => {
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, material(color));
+    mesh.position.z = dz || 0;
+    group.add(mesh);
+    ok();
+  }, undefined, fail);
+}))).then(() => {
+  if (spec.screws) {
+    // M2 x 10 case screws, driven from below through the base and board into the lid bosses.
+    for (const [x, y] of HOLES) group.add(screwUp(x, y, Z_FLOOR_BOT - 12, 10));
+    // M2 flat-head screws (optional DIN clip), from inside the base down into the clip.
+    for (const [x, y] of CLIP_SCREWS) group.add(screwDown(x, y, Z_FLOOR_TOP + 6, 6));
+  }
+  scene.add(group);
+  const box = new THREE.Box3().setFromObject(group);
+  const c = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  group.position.sub(c);
+  const radius = size.length() / 2;
+  const dir = new THREE.Vector3(...spec.view).normalize();
+  let cam;
+  if (spec.ortho) {
+    const half = Math.max(size.x, size.y * W / H) * 0.58;
+    cam = new THREE.OrthographicCamera(-half, half, half * H / W, -half * H / W, 0.1, 2000);
+  } else {
+    cam = new THREE.PerspectiveCamera(24, W / H, 1, 5000);
+  }
+  const dist = spec.ortho ? 500 : radius / Math.sin(THREE.MathUtils.degToRad(24 / 2)) * 1.08;
+  cam.position.copy(dir.multiplyScalar(dist));
+  cam.up.set(0, 0, 1);
+  cam.lookAt(0, 0, 0);
+  renderer.render(scene, cam);
+  window.__done = true;
+}).catch((e) => { document.title = "error " + e; });
+</script></body></html>

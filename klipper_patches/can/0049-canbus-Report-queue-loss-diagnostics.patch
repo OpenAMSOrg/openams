@@ -1,0 +1,731 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 14:06:47 -0700
+Subject: [PATCH] canbus: Report queue loss diagnostics
+
+The existing CAN status reports protocol receive and transmit errors, but it can remain clean when a valid frame is lost after reception.  Hardware FIFO overwrite, canserial buffer exhaustion, bridge queue overflow, and the USB-CAN stall policy all discard work at local resource boundaries which the CAN error counters can not observe.  Operators therefore had no durable evidence to distinguish firmware overload from a wiring or termination fault.
+
+Record wrapping counters at each loss boundary and count distinct bus-off episodes.  Enable the bxCAN and M_CAN receive-overflow interrupt sources, retain LPC data-overrun events, and aggregate hardware loss with canserial and USB bridge queues only when queried.  Also count malformed gs_usb records and frames deliberately discarded after the physical transmit path remains blocked.  Keep the interrupt paths to a local 32-bit increment; an asserted hardware loss flag may cover multiple frames, so the reported overflow total is intentionally a lower bound instead of claiming false precision.
+
+Expose these values through a separate optional get_canbus_diagnostics command.  Extending the established canbus_status response would change the host/MCU message dictionary contract and prevent mixed-version operation.  A new host probes for the additional command and leaves diagnostic fields unavailable with old firmware, while an old host never issues it to new firmware.
+
+Query exceptional diagnostics once per five status cycles instead of doubling healthy-network management traffic every second.  Extend the MCU counters across 32-bit wrap on the host and append them to canbus_stats output only when supported.  Existing CAN identifiers, gs_usb records, status response fields, and client configuration remain unchanged.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/klippy/extras/canbus_stats.py b/klippy/extras/canbus_stats.py
+index 872db2a0..1dff2c73 100644
+--- a/klippy/extras/canbus_stats.py
++++ b/klippy/extras/canbus_stats.py
+@@ -12,8 +12,12 @@ class PrinterCANBusStats:
+         self.name = config.get_name().split()[-1]
+         self.mcu = None
+         self.get_canbus_status_cmd = None
++        self.get_canbus_diagnostics_cmd = None
+         self.status = {'rx_error': None, 'tx_error': None, 'tx_retries': None,
+-                       'bus_state': None}
++                       'bus_state': None, 'rx_overflows': None,
++                       'tx_discards': None, 'usb_invalid': None,
++                       'bus_off': None}
++        self.diagnostics_countdown = 0
+         # Every canbus_stats object is registered during the same connection
+         # phase.  If each first callback returns monotonic()+1, all later status
+         # commands remain phase-locked and create a periodic request/response
+@@ -49,6 +53,18 @@ class PrinterCANBusStats:
+             "get_canbus_status",
+             "canbus_status rx_error=%u tx_error=%u tx_retries=%u"
+             " canbus_bus_state=%u")
++        # Do not add fields to the established canbus_status response.  Command
++        # and response formats are part of Klipper's host/MCU compatibility
++        # contract: changing that response would make an old host reject new
++        # firmware during message-dictionary validation.  A separately
++        # discoverable query permits every mixed-version combination instead.
++        # A new host simply omits diagnostics when connected to old firmware,
++        # while an old host never sends the additional command to new firmware.
++        if self.mcu.try_lookup_command("get_canbus_diagnostics") is not None:
++            self.get_canbus_diagnostics_cmd = self.mcu.lookup_query_command(
++                "get_canbus_diagnostics",
++                "canbus_diagnostics rx_overflows=%u tx_discards=%u"
++                " usb_invalid=%u bus_off=%u")
+         # Register usb_canbus_state message handling (for usb to canbus bridge)
+         if self.mcu.check_valid_response("usb_canbus_state discard=%u"):
+             self.mcu.register_serial_response(self.handle_usb_canbus_state,
+@@ -75,8 +91,32 @@ class PrinterCANBusStats:
+         retries = prev_retries + ((params['tx_retries'] - prev_retries)
+                                   & 0xffffffff)
+         state = params['canbus_bus_state']
+-        self.status = {'rx_error': rx, 'tx_error': tx, 'tx_retries': retries,
+-                       'bus_state': state}
++        status = self.status.copy()
++        status.update({'rx_error': rx, 'tx_error': tx,
++                       'tx_retries': retries, 'bus_state': state})
++
++        # Queue loss and bus-off episodes are exceptional evidence, not values
++        # needed for one-second control or display decisions.  Querying them at
++        # the legacy status cadence would permanently double management traffic
++        # on every healthy CAN network to observe counters which normally stay
++        # at zero.  Reuse this already phase-staggered callback every five
++        # cycles instead.  The first query remains immediate so a pre-existing
++        # fault is visible promptly, and 32-bit extension below retains events
++        # across arbitrary counter wrap without requiring expensive 64-bit
++        # arithmetic in an MCU interrupt path.
++        if self.get_canbus_diagnostics_cmd is not None:
++            self.diagnostics_countdown -= 1
++            if self.diagnostics_countdown <= 0:
++                diag = self.get_canbus_diagnostics_cmd.send()
++                self.diagnostics_countdown = 5
++                for key in ('rx_overflows', 'tx_discards', 'usb_invalid',
++                            'bus_off'):
++                    previous = status[key]
++                    if previous is None:
++                        previous = 0
++                    status[key] = previous + ((diag[key] - previous)
++                                               & 0xffffffff)
++        self.status = status
+         waketime = self.reactor.monotonic() + 1.
+         if self.query_phase is not None:
+             waketime += self.query_phase
+@@ -86,10 +126,16 @@ class PrinterCANBusStats:
+         status = self.status
+         if status['rx_error'] is None:
+             return (False, '')
+-        return (False, 'canstat_%s: bus_state=%s rx_error=%d'
+-                ' tx_error=%d tx_retries=%d'
+-                % (self.name, status['bus_state'], status['rx_error'],
+-                   status['tx_error'], status['tx_retries']))
++        msg = ('canstat_%s: bus_state=%s rx_error=%d'
++               ' tx_error=%d tx_retries=%d'
++               % (self.name, status['bus_state'], status['rx_error'],
++                  status['tx_error'], status['tx_retries']))
++        if status['rx_overflows'] is not None:
++            msg += (' rx_overflows=%d tx_discards=%d usb_invalid=%d'
++                    ' bus_off=%d'
++                    % (status['rx_overflows'], status['tx_discards'],
++                       status['usb_invalid'], status['bus_off']))
++        return (False, msg)
+     def get_status(self, eventtime):
+         return self.status
+ 
+diff --git a/src/atsam/fdcan.c b/src/atsam/fdcan.c
+index fbd4770a..d5370dd4 100644
+--- a/src/atsam/fdcan.c
++++ b/src/atsam/fdcan.c
+@@ -186,7 +186,7 @@ canhw_set_filter(uint32_t id)
+ }
+ 
+ static struct {
+-    uint32_t rx_error, tx_error;
++    uint32_t rx_error, tx_error, rx_overflows, bus_off;
+ } CAN_Errors;
+ 
+ // Report interface status
+@@ -203,10 +203,14 @@ canhw_get_status(struct canbus_status *status)
+             CAN_Errors.rx_error += 1;
+     }
+     uint32_t rx_error = CAN_Errors.rx_error, tx_error = CAN_Errors.tx_error;
++    uint32_t rx_overflows = CAN_Errors.rx_overflows;
++    uint32_t bus_off = CAN_Errors.bus_off;
+     irq_restore(flag);
+ 
+     status->rx_error = rx_error;
+     status->tx_error = tx_error;
++    status->rx_overflows = rx_overflows;
++    status->bus_off = bus_off;
+     if (psr & MCAN_PSR_BO)
+         status->bus_state = CANBUS_STATE_OFF;
+     else if (psr & MCAN_PSR_EP)
+@@ -260,6 +264,21 @@ CAN_IRQHandler(void)
+             canbus_process_data(&msg);
+         }
+     }
++    if (ir & MCAN_IR_RF0L) {
++        /*
++         * RF0L is the only conclusive evidence that the controller discarded
++         * a complete, otherwise valid frame because software did not return a
++         * FIFO slot in time.  LEC and the receive error counter describe CAN
++         * protocol faults on the wire; they do not change for this local
++         * resource loss.  Preserve a separate monotonically wrapping count so
++         * a host can distinguish signal-integrity trouble from IRQ latency or
++         * an undersized receive path.  One interrupt flag represents at least
++         * one lost frame, so the count is deliberately a lower bound when a
++         * sustained burst overwrites more than one element before service.
++         */
++        CANx->MCAN_IR = MCAN_IR_RF0L;
++        CAN_Errors.rx_overflows++;
++    }
+     if (ir & FDCAN_IE_TC) {
+         /*
+          * IR records completions even while their interrupt sources are
+@@ -287,6 +306,7 @@ CAN_IRQHandler(void)
+          * shorten the protocol's recovery safety interval.
+          */
+         CANx->MCAN_IR = MCAN_IR_BO;
++        CAN_Errors.bus_off++;
+         CANx->MCAN_CCCR &= ~MCAN_CCCR_INIT;
+     }
+     if (ir & (MCAN_IR_PED | MCAN_IR_PEA)) {
+@@ -449,7 +469,7 @@ can_init(void)
+     /*##-3- Configure Interrupts #################################*/
+     armcm_enable_irq(CAN_IRQHandler, CANx_IRQn, 1);
+     CANx->MCAN_ILE = MCAN_ILE_EINT0;
+-    CANx->MCAN_IE = (MCAN_IE_RF0NE | MCAN_IE_BOE
++    CANx->MCAN_IE = (MCAN_IE_RF0NE | MCAN_IE_RF0LE | MCAN_IE_BOE
+                      | MCAN_IE_PEDE | MCAN_IE_PEAE);
+ }
+ DECL_INIT(can_init);
+diff --git a/src/atsamd/fdcan.c b/src/atsamd/fdcan.c
+index 2abf2b40..0079d51e 100644
+--- a/src/atsamd/fdcan.c
++++ b/src/atsamd/fdcan.c
+@@ -202,7 +202,7 @@ canhw_set_filter(uint32_t id)
+ }
+ 
+ static struct {
+-    uint32_t rx_error, tx_error;
++    uint32_t rx_error, tx_error, rx_overflows, bus_off;
+ } CAN_Errors;
+ 
+ // Report interface status
+@@ -219,10 +219,14 @@ canhw_get_status(struct canbus_status *status)
+             CAN_Errors.rx_error += 1;
+     }
+     uint32_t rx_error = CAN_Errors.rx_error, tx_error = CAN_Errors.tx_error;
++    uint32_t rx_overflows = CAN_Errors.rx_overflows;
++    uint32_t bus_off = CAN_Errors.bus_off;
+     irq_restore(flag);
+ 
+     status->rx_error = rx_error;
+     status->tx_error = tx_error;
++    status->rx_overflows = rx_overflows;
++    status->bus_off = bus_off;
+     if (psr & CAN_PSR_BO)
+         status->bus_state = CANBUS_STATE_OFF;
+     else if (psr & CAN_PSR_EP)
+@@ -276,6 +280,21 @@ CAN_IRQHandler(void)
+             canbus_process_data(&msg);
+         }
+     }
++    if (ir & CAN_IR_RF0L) {
++        /*
++         * RF0L is the only conclusive evidence that the controller discarded
++         * a complete, otherwise valid frame because software did not return a
++         * FIFO slot in time.  LEC and the receive error counter describe CAN
++         * protocol faults on the wire; they do not change for this local
++         * resource loss.  Preserve a separate monotonically wrapping count so
++         * a host can distinguish signal-integrity trouble from IRQ latency or
++         * an undersized receive path.  One interrupt flag represents at least
++         * one lost frame, so the count is deliberately a lower bound when a
++         * sustained burst overwrites more than one element before service.
++         */
++        CANx->IR.reg = CAN_IR_RF0L;
++        CAN_Errors.rx_overflows++;
++    }
+     if (ir & FDCAN_IE_TC) {
+         /*
+          * IR records completions even while their interrupt sources are
+@@ -303,6 +322,7 @@ CAN_IRQHandler(void)
+          * shorten the protocol's recovery safety interval.
+          */
+         CANx->IR.reg = CAN_IR_BO;
++        CAN_Errors.bus_off++;
+         CANx->CCCR.reg &= ~CAN_CCCR_INIT;
+     }
+     if (ir & (CAN_IR_PED | CAN_IR_PEA)) {
+@@ -457,7 +477,7 @@ can_init(void)
+     /*##-3- Configure Interrupts #################################*/
+     armcm_enable_irq(CAN_IRQHandler, CANx_IRQn, 1);
+     CANx->ILE.reg = CAN_ILE_EINT0;
+-    CANx->IE.reg = (CAN_IE_RF0NE | CAN_IE_BOE
++    CANx->IE.reg = (CAN_IE_RF0NE | CAN_IE_RF0LE | CAN_IE_BOE
+                     | CAN_IE_PEDE | CAN_IE_PEAE);
+ }
+ DECL_INIT(can_init);
+diff --git a/src/generic/canbus.c b/src/generic/canbus.c
+index 9df1334a..52859641 100644
+--- a/src/generic/canbus.c
++++ b/src/generic/canbus.c
+@@ -4,6 +4,7 @@
+ //
+ // This file may be distributed under the terms of the GNU GPLv3 license.
+ 
++#include <string.h> // memset
+ #include "autoconf.h" // CONFIG_CANBUS_FREQUENCY
+ #include "canbus.h" // canhw_send
+ #include "canserial.h" // canserial_notify_tx
+@@ -35,3 +36,13 @@ canbus_process_data(struct canbus_msg *msg)
+     canbus_normalize_msg(msg);
+     canserial_process_data(msg);
+ }
++
++void
++canbus_get_diagnostics(struct canbus_diagnostics *diag)
++{
++    struct canbus_status status;
++    memset(&status, 0, sizeof(status));
++    canhw_get_status(&status);
++    diag->rx_overflows = status.rx_overflows;
++    diag->bus_off = status.bus_off;
++}
+diff --git a/src/generic/canbus.h b/src/generic/canbus.h
+index a90c374d..e4e0f686 100644
+--- a/src/generic/canbus.h
++++ b/src/generic/canbus.h
+@@ -44,7 +44,11 @@ canbus_normalize_msg(struct canbus_msg *msg)
+ 
+ struct canbus_status {
+     uint32_t rx_error, tx_error, tx_retries;
+-    uint32_t bus_state;
++    uint32_t bus_state, rx_overflows, bus_off;
++};
++
++struct canbus_diagnostics {
++    uint32_t rx_overflows, tx_discards, usb_invalid, bus_off;
+ };
+ 
+ enum {
+@@ -62,5 +66,6 @@ int canbus_send(struct canbus_msg *msg);
+ void canbus_set_filter(uint32_t id);
+ void canbus_notify_tx(void);
+ void canbus_process_data(struct canbus_msg *msg);
++void canbus_get_diagnostics(struct canbus_diagnostics *diag);
+ 
+ #endif // canbus.h
+diff --git a/src/generic/canserial.c b/src/generic/canserial.c
+index 104cb0ae..ed72ccc4 100644
+--- a/src/generic/canserial.c
++++ b/src/generic/canserial.c
+@@ -61,6 +61,7 @@ static struct canbus_data {
+     uint8_t receive_pos, invalid_bitrate;
+     // Single-producer IRQ ring; publish indexes only after slot data is stable
+     uint32_t admin_pull_pos, admin_push_pos;
++    uint32_t receive_overflows, admin_overflows;
+ 
+     // Transfer buffers
+     struct canbus_msg admin_queue[8];
+@@ -344,8 +345,10 @@ canserial_process_data(struct canbus_msg *msg)
+         // Add to incoming data buffer
+         int rpos = CanData.receive_pos;
+         uint32_t len = CANMSG_DATA_LEN(msg);
+-        if (len > sizeof(CanData.receive_buf) - rpos)
++        if (len > sizeof(CanData.receive_buf) - rpos) {
++            CanData.receive_overflows++;
+             return;
++        }
+         memcpy(&CanData.receive_buf[rpos], msg->data, len);
+         CanData.receive_pos = rpos + len;
+         canserial_notify_rx();
+@@ -388,9 +391,11 @@ canserial_process_data(struct canbus_msg *msg)
+          * eight-entry queue.
+          */
+         uint32_t pullp = readl(&CanData.admin_pull_pos);
+-        if (pushp - pullp >= ARRAY_SIZE(CanData.admin_queue))
+-            // No space - drop message
++        if (pushp - pullp >= ARRAY_SIZE(CanData.admin_queue)) {
++            // No space - drop message and retain evidence for diagnostics
++            CanData.admin_overflows++;
+             return;
++        }
+         uint32_t pos = pushp % ARRAY_SIZE(CanData.admin_queue);
+         memcpy(&CanData.admin_queue[pos], msg, sizeof(*msg));
+         if (is_query)
+@@ -521,6 +526,30 @@ command_get_canbus_status(uint32_t *args)
+ DECL_COMMAND_FLAGS(command_get_canbus_status, HF_IN_SHUTDOWN
+                    , "get_canbus_status");
+ 
++void
++command_get_canbus_diagnostics(uint32_t *args)
++{
++    struct canbus_diagnostics diag;
++    memset(&diag, 0, sizeof(diag));
++    canbus_get_diagnostics(&diag);
++    /*
++     * Hardware, the CAN-to-USB bridge, and canserial each own different queue
++     * boundaries.  Aggregate their monotonically wrapping counters only when
++     * queried, keeping every receive fast path to one local increment while
++     * giving the host a single stable view of frames which could not advance.
++     * This is a separate optional command rather than extending canbus_status:
++     * older hosts continue matching that established response format exactly.
++     */
++    diag.rx_overflows += (readl(&CanData.receive_overflows)
++                          + readl(&CanData.admin_overflows));
++    sendf("canbus_diagnostics rx_overflows=%u tx_discards=%u"
++          " usb_invalid=%u bus_off=%u"
++          , diag.rx_overflows, diag.tx_discards
++          , diag.usb_invalid, diag.bus_off);
++}
++DECL_COMMAND_FLAGS(command_get_canbus_diagnostics, HF_IN_SHUTDOWN
++                   , "get_canbus_diagnostics");
++
+ void
+ command_get_canbus_id(uint32_t *args)
+ {
+diff --git a/src/generic/usb_canbus.c b/src/generic/usb_canbus.c
+index 015c0c66..ab1f59ce 100644
+--- a/src/generic/usb_canbus.c
++++ b/src/generic/usb_canbus.c
+@@ -130,6 +130,7 @@ static struct usbcan_data {
+     // State tracking for messages to be sent from host to canbus
+     struct timer bus_send_timer;
+     uint8_t bus_send_state, bus_send_timed_out;
++    uint32_t tx_discards, usb_invalid;
+ 
+     // Canbus data from host
+     uint8_t host_status;
+@@ -139,6 +140,7 @@ static struct usbcan_data {
+     // Data from physical canbus interface
+     // Single-producer IRQ ring; indexes publish ownership across contexts
+     uint32_t canhw_pull_pos, canhw_push_pos;
++    uint32_t canhw_overflows;
+     struct canbus_msg canhw_queue[32];
+ } UsbCan = {
+     .bus_send_timer.func = usbcan_stall_event,
+@@ -236,8 +238,10 @@ drain_usb_host_messages(void)
+          * then be overwritten by the next complete transfer without making
+          * partial state visible to the routing task.
+          */
+-        if (ret != sizeof(*gs) || gs->can_dlc > sizeof(gs->data))
++        if (ret != sizeof(*gs) || gs->can_dlc > sizeof(gs->data)) {
++            UsbCan.usb_invalid++;
+             continue;
++        }
+         /*
+          * device_config.icount advertises one CAN channel, so channel zero is
+          * the only value the gs_usb protocol permits for this interface.  The
+@@ -248,8 +252,10 @@ drain_usb_host_messages(void)
+          * apparently fatal device response or be transmitted on the physical
+          * bus under a channel selector the firmware silently ignored.
+          */
+-        if (gs->channel)
++        if (gs->channel) {
++            UsbCan.usb_invalid++;
+             continue;
++        }
+         /*
+          * bt_const.feature is zero and this endpoint implements only the
+          * fixed-size classic CAN frame.  Consequently no gs_usb frame flag is
+@@ -261,8 +267,10 @@ drain_usb_host_messages(void)
+          * before echoing it so the format advertised during probe remains the
+          * format used for every bulk transfer.
+          */
+-        if (gs->flags)
++        if (gs->flags) {
++            UsbCan.usb_invalid++;
+             continue;
++        }
+         /*
+          * The routing code compares the complete can_id, but each hardware
+          * backend masks that value down to either 11 or 29 identifier bits
+@@ -274,8 +282,10 @@ drain_usb_host_messages(void)
+          * removed.  Reject those ambiguous encodings so local routing, the
+          * USB echo, and the physical bus all refer to the same CAN frame.
+          */
+-        if (!gs_can_id_is_valid(gs->can_id))
++        if (!gs_can_id_is_valid(gs->can_id)) {
++            UsbCan.usb_invalid++;
+             continue;
++        }
+         /*
+          * GS_HOST_FRAME_ECHO_ID_RX distinguishes a device-originated receive
+          * frame from the echo which completes a host transmit request.  If the
+@@ -285,8 +295,10 @@ drain_usb_host_messages(void)
+          * enough missing completions stop the SocketCAN transmit queue.  Only
+          * the device-to-host path may create the receive marker.
+          */
+-        if (gs->echo_id == GS_HOST_FRAME_ECHO_ID_RX)
++        if (gs->echo_id == GS_HOST_FRAME_ECHO_ID_RX) {
++            UsbCan.usb_invalid++;
+             continue;
++        }
+         UsbCan.host_push_pos = push_pos = push_pos + 1;
+     }
+ }
+@@ -345,9 +357,11 @@ try_canmsg_send(struct canbus_msg *msg)
+         note_discard_state(1);
+         UsbCan.bus_send_state = BSS_DISCARDING;
+     }
+-    if (UsbCan.bus_send_state == BSS_DISCARDING)
++    if (UsbCan.bus_send_state == BSS_DISCARDING) {
+         // Queue is stalled - just discard the message
++        UsbCan.tx_discards++;
+         return 0;
++    }
+     if (UsbCan.bus_send_state == BSS_READY) {
+         /*
+          * A stored deadline alone can not guarantee progress: the routing task
+@@ -471,9 +485,11 @@ canbus_process_data(struct canbus_msg *msg)
+     // Add to admin command queue
+     uint32_t pushp = UsbCan.canhw_push_pos;
+     uint32_t pullp = readl(&UsbCan.canhw_pull_pos);
+-    if (pushp - pullp >= ARRAY_SIZE(UsbCan.canhw_queue))
++    if (pushp - pullp >= ARRAY_SIZE(UsbCan.canhw_queue)) {
+         // No space - drop message
++        UsbCan.canhw_overflows++;
+         return;
++    }
+     if (UsbCan.assigned_id && (msg->id & ~1) == UsbCan.assigned_id)
+         // Id reserved for local
+         return;
+@@ -519,6 +535,24 @@ canbus_set_filter(uint32_t id)
+     UsbCan.assigned_id = id;
+ }
+ 
++void
++canbus_get_diagnostics(struct canbus_diagnostics *diag)
++{
++    struct canbus_status status;
++    memset(&status, 0, sizeof(status));
++    canhw_get_status(&status);
++    /*
++     * canhw_overflows is interrupt-owned; acquire it explicitly before adding
++     * the task-owned bridge counters.  All counters intentionally wrap at 32
++     * bits like existing CAN error statistics, allowing the host to extend them
++     * without adding synchronization or wide arithmetic to MCU hot paths.
++     */
++    diag->rx_overflows = status.rx_overflows + readl(&UsbCan.canhw_overflows);
++    diag->tx_discards = UsbCan.tx_discards;
++    diag->usb_invalid = UsbCan.usb_invalid;
++    diag->bus_off = status.bus_off;
++}
++
+ 
+ /****************************************************************
+  * USB bulk wakeup interface
+diff --git a/src/lpc176x/can.c b/src/lpc176x/can.c
+index 6920473d..737f674f 100644
+--- a/src/lpc176x/can.c
++++ b/src/lpc176x/can.c
+@@ -98,7 +98,8 @@
+ #define CAN_ERROR_WARNING_LIMIT 96
+ 
+ static struct {
+-    uint32_t rx_error, tx_error;
++    uint32_t rx_error, tx_error, rx_overflows, bus_off;
++    uint8_t bus_off_active;
+ } CAN_Errors;
+ 
+ static uint32_t
+@@ -210,13 +211,32 @@ canhw_get_status(struct canbus_status *status)
+ {
+     irqstatus_t flag = irq_save();
+     uint32_t gsr = LPC_CANx->GSR;
++    /*
++     * The interrupt handler normally observes bus-off while releasing Reset
++     * Mode.  Sample the level here as well so a status query can not miss the
++     * transition if it races the shared interrupt.  Keep a latch because GSR
++     * reports a state, whereas diagnostics promise a count of distinct
++     * episodes; recovery clearing BS rearms the next transition.
++     */
++    if (gsr & CAN_GSR_BS) {
++        if (!CAN_Errors.bus_off_active) {
++            CAN_Errors.bus_off_active = 1;
++            CAN_Errors.bus_off++;
++        }
++    } else {
++        CAN_Errors.bus_off_active = 0;
++    }
+     uint32_t rx_error = CAN_Errors.rx_error, tx_error = CAN_Errors.tx_error;
++    uint32_t rx_overflows = CAN_Errors.rx_overflows;
++    uint32_t bus_off = CAN_Errors.bus_off;
+     irq_restore(flag);
+ 
+     uint32_t rx_count = (gsr >> CAN_GSR_RXERR_Pos) & 0xff;
+     uint32_t tx_count = (gsr >> CAN_GSR_TXERR_Pos) & 0xff;
+     status->rx_error = rx_error;
+     status->tx_error = tx_error;
++    status->rx_overflows = rx_overflows;
++    status->bus_off = bus_off;
+     if (gsr & CAN_GSR_BS)
+         status->bus_state = CANBUS_STATE_OFF;
+     else if (rx_count >= CAN_ERROR_PASSIVE_LIMIT
+@@ -259,6 +279,13 @@ CAN_IRQHandler(void)
+ 
+     if (icr & CAN_ICR_DOI) {
+         CAN_Errors.rx_error += 1;
++        /*
++         * DOI identifies a local receive-buffer overrun, not another malformed
++         * bit sequence on the bus.  Preserve the legacy rx_error increment for
++         * existing clients, and additionally expose the resource loss through
++         * the diagnostic counter so overload and wiring faults are separable.
++         */
++        CAN_Errors.rx_overflows++;
+         LPC_CANx->CMR = CAN_CMR_CDO;
+     }
+ 
+@@ -294,8 +321,17 @@ CAN_IRQHandler(void)
+      * sequences before becoming bus-on; this does not force the error counters
+      * clear or permit an early return to active traffic.
+      */
+-    if ((LPC_CANx->GSR & CAN_GSR_BS) && (LPC_CANx->MOD & CAN_MOD_RM))
+-        LPC_CANx->MOD &= ~CAN_MOD_RM;
++    uint32_t gsr = LPC_CANx->GSR;
++    if (gsr & CAN_GSR_BS) {
++        if (!CAN_Errors.bus_off_active) {
++            CAN_Errors.bus_off_active = 1;
++            CAN_Errors.bus_off++;
++        }
++        if (LPC_CANx->MOD & CAN_MOD_RM)
++            LPC_CANx->MOD &= ~CAN_MOD_RM;
++    } else {
++        CAN_Errors.bus_off_active = 0;
++    }
+ }
+ 
+ void
+diff --git a/src/stm32/can.c b/src/stm32/can.c
+index 7237d485..f62fe542 100644
+--- a/src/stm32/can.c
++++ b/src/stm32/can.c
+@@ -169,7 +169,8 @@ canhw_set_filter(uint32_t id)
+ }
+ 
+ static struct {
+-    uint32_t rx_error, tx_error;
++    uint32_t rx_error, tx_error, rx_overflows, bus_off;
++    uint8_t bus_off_active;
+ } CAN_Errors;
+ 
+ // Report interface status
+@@ -178,11 +179,30 @@ canhw_get_status(struct canbus_status *status)
+ {
+     irqstatus_t flag = irq_save();
+     uint32_t esr = SOC_CAN->ESR;
++    /*
++     * Normally the error interrupt records this transition.  Also sample it
++     * here so diagnostics remain truthful if status is queried after bus-off
++     * but before the shared or temporarily masked error vector is serviced.
++     * The active latch prevents repeated status queries from counting the same
++     * episode; ABOM clearing BOFF rearms the next transition.
++     */
++    if (esr & CAN_ESR_BOFF) {
++        if (!CAN_Errors.bus_off_active) {
++            CAN_Errors.bus_off_active = 1;
++            CAN_Errors.bus_off++;
++        }
++    } else {
++        CAN_Errors.bus_off_active = 0;
++    }
+     uint32_t rx_error = CAN_Errors.rx_error, tx_error = CAN_Errors.tx_error;
++    uint32_t rx_overflows = CAN_Errors.rx_overflows;
++    uint32_t bus_off = CAN_Errors.bus_off;
+     irq_restore(flag);
+ 
+     status->rx_error = rx_error;
+     status->tx_error = tx_error;
++    status->rx_overflows = rx_overflows;
++    status->bus_off = bus_off;
+     if (esr & CAN_ESR_BOFF)
+         status->bus_state = CANBUS_STATE_OFF;
+     else if (esr & CAN_ESR_EPVF)
+@@ -197,7 +217,20 @@ canhw_get_status(struct canbus_status *status)
+ void
+ CAN_IRQHandler(void)
+ {
+-    if (SOC_CAN->RF0R & CAN_RF0R_FMP0) {
++    uint32_t rf0r = SOC_CAN->RF0R;
++    if (rf0r & CAN_RF0R_FOVR0) {
++        /*
++         * FIFO overrun means a valid frame reached bxCAN but could not be
++         * retained until software read it.  This is not a protocol receive
++         * error and therefore is absent from ESR's error counters.  Clear the
++         * sticky indication and retain a separate wrapping count.  One flag
++         * may cover several losses during a sustained overload, so the result
++         * is an actionable lower bound rather than a fabricated exact total.
++         */
++        SOC_CAN->RF0R = CAN_RF0R_FOVR0;
++        CAN_Errors.rx_overflows++;
++    }
++    if (rf0r & CAN_RF0R_FMP0) {
+         // Read and ack data packet
+         CAN_FIFOMailBox_TypeDef *mb = &SOC_CAN->sFIFOMailBox[0];
+         uint32_t rir = mb->RIR;
+@@ -229,6 +262,14 @@ CAN_IRQHandler(void)
+     uint32_t msr = SOC_CAN->MSR;
+     if (msr & CAN_MSR_ERRI) {
+         uint32_t esr = SOC_CAN->ESR;
++        if (esr & CAN_ESR_BOFF) {
++            if (!CAN_Errors.bus_off_active) {
++                CAN_Errors.bus_off_active = 1;
++                CAN_Errors.bus_off++;
++            }
++        } else {
++            CAN_Errors.bus_off_active = 0;
++        }
+         uint32_t lec = (esr & CAN_ESR_LEC_Msk) >> CAN_ESR_LEC_Pos;
+         if (lec && lec != 7) {
+             SOC_CAN->ESR = 7 << CAN_ESR_LEC_Pos;
+@@ -347,6 +388,7 @@ can_init(void)
+         armcm_enable_irq(CAN_IRQHandler, CAN_TX_IRQn, 0);
+     if (CAN_RX0_IRQn != CAN_SCE_IRQn)
+         armcm_enable_irq(CAN_IRQHandler, CAN_SCE_IRQn, 0);
+-    SOC_CAN->IER = CAN_IER_FMPIE0 | CAN_IER_ERRIE | CAN_IER_LECIE;
++    SOC_CAN->IER = (CAN_IER_FMPIE0 | CAN_IER_FOVIE0
++                    | CAN_IER_ERRIE | CAN_IER_LECIE);
+ }
+ DECL_INIT(can_init);
+diff --git a/src/stm32/fdcan.c b/src/stm32/fdcan.c
+index 70ed02d0..86de9d87 100644
+--- a/src/stm32/fdcan.c
++++ b/src/stm32/fdcan.c
+@@ -242,7 +242,7 @@ canhw_set_filter(uint32_t id)
+ }
+ 
+ static struct {
+-    uint32_t rx_error, tx_error;
++    uint32_t rx_error, tx_error, rx_overflows, bus_off;
+ } CAN_Errors;
+ 
+ // Report interface status
+@@ -259,10 +259,14 @@ canhw_get_status(struct canbus_status *status)
+             CAN_Errors.rx_error += 1;
+     }
+     uint32_t rx_error = CAN_Errors.rx_error, tx_error = CAN_Errors.tx_error;
++    uint32_t rx_overflows = CAN_Errors.rx_overflows;
++    uint32_t bus_off = CAN_Errors.bus_off;
+     irq_restore(flag);
+ 
+     status->rx_error = rx_error;
+     status->tx_error = tx_error;
++    status->rx_overflows = rx_overflows;
++    status->bus_off = bus_off;
+     if (psr & FDCAN_PSR_BO)
+         status->bus_state = CANBUS_STATE_OFF;
+     else if (psr & FDCAN_PSR_EP)
+@@ -316,6 +320,21 @@ CAN_IRQHandler(void)
+             canbus_process_data(&msg);
+         }
+     }
++    if (ir & FDCAN_IR_RF0L) {
++        /*
++         * RF0L is the only conclusive evidence that the controller discarded
++         * a complete, otherwise valid frame because software did not return a
++         * FIFO slot in time.  LEC and the receive error counter describe CAN
++         * protocol faults on the wire; they do not change for this local
++         * resource loss.  Preserve a separate monotonically wrapping count so
++         * a host can distinguish signal-integrity trouble from IRQ latency or
++         * an undersized receive path.  One interrupt flag represents at least
++         * one lost frame, so the count is deliberately a lower bound when a
++         * sustained burst overwrites more than one element before service.
++         */
++        SOC_CAN->IR = FDCAN_IR_RF0L;
++        CAN_Errors.rx_overflows++;
++    }
+     if (ir & FDCAN_IE_TC) {
+         /*
+          * IR records completions even while their interrupt sources are
+@@ -343,6 +362,7 @@ CAN_IRQHandler(void)
+          * not bypass or shorten the protocol's recovery safety interval.
+          */
+         SOC_CAN->IR = FDCAN_IR_BO;
++        CAN_Errors.bus_off++;
+         SOC_CAN->CCCR &= ~FDCAN_CCCR_INIT;
+     }
+     if (ir & (FDCAN_IR_PED | FDCAN_IR_PEA)) {
+@@ -488,7 +508,7 @@ can_init(void)
+     /*##-3- Configure Interrupts #################################*/
+     armcm_enable_irq(CAN_IRQHandler, CAN_IT0_IRQn, 1);
+     SOC_CAN->ILE = FDCAN_ILE_EINT0;
+-    SOC_CAN->IE = (FDCAN_IE_RF0NE | FDCAN_IE_BOE
++    SOC_CAN->IE = (FDCAN_IE_RF0NE | FDCAN_IE_RF0LE | FDCAN_IE_BOE
+                    | FDCAN_IE_PEDE | FDCAN_IE_PEAE);
+ }
+ DECL_INIT(can_init);

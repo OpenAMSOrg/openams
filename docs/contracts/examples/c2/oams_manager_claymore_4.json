@@ -1,0 +1,434 @@
+{
+  "schema_version": 2,
+  "api_version": 1,
+  "schema": "openams.manager",
+  "ready": true,
+  "current_group": null,
+  "lanes": [
+    {
+      "id": "fps",
+      "state": "unloaded",
+      "current_group": null,
+      "current_slot": null,
+      "following": false,
+      "direction": 1,
+      "message": null,
+      "pressure": 0.0,
+      "set_point": 0.5
+    }
+  ],
+  "lanes_by_fps": {
+    "fps": {
+      "op": "UNLOADED",
+      "group": null,
+      "unit": null,
+      "runout": "idle",
+      "following": false,
+      "since": 1904.7,
+      "message": null,
+      "direction": 1,
+      "stage": null,
+      "motion_stage": "select_home",
+      "reload_target": null,
+      "runout_from": null,
+      "pressure": 0.0,
+      "set_point": 0.5,
+      "extruder": "extruder",
+      "motion_settled": true,
+      "state": "unloaded",
+      "current_slot": null
+    }
+  },
+  "topology": {
+    "schema_version": 1,
+    "fps": [
+      "fps"
+    ],
+    "oams": {
+      "clay": {
+        "idx": 0,
+        "lane": "fps",
+        "kind": "oams",
+        "family": "claymore",
+        "bays": 4,
+        "capabilities": {
+          "family": "claymore",
+          "display_name": "Claymore",
+          "bays": 4,
+          "bays_min": 4,
+          "bays_max": 4,
+          "selector_kind": "indexed",
+          "selector_kind_firmware": "KLIPPER_MMU_SELECTOR_KIND_INDEXED",
+          "preload": true,
+          "unpreload": true,
+          "eject": true,
+          "home": true,
+          "feeder_drive_type": "klipper_mmu_shared_core_stepper_feeder",
+          "spool_drive_count": 4,
+          "feed_motor_control": "device_owned_speed_current",
+          "device_owned_motion_control": true,
+          "normal_motion": true,
+          "encoder": false,
+          "dryer": false,
+          "dryer_zone_count": 0,
+          "dryer_module_count": 0,
+          "dryer_independent_zones": false,
+          "heater_count": 0,
+          "fan_count": 0,
+          "dryer_temperature_sensor_count": 0,
+          "spool_rotation_during_drying": false,
+          "dryer_target_min_c": null,
+          "dryer_target_max_c": null,
+          "vent_count": 0,
+          "autonomous_follower": true,
+          "ptfe_calibration": false,
+          "hub_hes_calibration": false,
+          "rfid": false,
+          "host_sensor_configuration": false,
+          "runtime_pid_tuning": false,
+          "logger_control": false,
+          "error_led_control": false,
+          "rfid_reader_scope": null,
+          "rfid_uid_inventory": false,
+          "rfid_material_metadata": null,
+          "schema_version": 1,
+          "board_name": "klipper_mmu_claymore",
+          "firmware_version": "klipper-mmu 0.1.0",
+          "build_version": "gcc: 12.2",
+          "firmware_capability_schema": 5,
+          "telemetry": false,
+          "telemetry_channels": [
+            "board",
+            "domain",
+            "dryer"
+          ]
+        }
+      }
+    },
+    "groups": {
+      "T0": {
+        "lane": "fps",
+        "bays": [
+          "clay-0",
+          "clay-1"
+        ]
+      },
+      "T1": {
+        "lane": "fps",
+        "bays": [
+          "clay-2"
+        ]
+      }
+    }
+  },
+  "devices": {
+    "clay": {
+      "schema_version": 1,
+      "current_spool": null,
+      "oams_idx": 0,
+      "connected": true,
+      "fps_value": 0.0,
+      "fps_upper_threshold": 0.7,
+      "fps_lower_threshold": 0.3,
+      "f1s_hes_value": [
+        1,
+        1,
+        1,
+        0
+      ],
+      "hub_hes_value": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "fps_target": 0.5,
+      "current_kp": 0.375,
+      "current_ki": 0.0,
+      "current_kd": 0.0,
+      "current_target": 0.3,
+      "f1s_hes_value_0": 1,
+      "f1s_hes_value_1": 1,
+      "f1s_hes_value_2": 1,
+      "f1s_hes_value_3": 0,
+      "hub_hes_value_0": 0,
+      "hub_hes_value_1": 0,
+      "hub_hes_value_2": 0,
+      "hub_hes_value_3": 0,
+      "kp": 6.0,
+      "ki": 0.0,
+      "kd": 0.0,
+      "encoder_clicks": 48211,
+      "i_value": 0.0,
+      "protocol_version": 3,
+      "gen_matched_protocol": true,
+      "family": "claymore",
+      "bay_count": 4,
+      "capabilities": {
+        "family": "claymore",
+        "display_name": "Claymore",
+        "bays": 4,
+        "bays_min": 4,
+        "bays_max": 4,
+        "selector_kind": "indexed",
+        "selector_kind_firmware": "KLIPPER_MMU_SELECTOR_KIND_INDEXED",
+        "preload": true,
+        "unpreload": true,
+        "eject": true,
+        "home": true,
+        "feeder_drive_type": "klipper_mmu_shared_core_stepper_feeder",
+        "spool_drive_count": 4,
+        "feed_motor_control": "device_owned_speed_current",
+        "device_owned_motion_control": true,
+        "normal_motion": true,
+        "encoder": false,
+        "dryer": false,
+        "dryer_zone_count": 0,
+        "dryer_module_count": 0,
+        "dryer_independent_zones": false,
+        "heater_count": 0,
+        "fan_count": 0,
+        "dryer_temperature_sensor_count": 0,
+        "spool_rotation_during_drying": false,
+        "dryer_target_min_c": null,
+        "dryer_target_max_c": null,
+        "vent_count": 0,
+        "autonomous_follower": true,
+        "ptfe_calibration": false,
+        "hub_hes_calibration": false,
+        "rfid": false,
+        "host_sensor_configuration": false,
+        "runtime_pid_tuning": false,
+        "logger_control": false,
+        "error_led_control": false,
+        "rfid_reader_scope": null,
+        "rfid_uid_inventory": false,
+        "rfid_material_metadata": null,
+        "schema_version": 1,
+        "board_name": "klipper_mmu_claymore",
+        "firmware_version": "klipper-mmu 0.1.0",
+        "build_version": "gcc: 12.2",
+        "firmware_capability_schema": 5,
+        "telemetry": false,
+        "telemetry_channels": [
+          "board",
+          "domain",
+          "dryer"
+        ]
+      },
+      "capability_warnings": [],
+      "bays": [
+        {
+          "index": 0,
+          "ready": true,
+          "loaded": false,
+          "calibrated": true,
+          "calibration_state": "configured",
+          "path_length_mm": 1600.0,
+          "positioning": false,
+          "spool_id": 12,
+          "link_source": "tag",
+          "tag": {
+            "uid": "8a3f12c4",
+            "format": "bambu",
+            "read_at": 1523.4,
+            "spoolman_id": null,
+            "bambu": {
+              "manufacturer": "Bambu",
+              "type": "PLA",
+              "detailed": "PLA Basic",
+              "color_argb": 4278856073,
+              "weight_g": 1000,
+              "diameter_mm": 1.75,
+              "drying_temp_c": 55,
+              "drying_time_h": 8,
+              "bed_temp_c": 35,
+              "hotend_max_c": 230,
+              "hotend_min_c": 190,
+              "nozzle_diameter": 0.4,
+              "spool_width_mm": 66.25,
+              "length_m": 330,
+              "tray_uid": "5c2e8d0a9f1b4e7c8a2d6f0e3b9c1a47",
+              "production": "2024_05_12_10_30"
+            }
+          },
+          "spool_hint": null,
+          "supported_actions": [
+            "load",
+            "set_spool",
+            "clear_spool",
+            "preload",
+            "unpreload",
+            "eject"
+          ]
+        },
+        {
+          "index": 1,
+          "ready": true,
+          "loaded": false,
+          "calibrated": true,
+          "calibration_state": "configured",
+          "path_length_mm": 1600.0,
+          "positioning": false,
+          "spool_id": null,
+          "link_source": "none",
+          "tag": null,
+          "spool_hint": null,
+          "supported_actions": [
+            "load",
+            "set_spool",
+            "preload",
+            "unpreload",
+            "eject"
+          ]
+        },
+        {
+          "index": 2,
+          "ready": true,
+          "loaded": false,
+          "calibrated": true,
+          "calibration_state": "configured",
+          "path_length_mm": 1600.0,
+          "positioning": false,
+          "spool_id": 30,
+          "link_source": "manual",
+          "tag": null,
+          "spool_hint": null,
+          "supported_actions": [
+            "load",
+            "set_spool",
+            "clear_spool",
+            "preload",
+            "unpreload",
+            "eject"
+          ]
+        },
+        {
+          "index": 3,
+          "ready": false,
+          "loaded": false,
+          "calibrated": true,
+          "calibration_state": "configured",
+          "path_length_mm": 1600.0,
+          "positioning": false,
+          "spool_id": null,
+          "link_source": "none",
+          "tag": null,
+          "spool_hint": null,
+          "supported_actions": [
+            "preload",
+            "unpreload",
+            "eject"
+          ]
+        }
+      ],
+      "telemetry": {
+        "domain": {
+          "motion_state": 0,
+          "motion_stage": 0,
+          "motion_fault": 0,
+          "dryer_state": 0,
+          "dryer_fault": 0,
+          "system_fault": 0,
+          "timestamp": 1523.1,
+          "motion_state_name": "idle",
+          "motion_stage_name": "stopped",
+          "dryer_state_name": "off",
+          "motion_fault_name": "none",
+          "dryer_fault_name": "none",
+          "system_fault_name": "none"
+        }
+      },
+      "supported_actions": [
+        "clear_errors",
+        "load",
+        "unload",
+        "follower",
+        "preload",
+        "unpreload",
+        "eject",
+        "home"
+      ],
+      "identity": {
+        "serial": "000000000000000000000006",
+        "firmware": "klipper-mmu 0.1.0",
+        "board": "klipper_mmu_claymore"
+      },
+      "calibration": {
+        "state": "configured",
+        "path_length_mm": 1600.0
+      },
+      "environment": null,
+      "dryer": null,
+      "faults": [],
+      "follower_uncertain": false
+    }
+  },
+  "settings": {
+    "read_tag_on_insertion": true,
+    "read_tags_at_startup": true,
+    "auto_reload_on_runout": true,
+    "auto_create_spoolman_spools": true,
+    "apply_pa_on_load": false,
+    "sync_unit_tray_info": true
+  },
+  "commands": {
+    "load": "OPENAMS_LOAD",
+    "unload": "OPENAMS_UNLOAD",
+    "cancel": "OAMSM_LOAD_FILAMENT_CANCEL",
+    "reset": "OAMSM_CLEAR_ERRORS"
+  },
+  "units": [
+    {
+      "id": "0",
+      "name": "clay",
+      "kind": "oams",
+      "topology": "hub",
+      "lane": "fps",
+      "connected": true,
+      "slots": [
+        {
+          "id": 0,
+          "bay": 0,
+          "ready": true,
+          "loaded": false
+        },
+        {
+          "id": 1,
+          "bay": 1,
+          "ready": true,
+          "loaded": false
+        },
+        {
+          "id": 2,
+          "bay": 2,
+          "ready": true,
+          "loaded": false
+        },
+        {
+          "id": 3,
+          "bay": 3,
+          "ready": false,
+          "loaded": false
+        }
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "T0",
+      "lane": "fps",
+      "slots": [
+        0,
+        1
+      ]
+    },
+    {
+      "name": "T1",
+      "lane": "fps",
+      "slots": [
+        2
+      ]
+    }
+  ]
+}

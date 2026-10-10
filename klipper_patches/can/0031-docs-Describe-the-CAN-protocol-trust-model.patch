@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Mon, 24 Aug 2026 12:23:39 -0700
+Subject: [PATCH] docs: Describe the CAN protocol trust model
+
+The CAN protocol documentation explained reliability framing and UUID-based addressing without stating the security boundary.  That can invite readers to mistake the CAN CRC, Klipper message CRC, or hashed UUID for authentication mechanisms.
+
+Document that CAN traffic is neither authenticated nor confidential and that its CRC and UUID fields are not credentials.  Enumerate the practical consequences of a device or host process gaining transmit access, including command injection, administration and bootloader requests, conflict shutdowns, observation, and denial of service.
+
+Also identify the controls that must provide the actual boundary: physical protection, host permissions, and isolation from untrusted devices and networks.  Cryptographic protection would require a new protocol and key-provisioning design rather than reinterpretation of existing fields.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+
+diff --git a/docs/CANBUS_protocol.md b/docs/CANBUS_protocol.md
+index 453a9166..6c5f9d7b 100644
+--- a/docs/CANBUS_protocol.md
++++ b/docs/CANBUS_protocol.md
+@@ -21,6 +21,44 @@ that is used during id assignment. This identifier can exceed the
+ length of one CAN packet, so a hash function is used to generate a
+ unique 6-byte id (`canbus_uuid`) from the factory id.
+ 
++## Security and trust model
++
++The Klipper CAN protocol is designed for a physically controlled,
++trusted machine network. It provides neither sender authentication nor
++confidentiality. CAN identifiers, admin commands, UUIDs, and Klipper
++protocol data are transmitted in clear text, and any device able to
++transmit on the bus can construct frames using the same identifiers.
++
++The CAN hardware CRC and the CRC in Klipper protocol message blocks
++detect accidental transmission errors. They are not keyed message
++authentication codes: a device intentionally constructing a frame can
++calculate both CRC values. Similarly, a `canbus_uuid` is a truncated
++hash used to select a micro-controller during node-id assignment. It is
++observable during discovery and is not proof of the sender's or
++recipient's identity.
++
++As a result, access to the CAN wiring, a CAN adapter, or a host process
++permitted to transmit SocketCAN frames must be treated as trusted
++access to the printer. Such access can be used to:
++
++* impersonate a host or micro-controller and inject or replay Klipper
++  protocol data;
++* assign node ids, cause node-id conflict shutdowns, or request entry
++  into a supported bootloader;
++* consume bus bandwidth, force retransmissions, or otherwise prevent
++  timely communication; and
++* observe all application and administration traffic.
++
++Physical access controls, host device permissions, and network
++isolation must enforce this trust boundary. The CAN bus should not be
++directly bridged to an untrusted network or shared with untrusted
++devices. Klipper's checksums, retransmission logic, and shutdown
++handling improve reliability in the presence of faults, but they are
++not security controls against a malicious bus participant. Adding such
++controls would require a new authenticated protocol together with key
++provisioning and compatibility rules; it can not be added by treating
++the existing UUID or CRC fields as credentials.
++
+ ## Admin messages
+ 
+ Admin messages are used for id assignment. Admin messages sent from

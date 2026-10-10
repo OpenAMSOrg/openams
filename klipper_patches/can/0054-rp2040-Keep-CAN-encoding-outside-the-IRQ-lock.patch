@@ -1,0 +1,61 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: JR Lomas <lomas.jr@gmail.com>
+Date: Fri, 4 Sep 2026 14:22:33 -0700
+Subject: [PATCH] rp2040: Keep CAN encoding outside the IRQ lock
+
+The demand-driven transmit wakeup change masked interrupts around
+can2040_transmit().  That function also computes the CRC and stuffs
+all frame bits, unnecessarily delaying the CAN PIO and step timer
+interrupts throughout message preparation.
+
+Mask interrupts only while checking queue capacity and publishing the
+waiter.  Producers run in cooperative tasks, while the interrupt only
+removes queued frames, so a free slot cannot be consumed between the
+check and the subsequent can2040_transmit() call.  Encoding can thus
+run with interrupts restored without reopening the lost-wakeup race.
+
+A native harness checks that encoding runs with interrupts enabled,
+full queues register a waiter, a completion immediately after restoring
+interrupts wakes that waiter, and unneeded completions do not wake the
+task.  It fails on the previous interrupt-masked encoding.  USB-CAN
+firmware builds pass for both RP2040 and RP2350.  Frame encoding and
+wire contents are unchanged.
+
+Signed-off-by: JR Lomas <lomas.jr@gmail.com>
+(cherry picked from commit c3c9c312d6c3d324e6fa99b86bde2828c9549bee)
+
+diff --git a/src/rp2040/can.c b/src/rp2040/can.c
+index e61c73ff..70b26946 100644
+--- a/src/rp2040/can.c
++++ b/src/rp2040/can.c
+@@ -30,24 +30,19 @@ static uint8_t can_tx_waiting;
+ int
+ canhw_send(struct canbus_msg *msg)
+ {
+-    /*
+-     * can2040 reports every successful transmit through its callback, but the
+-     * routing task needs that notification only after can2040_transmit() has
+-     * rejected a frame because its four-entry software queue is full.  Record
+-     * that condition with PIO interrupts masked.  The library advances its
+-     * consumer index and invokes the callback in that interrupt, so publishing
+-     * the waiter before interrupts are restored closes the completion-versus-
+-     * rejection race without changing can2040's queue implementation.
+-     */
++    // Publish a capacity waiter atomically with the full-queue check.  Only
++    // tasks add frames, and interrupts can only free slots, so available
++    // capacity remains available after restoring interrupts.  Keep can2040's
++    // CRC calculation and bit stuffing outside this critical section.
+     irqstatus_t flag = irq_save();
+-    int ret = can2040_transmit(&cbus, (void*)msg);
+-    if (ret < 0) {
++    if (!can2040_check_transmit(&cbus)) {
+         writeb(&can_tx_waiting, 1);
+         irq_restore(flag);
+         return -1;
+     }
+     writeb(&can_tx_waiting, 0);
+     irq_restore(flag);
++    can2040_transmit(&cbus, (void*)msg);
+     return CANMSG_DATA_LEN(msg);
+ }
+ 

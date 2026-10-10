@@ -1,0 +1,20 @@
+# Firmware-owned TMC2209 register controller
+
+Implementation reference: Analog Devices' [TMC2209 datasheet, revision 1.09](https://www.analog.com/media/en/technical-documentation/data-sheets/TMC2209_datasheet_rev1.09.pdf), sections 4, 5, 9 and 15. The pinned Klipper `tmc_uart.py`, `tmc2208.py`, `tmc2209.py` and `tmc2130.py` were inspected as additional source evidence. Their Python helpers remain host-owned and are not invoked by this module.
+
+The controller validates UART frames and CRC, identifies the chip, configures volatile registers, checks each write using IFCNT, and reads configuration back before declaring readiness. Register current scale is a setpoint; it is not measured coil current. GSTAT/DRV_STATUS supervise resets and driver protection without interpreting open-load flags as filament jams.
+
+The transport owns a bounded, asynchronous UART exchange and returns a transaction token. It must strip local echo, validate serial framing and deliver the exact eight-byte response. A module-owned timer/UART backend is still required; this portable register controller does not drive a pin. Its force-off callback must disable the physical actuator immediately. There are no OTP writes.
+
+Transport completion must also preserve physical bus ownership: a sampled final
+stop bit is not proof that the slave has released the wire. The board transport
+must enforce the driver's post-reply hold and fault-recovery quiet periods before
+accepting another request, including after local abort. The integration
+contract is described in `docs/plan/feature-map.md` and
+`docs/plan/status-history.md`.
+
+Initialization keeps outputs disabled, including invalid configuration. A lost, late or corrupt reply, or a write that IFCNT shows the chip missed, is a communication error rather than something the chip reported. The same transaction is retried, up to `KM_TMC2209_MAX_ATTEMPTS` (3) consecutive failures per read or per write and its IFCNT confirmation, matching the retry-then-fail behavior of Klipper's host `tmc_uart.py`. The budget restarts after each successful step. An unanswered transfer is aborted before its retry. A diagnostic retry leaves a running motor enabled; a startup or current-change retry keeps it disabled as before. Exhausting the bound latches a fault and forces the actuator off. A value the chip actually reports (wrong identity, GSTAT reset/error flags, DRV_STATUS protection, configuration readback) is never retried and latches at once. Restart must be explicit and first abort any pending transport. Successful initialization never enables a motor. The board must supply actual sense resistance, current limits, pulse timing and bridge wiring; these are not inferred from a device name.
+
+`set_current` returns acceptance of an asynchronous request. It forces the actuator off and removes readiness until the write, IFCNT increment, and diagnostics succeed. Requested and confirmed current values are separate. Nominal current uses the datasheet equation with configured sense resistance, its 20-milliohm correction, and 180/325-mV reference. Quantization rounds down, never below the smallest representable current, and does not model component tolerances. Zero current is an external disable operation. Live adjustment while stepping needs a separate backend contract: do not plug this asynchronous method directly into the common driver's synchronous current callback or claim follower boost is integrated yet.
+
+The native register model independently constructs replies and verifies writes. Tests cover fixed CRC vectors cross-checked with pinned Klipper, all single-bit reply corruption, configuration readback, write-counter rollover/loss, malformed configuration, both current ranges and microstep choices, explicit current confirmation, reset/protection flags, transport contention/failure/timeouts, bounded retries of corrupt, late and unanswered replies and of missed writes (including a running motor staying enabled through absorbed diagnostic errors), stale tokens, restart and clock wrap. These verify register-controller software, not actual UART timing or hardware electrical behavior.
