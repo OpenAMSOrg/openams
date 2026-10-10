@@ -337,7 +337,10 @@ with:
 It downloads the latest OpenAMS Mainsail, keeps your Mainsail settings, keeps
 the Mainsail you had as `~/mainsail.stock`, and points Mainsail's
 **Machine → Update Manager** entry `mainsail` at the OpenAMS build, so
-Mainsail's own update button keeps the panel. Reload Mainsail in the browser.
+Mainsail's own update button keeps the panel. Reload Mainsail with
+**Ctrl+Shift+R** (Cmd+Shift+R on a Mac): a plain reload can show the old
+Mainsail from the browser's cache. The panel is added at the end of the
+dashboard's first column; move it under **Settings → Dashboard**.
 
 **Check:** the dashboard has an **OpenAMS** panel showing your AMS and its
 bays.

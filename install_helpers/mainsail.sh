@@ -105,6 +105,9 @@ EOF
     rm -rf "$work"
     set_mainsail_updater "$MAINSAIL_REPO"
     echo "[OK]"
+    echo "  Reload Mainsail with Ctrl+Shift+R (Cmd+Shift+R on a Mac): a plain reload can show"
+    echo "  the old Mainsail from the browser's cache. The OpenAMS panel is added at the end of"
+    echo "  the dashboard's first column."
     restart_moonraker
 }
 
