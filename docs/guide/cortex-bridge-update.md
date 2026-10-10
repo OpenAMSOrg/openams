@@ -44,26 +44,8 @@ OpenAMS version yet` means there is nothing to install.
 
 ## Install it
 
-You can install it from Mainsail or from the command line; both do the same
-thing.
-
-### From Mainsail
-
-The OpenAMS panel has a **Cortex Bridge** card at the bottom, on a printer that
-has a bridge. Its note says `Firmware: version N available` when there is
-something to install.
-
-1. Wait until the printer is idle: OpenAMS refuses an update while printing or
-   paused.
-2. Click **Update bridge firmware** on the card, and confirm
-   `Install Cortex Bridge firmware version N?`.
-3. The card shows each step, with a percentage while it writes. When it says
-   `Update finished; Klipper restarts once the AMS is back`, OpenAMS restarts
-   Klipper itself and the panel reloads with it.
-
-The button is dimmed, with the reason on hover, while no package is bundled, an
-update is running, or the bridge relay is not running. A failed update stays
-on the card in red, with what to do next under it.
+Install it from the command line. (The OpenAMS panel for Mainsail, when it is
+released, will offer the same update on its **Cortex Bridge** card.)
 
 ### From the command line
 

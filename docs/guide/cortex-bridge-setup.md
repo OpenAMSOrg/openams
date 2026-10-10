@@ -17,7 +17,7 @@ Nothing on the AMS is opened or flashed. It keeps its Bambu Lab firmware.
 | [5. Install OpenAMS](#5-install-openams) | One command; it also writes your AMS config | 5 min |
 | [6. Check the bridge](#6-check-the-bridge) | See your AMS on the Klipper computer | 1 min |
 | [7. Finish the config](#7-finish-the-config) | Path length, cutter, toolhead macros | 15 min |
-| [8. Add the Mainsail panel](#8-add-the-mainsail-panel) | See and drive the AMS from Mainsail | 30 min |
+| [8. The Mainsail panel](#8-the-mainsail-panel) | Not released yet: use the console for now | — |
 | [9. First load](#9-first-load) | Load, unload and swap once, watching | 15 min |
 
 Later: [keep it up to date](#keep-it-up-to-date) and, when something is
@@ -323,44 +323,12 @@ sections you have already set. It stops Klipper for a few seconds while it
 identifies the AMS, and starts it again. Set the new AMS's `ptfe_length`, then
 restart Klipper.
 
-## 8. Add the Mainsail panel
+## 8. The Mainsail panel
 
-The OpenAMS panel shows each AMS, its bays and spools, and lets you load,
-unload, edit groups and start drying from Mainsail's dashboard. A ready-made
-Mainsail build with the panel is not available yet, so for now you build
-Mainsail with the panel once, from source.
-
-Building needs Node.js 20.19 or newer and about 2 GB of free memory. A
-Raspberry Pi can do it slowly; a desktop computer is faster, and you then copy
-the result to the printer.
-
-```bash
-git clone https://github.com/OpenAMSOrg/mmu-display.git ~/mmu-display
-git clone https://github.com/mainsail-crew/mainsail.git ~/mainsail-build
-cd ~/mmu-display
-node tools/gen_host.mjs --host mainsail --out ~/mainsail-build
-cd ~/mainsail-build
-npm ci
-npm run build
-```
-
-The build is in `~/mainsail-build/dist`. Put it in place of the Mainsail you
-have, keeping the old one:
-
-```bash
-mv ~/mainsail ~/mainsail.stock
-cp -r ~/mainsail-build/dist ~/mainsail
-```
-
-Reload Mainsail in the browser.
-
-**Check:** the dashboard has an **OpenAMS** panel showing your AMS and its
-bays.
-
-Mainsail's own update button installs the stock Mainsail and removes the
-panel. To keep the panel, update Mainsail by pulling `~/mainsail-build`,
-running the `gen_host.mjs` and `npm` commands again and copying `dist` over.
-The full panel guide is in mmu-display's `docs/guide/web-panel.md`.
+The OpenAMS panel for Mainsail, which shows each AMS, its bays and spools on
+the dashboard, is not released yet; it will be announced on the OpenAMS
+Discord. Until then you run OpenAMS from the Mainsail console, with the
+commands in this guide.
 
 ## 9. First load
 
@@ -427,6 +395,7 @@ names the first thing to fix.
 | `The bridge is waiting for firmware` | A firmware update was interrupted | `cortex-bridge.py update`; see [the update guide](cortex-bridge-update.md). |
 | `The bridge reports a fault` | The bridge's own self-test failed | Unplug USB for 10 s; if it stays, write a support report (below). |
 | Klipper: `Unable to open serial port '/dev/oams/...'` | Klipper started before the AMS was up | Power the AMS, wait for `status` to show it online, then **FIRMWARE RESTART**. |
+| Klipper: `Can not update MCU '...' config as it is shutdown` | Klipper was stopped for more than a few seconds. The bridge stops an AMS whenever Klipper goes quiet, so nothing keeps running unattended | **FIRMWARE RESTART**. |
 | Klipper: `Spool N is not calibrated` | `ptfe_length` is 0 for that AMS | [Set it](#filament-path-length). |
 | Loads stall, or the buffer reports arrival before the filament reaches the toolhead | Too much friction in the filament path | Check that every tube up to the coupler is 3 mm ID / 4 mm OD (not 2 mm ID), any 2 mm ID tube starts at the coupler's 2 end, the bends are gentle, the coupler and splitter joints are smooth, and the stronger buffer spring is fitted. |
 | A load stops just short of the toolhead | The buffer reading did not reach `arrival_threshold` | Lower it as the message suggests ([details](configure.md#host-confirmed-arrival-from-a-relayed-fps)). |
