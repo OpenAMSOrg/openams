@@ -69,6 +69,25 @@ class SpoolmanInstallTests(unittest.TestCase):
         self.assertNotIn(LOCAL, conf)
         self.assertEqual(len(re.findall(r"^\[openams_spoolman\]$", conf, re.M)), 1)
 
+    def test_this_hosts_spoolman_that_does_not_answer_is_installed_again(self):
+        (self.config / "moonraker.conf").write_text(
+            "[server]\n\n[spoolman]\nserver: http://localhost:7912/\n")
+        self.fake_installer()
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(self.ran.exists())
+        self.assertIn("installing it again", result.stdout)
+        self.assertEqual(self.conf.count("[spoolman]"), 1)
+
+    def test_this_hosts_spoolman_that_answers_is_left_alone(self):
+        (self.config / "moonraker.conf").write_text(
+            "[server]\n\n[spoolman]\nserver: http://localhost:7912/\n")
+        self.fake_installer()
+        self.probe.write_text("{}")
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.ran.exists())
+
     def test_server_answering_the_probe_is_configured_without_install(self):
         self.fake_installer()
         self.probe.write_text("{}")

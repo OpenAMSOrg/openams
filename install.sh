@@ -442,6 +442,16 @@ spoolman_answers()
     curl -fsS --max-time 5 -o /dev/null "$SPOOLMAN_INFO_URL" >/dev/null 2>&1
 }
 
+# True when a [spoolman] server URL is the Spoolman this installer puts on
+# this host (localhost or 127.0.0.1, its port).
+spoolman_is_this_host()
+{
+    case "${1%/}" in
+        "http://localhost:${SPOOLMAN_PORT}"|"http://127.0.0.1:${SPOOLMAN_PORT}") return 0;;
+    esac
+    return 1
+}
+
 # Spoolman's own installer needs pg_config and, when it is missing, runs
 # "sudo apt-get install -y libpq-dev" itself. On a Debian release whose security
 # pocket was retired (Debian 11 after end of support, still common on Klipper
@@ -560,6 +570,11 @@ install_spoolman_server()
         return 1
     fi
     rm -f "$zip"
+    # A Spoolman that never started usually has a broken Python environment
+    # (wrong-architecture build); it is rebuilt, the data is kept elsewhere.
+    if [ "${SPOOLMAN_REINSTALL:-0}" = "1" ]; then
+        rm -rf "${SPOOLMAN_DIR}/.venv"
+    fi
     ensure_pg_config
     # Spoolman's installer lets uv pick the newest Python. Pin one for which
     # every Spoolman dependency ships ready-made builds, 32-bit ARM included:
@@ -585,7 +600,14 @@ resolve_spoolman()
     fi
     local existing
     existing="$(moonraker_spoolman_server)"
-    if [ -n "$existing" ]; then
+    # This host's own Spoolman, configured by an earlier run but not
+    # answering (an install that failed), is installed again; any other
+    # configured server is kept as it is.
+    if [ -n "$existing" ] && [ -z "$SPOOLMAN_URL_ARG" ] \
+            && spoolman_is_this_host "$existing" && ! spoolman_answers; then
+        echo "moonraker.conf names Spoolman on this host ($existing), but it does not answer; installing it again..."
+        SPOOLMAN_REINSTALL=1
+    elif [ -n "$existing" ]; then
         SPOOLMAN_SERVER="$existing"
         if [ -n "$SPOOLMAN_URL_ARG" ] && [ "${SPOOLMAN_URL_ARG%/}" != "${existing%/}" ]; then
             echo "[WARNING] moonraker.conf already has [spoolman] server: $existing; keeping it and ignoring --spoolman-url $SPOOLMAN_URL_ARG."
@@ -604,7 +626,8 @@ resolve_spoolman()
         echo "Spoolman already answers on this host at $SPOOLMAN_SERVER [SKIPPED install]"
         return 0
     fi
-    echo "No Spoolman server found; installing Spoolman on this host (port ${SPOOLMAN_PORT})..."
+    [ "${SPOOLMAN_REINSTALL:-0}" = "1" ] || \
+        echo "No Spoolman server found; installing Spoolman on this host (port ${SPOOLMAN_PORT})..."
     local rc=0
     install_spoolman_server || rc=$?
     if [ "$rc" = "2" ]; then
