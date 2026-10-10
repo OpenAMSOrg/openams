@@ -561,7 +561,13 @@ install_spoolman_server()
     fi
     rm -f "$zip"
     ensure_pg_config
-    (cd "$SPOOLMAN_DIR" && bash ./scripts/install.sh -systemd=yes < /dev/null)
+    # Spoolman's installer lets uv pick the newest Python. Pin one for which
+    # every Spoolman dependency ships ready-made builds, 32-bit ARM included:
+    # with a brand-new Python, pydantic-core is compiled on the printer, and a
+    # 32-bit Raspberry Pi OS on a 64-bit kernel compiles it for the wrong
+    # architecture. A UV_PYTHON the user set still wins.
+    (cd "$SPOOLMAN_DIR" && UV_PYTHON="${UV_PYTHON:-3.12}" \
+        bash ./scripts/install.sh -systemd=yes < /dev/null)
 }
 
 # Return codes of install_spoolman_server: 0 installed, 1 failed, 2 skipped on purpose
