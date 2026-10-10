@@ -17,7 +17,7 @@ Nothing on the AMS is opened or flashed. It keeps its Bambu Lab firmware.
 | [5. Install OpenAMS](#5-install-openams) | One command; it also writes your AMS config | 5 min |
 | [6. Check the bridge](#6-check-the-bridge) | See your AMS on the Klipper computer | 1 min |
 | [7. Finish the config](#7-finish-the-config) | Path length, cutter, toolhead macros | 15 min |
-| [8. The Mainsail panel](#8-the-mainsail-panel) | Not released yet: use the console for now | — |
+| [8. Add the Mainsail panel](#8-add-the-mainsail-panel) | See and drive the AMS from Mainsail | 2 min |
 | [9. First load](#9-first-load) | Load, unload and swap once, watching | 15 min |
 
 Later: [keep it up to date](#keep-it-up-to-date) and, when something is
@@ -323,12 +323,28 @@ sections you have already set. It stops Klipper for a few seconds while it
 identifies the AMS, and starts it again. Set the new AMS's `ptfe_length`, then
 restart Klipper.
 
-## 8. The Mainsail panel
+## 8. Add the Mainsail panel
 
-The OpenAMS panel for Mainsail, which shows each AMS, its bays and spools on
-the dashboard, is not released yet; it will be announced on the OpenAMS
-Discord. Until then you run OpenAMS from the Mainsail console, with the
-commands in this guide.
+The OpenAMS panel shows each AMS, its bays and spools on Mainsail's dashboard,
+and loads, unloads, edits groups and starts drying from there. It comes in the
+OpenAMS build of Mainsail: Mainsail itself, with the panel added. Install it
+with:
+
+```bash
+~/openams/install.sh --mainsail-panel
+```
+
+It downloads the latest OpenAMS Mainsail, keeps your Mainsail settings, keeps
+the Mainsail you had as `~/mainsail.stock`, and points Mainsail's
+**Machine → Update Manager** entry `mainsail` at the OpenAMS build, so
+Mainsail's own update button keeps the panel. Reload Mainsail in the browser.
+
+**Check:** the dashboard has an **OpenAMS** panel showing your AMS and its
+bays.
+
+A Mainsail that is a link or a git checkout (your own build) is left alone.
+The panel is built from [openams-ui](https://github.com/OpenAMSOrg/openams-ui);
+the build is [OpenAMSOrg/mainsail](https://github.com/OpenAMSOrg/mainsail).
 
 ## 9. First load
 

@@ -466,6 +466,88 @@ class InstallShTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self._openams_linked())
 
+    # ------------------------------------------------------------------
+    # --mainsail-panel: the OpenAMS Mainsail build
+    # ------------------------------------------------------------------
+
+    def _mainsail_fixture(self, stock=True, section=True):
+        import json
+        import zipfile
+        self.mainsail = self.root / "mainsail"
+        if stock:
+            self.mainsail.mkdir()
+            (self.mainsail / "index.html").write_text("stock\n")
+            (self.mainsail / "config.json").write_text('{"instancesDB": "moonraker", "mine": 1}\n')
+            (self.mainsail / "release_info.json").write_text(json.dumps(
+                {"project_name": "mainsail", "project_owner": "mainsail-crew", "version": "v2.19.0"}))
+        if section:
+            with open(self.config / "moonraker.conf", "a") as conf:
+                conf.write("\n[update_manager mainsail]\ntype: web\nchannel: stable\n"
+                           "repo: mainsail-crew/mainsail\npath: ~/mainsail\n")
+        release = self.root / "mainsail-release.zip"
+        with zipfile.ZipFile(release, "w") as zf:
+            zf.writestr("index.html", "openams\n")
+            zf.writestr("config.json", '{"instancesDB": "moonraker"}\n')
+            zf.writestr("release_info.json", json.dumps(
+                {"project_name": "mainsail", "project_owner": "OpenAMSOrg", "version": "v2.19.0-openams.1"}))
+        self.env.update(OPENAMS_MAINSAIL_PATH=str(self.mainsail),
+                        OPENAMS_MAINSAIL_RELEASE_ZIP=str(release))
+
+    def _mainsail_repo(self):
+        text = (self.config / "moonraker.conf").read_text()
+        section = text.split("[update_manager mainsail]", 1)[1].split("\n[", 1)[0]
+        return [line.split(":", 1)[1].strip() for line in section.splitlines()
+                if line.startswith("repo:")]
+
+    def test_mainsail_panel_installs_and_keeps_the_stock_copy(self):
+        self._mainsail_fixture()
+        result = self.install("--mainsail-panel")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.mainsail / "index.html").read_text(), "openams\n")
+        self.assertIn('"mine": 1', (self.mainsail / "config.json").read_text())
+        self.assertEqual((self.root / "mainsail.stock/index.html").read_text(), "stock\n")
+        self.assertEqual(self._mainsail_repo(), ["OpenAMSOrg/mainsail"])
+        # A second run updates in place and keeps the one stock copy.
+        result = self.install("--mainsail-panel")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.root / "mainsail.stock/index.html").read_text(), "stock\n")
+        self.assertEqual(self._mainsail_repo(), ["OpenAMSOrg/mainsail"])
+
+    def test_uninstall_restores_the_stock_mainsail(self):
+        self._mainsail_fixture()
+        self.assertEqual(self.install("--mainsail-panel").returncode, 0)
+        result = self.install("-u")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.mainsail / "index.html").read_text(), "stock\n")
+        self.assertFalse((self.root / "mainsail.stock").exists())
+        self.assertEqual(self._mainsail_repo(), ["mainsail-crew/mainsail"])
+
+    def test_mainsail_panel_adds_the_updater_when_missing(self):
+        self._mainsail_fixture(stock=False, section=False)
+        result = self.install("--mainsail-panel")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.mainsail / "index.html").read_text(), "openams\n")
+        self.assertEqual(self._mainsail_repo(), ["OpenAMSOrg/mainsail"])
+
+    def test_mainsail_panel_leaves_an_own_build_alone(self):
+        self._mainsail_fixture(stock=False)
+        own = self.root / "my-mainsail"
+        own.mkdir()
+        (own / "index.html").write_text("mine\n")
+        self.mainsail.symlink_to(own, target_is_directory=True)
+        result = self.install("--mainsail-panel")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("left alone", result.stdout)
+        self.assertEqual((own / "index.html").read_text(), "mine\n")
+        self.assertEqual(self._mainsail_repo(), ["mainsail-crew/mainsail"])
+
+    def test_without_the_flag_mainsail_is_untouched(self):
+        self._mainsail_fixture()
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.mainsail / "index.html").read_text(), "stock\n")
+        self.assertEqual(self._mainsail_repo(), ["mainsail-crew/mainsail"])
+
 
 if __name__ == "__main__":
     unittest.main()

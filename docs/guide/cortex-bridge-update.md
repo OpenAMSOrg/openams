@@ -44,8 +44,7 @@ OpenAMS version yet` means there is nothing to install.
 
 ## Install it
 
-Install it from the command line. (The OpenAMS panel for Mainsail, when it is
-released, will offer the same update on its **Cortex Bridge** card.)
+Install it from the command line.
 
 ### From the command line
 

@@ -73,8 +73,11 @@ install separately: [update the Cortex Bridge firmware](docs/guide/cortex-bridge
 
 ## Screens and front ends
 
-- **Mainsail and Fluidd:** an OpenAMS panel that shows each unit, its bays
-  and spools is coming. Until then, OpenAMS runs from the console.
+- **Mainsail:** the OpenAMS panel shows each unit, its bays and spools, and
+  drives loads, groups and drying. `./install.sh --mainsail-panel` installs
+  the OpenAMS build of Mainsail that carries it
+  ([OpenAMSOrg/mainsail](https://github.com/OpenAMSOrg/mainsail), built from
+  [openams-ui](https://github.com/OpenAMSOrg/openams-ui)).
 - **HelixScreen** supports OpenAMS natively from v1.1.0-beta.1.
 - **Your own UI:** the versioned [OpenAMS UI API](docs/UI_API.md), including
   the Cortex Bridge status and firmware update calls.

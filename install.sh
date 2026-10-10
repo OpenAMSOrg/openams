@@ -40,7 +40,7 @@ if [ ! -d "${MOONRAKER_CONFIG_DIR}" ]; then
     MOONRAKER_CONFIG_DIR="${HOME}/klipper_config"
 fi
 
-usage(){ echo "Usage: $0 [-k <klipper path>] [-s <klipper service name>] [-c <configuration path>] [-r <gco-routines checkout>] [-u] [--with-mcu-addon] [--skip-gco-routines | --require-gco-routines] [--with-klipper-patches | --remove-klipper-patches] [--spoolman-url <url> | --no-spoolman] [--cortex-bridge | --no-cortex-bridge]" 1>&2; exit 1; }
+usage(){ echo "Usage: $0 [-k <klipper path>] [-s <klipper service name>] [-c <configuration path>] [-r <gco-routines checkout>] [-u] [--with-mcu-addon] [--skip-gco-routines | --require-gco-routines] [--with-klipper-patches | --remove-klipper-patches] [--spoolman-url <url> | --no-spoolman] [--cortex-bridge | --no-cortex-bridge] [--mainsail-panel]" 1>&2; exit 1; }
 # Parse command line arguments. The one long option is pulled out first so
 # getopts never sees it, then the short options are parsed as before.
 SHORT_ARGS=()
@@ -64,6 +64,7 @@ for arg in "$@"; do
         --remove-klipper-patches) REMOVE_KLIPPER_PATCHES=1;;
         --cortex-bridge) CORTEX_BRIDGE_ON=1;;
         --no-cortex-bridge) CORTEX_BRIDGE_OFF=1;;
+        --mainsail-panel) MAINSAIL_PANEL=1;;
         -h|--help) usage;;
         *) SHORT_ARGS+=("$arg");;
     esac
@@ -122,6 +123,7 @@ MMU_INSTALLER="$SCRIPT_DIR/klipper_mmu/tools/install.py"
 PATCH_HELPER="$SCRIPT_DIR/tools/klipper_patches.py"
 source "$SCRIPT_DIR/install_helpers/gco-routines.sh"
 source "$SCRIPT_DIR/install_helpers/cortex-bridge.sh"
+source "$SCRIPT_DIR/install_helpers/mainsail.sh"
 
 # The single place a service is touched. With OPENAMS_NO_SERVICE=1 the call is
 # printed and skipped, so the rest of the installer can be exercised without
@@ -1144,6 +1146,9 @@ if [[ -z "${UNINSTALL:-}" ]]; then
     add_printer_includes
     configure_cortex_bridge_units
     configure_spoolman
+    if [ "${MAINSAIL_PANEL:-0}" = "1" ]; then
+        install_mainsail_panel
+    fi
     if [ "${MOONRAKER_COMPONENT_CHANGED:-0}" = "1" ] && [ "${MOONRAKER_RESTARTED:-0}" != "1" ]; then
         restart_moonraker
     fi
@@ -1158,6 +1163,7 @@ else
     remove_printer_includes
     remove_updater
     remove_spoolman_section
+    remove_mainsail_panel
 fi
 KLIPPER_STOPPED=0
 start_klipper
