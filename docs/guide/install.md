@@ -211,10 +211,37 @@ Your `oams.cfg` is never overwritten. The macro files become links to the checko
 delete it once the new installation works. Every `klipper_openams` G-code command
 still exists with the same arguments.
 
-On the STM32F072 mainboard, set `openams_config_path` under `[oams_manager]` if
-your `[oams]` sections are not in `oams.cfg`, and add `environment_sensor:` to
-`[oams oams1]` if you have more than one HDC1080 sensor. See
-[docs/stm32f072.md](../stm32f072.md) for every config difference.
+On the STM32F072 mainboard (OpenAMS 1), two settings may need attention. Both
+are optional, and most printers need neither.
+
+**`openams_config_path`** goes under `[oams_manager]`. It is the file OpenAMS
+writes back into when you edit groups, calibrate or link Spoolman spools. The
+default is `oams.cfg` in the same folder as `printer.cfg` (on most printers
+`~/printer_data/config/oams.cfg`). Set it only if your `[oams]` and
+`[filament_group]` sections live in a file with another name, and give the
+full path:
+
+```ini
+[oams_manager]
+openams_config_path: ~/printer_data/config/my_ams.cfg
+```
+
+**`environment_sensor`** goes under each `[oams ...]` section. It names the
+temperature and humidity sensor of that unit: the name after
+`temperature_sensor` in the sensor's section. With exactly one HDC1080 sensor
+(as in `oams_sample.cfg`) it is found on its own and you need not set it. With
+two or more, set it on every unit:
+
+```ini
+[temperature_sensor oams]
+sensor_type: HDC1080
+# ... the rest as in oams_sample.cfg
+
+[oams oams1]
+environment_sensor: oams
+```
+
+See [docs/stm32f072.md](../stm32f072.md) for every config difference.
 
 ## Check that it works
 
