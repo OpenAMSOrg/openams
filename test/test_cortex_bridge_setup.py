@@ -229,6 +229,36 @@ class CommandLineTests(unittest.TestCase):
             self.assertIn(expected, cli.next_step(self.facts(**overrides)),
                           overrides)
 
+    def test_update_installs_directly_when_no_relay_runs(self):
+        import contextlib
+        import io
+        from unittest import mock
+        from cortex_bridge import updater
+        seen = {}
+
+        def install(data, progress=None):
+            seen["data"] = data
+            progress("writing", 50, 100)
+            return {"version": 9, "serial_number": "CB0123456789AB"}
+
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            package = Path(tmp) / "bridge-9.oac2"
+            package.write_bytes(b"OAC2 package")
+            with mock.patch.object(cli, "control_request",
+                                   side_effect=OSError("no relay")), \
+                    mock.patch.object(cli, "printer_state", return_value=None), \
+                    mock.patch.object(updater, "update_bridge",
+                                      side_effect=install), \
+                    contextlib.redirect_stdout(output):
+                code = cli.main(["--run-dir", tmp, "update", "--file",
+                                 str(package), "--yes"])
+        self.assertEqual(code, 0)
+        self.assertEqual(seen["data"], b"OAC2 package")
+        self.assertIn("Writing the firmware (50%)", output.getvalue())
+        self.assertIn("Installed firmware version 9 on bridge CB0123456789AB",
+                      output.getvalue())
+
     def test_ptfe_prints_the_click_count(self):
         import contextlib
         import io

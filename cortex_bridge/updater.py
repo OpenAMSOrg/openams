@@ -73,7 +73,6 @@ APPLICATION_PRODUCT = "Cortex Bridge"
 APPLICATION_MANUFACTURERS = ("SiForge", "OpenAMS")
 # VID:PID alone is never trusted: manufacturer and product must both match.
 RECEIVER_IDENTITY = ("SiForge", "Cortex Updater")
-LAB_RECEIVER_IDENTITIES = ()
 FAULT_IDENTITY = ("SiForge", "Cortex Fault")
 
 STATE_APPLICATION = "application"
@@ -197,7 +196,8 @@ class TransferInterrupted(UpdateError):
 
 
 class ReceiverRejected(UpdateError):
-    """The bridge's boot refused the package (for example an older version, or
+    """The bridge's boot refused the package (for example a version that is
+    not newer than the installed one, or
     one for another product or hardware revision). The boot does not say why
     over USB; ``stopped_at`` says where it stopped, from what it asked for."""
 
@@ -307,10 +307,11 @@ def _classify(pid, manufacturer, product):
     if pid == PID_RECEIVER:
         if identity == RECEIVER_IDENTITY:
             return STATE_RECEIVER, False
-        if identity in LAB_RECEIVER_IDENTITIES:
-            return STATE_RECEIVER, True
         if identity == FAULT_IDENTITY:
             return STATE_FAULT, False
+        # Any other boot on this ID is not a production boot: it is listed
+        # so that nothing is ever sent to it.
+        return STATE_RECEIVER, True
     return None, False
 
 
@@ -1035,8 +1036,8 @@ def _describe(bridge) -> str:
 def _check_receiver_boot(receiver: Bridge, info: dict) -> None:
     if receiver.lab:
         raise ReceiverRejected(
-            "the bridge has a lab boot, which does not install OAC2 "
-            "packages. Nothing was sent; it returns to its firmware within "
+            "the bridge's boot is not a production boot and does not install "
+            "these packages. Nothing was sent; it returns to its firmware within "
             "%d s" % RECEIVER_HOST_WAIT_S, post_state=STATE_RECEIVER,
             stopped_at="before the file was opened")
     abi = RECEIVER_BCD_BOOT_ABI.get(receiver.bcd_device or "")
@@ -1188,9 +1189,10 @@ def update_bridge(data: bytes, *, serial_number: str | None = None,
         raise BridgeFault(final.code, report=report)
     if not counters.accepted:
         raise ReceiverRejected(
-            "the bridge's boot refused the package %s (for example an older "
-            "version than installed, or a package for another product or "
-            "hardware revision). The boot does not send its reason over USB. "
+            "the bridge's boot refused the package %s (for example a version "
+            "that is not newer than the installed one, or a package for "
+            "another product or hardware revision). The boot does not send "
+            "its reason over USB. "
             "The bridge is now %s" % (counters.stopped_at, _describe(final)),
             report, report["final_state"], counters.stopped_at)
     if final is None:

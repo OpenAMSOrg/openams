@@ -423,13 +423,49 @@ ERROR_ADVICE = {
                          "update again.",
     "PackageRefused": "That file is not Cortex Bridge firmware.",
     "ReceiverRejected": "The bridge refused this package, usually because "
-                        "it is older than the installed firmware.",
+                        "it already runs this version or a newer one.",
+    "BridgeAmbiguous": "Several bridges are attached. Leave only the one to "
+                       "update on USB and run the update again.",
     "BridgeFault": "The bridge reports a fault. Run `cortex-bridge.py "
                    "support` and contact support.",
     "TransferInterrupted": "The transfer stopped part-way. The bridge keeps "
                            "waiting for firmware; run the update again.",
     "BridgeNotFound": "The bridge is not on USB. Check the USB cable.",
 }
+
+
+def update_direct(package_path: Path) -> int:
+    """Install a package with no relay running: this process opens the
+    bridge's port itself (python3 and pyserial are all it needs)."""
+    from . import updater
+    shown = [None]
+
+    def progress(phase, done, total):
+        # One line per phase, then every 10 %.
+        step = (phase, 10 * done // total if total else 0)
+        if step == shown[0]:
+            return
+        shown[0] = step
+        text = PHASE_TEXT.get(phase, phase)
+        if total:
+            text += " (%d%%)" % (100 * done // total)
+        print("  " + text, flush=True)
+
+    try:
+        report = updater.update_bridge(package_path.read_bytes(),
+                                       progress=progress)
+    except OSError as exc:
+        print("Update failed: %s" % exc, file=sys.stderr)
+        return 1
+    except updater.UpdateError as exc:
+        print("Update failed: %s" % exc, file=sys.stderr)
+        advice = ERROR_ADVICE.get(type(exc).__name__)
+        if advice:
+            print(advice, file=sys.stderr)
+        return 1
+    print("Installed firmware version %s on bridge %s."
+          % (report["version"], report.get("serial_number", "")))
+    return 0
 
 
 def cmd_update(args) -> int:
@@ -448,23 +484,30 @@ def cmd_update(args) -> int:
         package_path = Path(package["path"])
         source = "bundled"
         label = "version %s" % package.get("version")
+    # With the relay running it owns the bridge's port and installs the
+    # package; without it this command talks to the bridge itself.
     try:
         control_request({"method": "status"}, run_dir=run_dir, timeout=10)
+        relayed = True
     except OSError:
-        print("The bridge relay is not running. Start it with:\n"
-              "  sudo systemctl start cortex-bridge", file=sys.stderr)
-        return 1
+        relayed = False
     state = printer_state(args.moonraker)
     if state in ("printing", "paused"):
         print("The printer is %s. Update the bridge when it is idle." % state,
               file=sys.stderr)
         return 1
     print("This installs Cortex Bridge firmware %s." % label)
-    print("Klipper loses the AMS for about a minute and is restarted "
-          "afterwards. Keep the bridge powered until it finishes.")
+    if relayed:
+        print("Klipper loses the AMS for about a minute and is restarted "
+              "afterwards. Keep the bridge powered until it finishes.")
+    else:
+        print("The bridge restarts and is back within a minute. Keep it "
+              "powered until it finishes.")
     if not confirm("Continue?", args.yes):
         print("Cancelled.")
         return 1
+    if not relayed:
+        return update_direct(package_path)
 
     def show(line):
         event = line.get("event")

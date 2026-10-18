@@ -187,7 +187,8 @@ class Unit(object):
                  state="application", busy=False, accept=True,
                  after="application", after_cut="receiver",
                  fault_code="F-STATE-01", receiver_bcd="0200",
-                 cut_after_reads=None, sysfs_paths=True):
+                 cut_after_reads=None, sysfs_paths=True,
+                 receiver_identity=("SiForge", "Cortex Updater")):
         self.world = world
         self.package = package
         self.app_serial = "CB" + uid
@@ -201,6 +202,7 @@ class Unit(object):
         self.after_cut = after_cut
         self.fault_code = fault_code
         self.receiver_bcd = receiver_bcd
+        self.receiver_identity = receiver_identity
         self.cut_after_reads = cut_after_reads
         self.sysfs_paths = sysfs_paths
         self.state = None
@@ -222,7 +224,7 @@ class Unit(object):
                 self.app_device)
         elif state == "receiver":
             pid, identity, serial, device = (
-                0xFE10, ("SiForge", "Cortex Updater"), self.receiver_serial,
+                0xFE10, self.receiver_identity, self.receiver_serial,
                 self.receiver_device)
         else:
             pid, identity, serial, device = (
@@ -486,6 +488,15 @@ class UpdateBridgeTest(unittest.TestCase):
                 self.world.update(data)
         self.assertEqual(self.world.opened, [])
         self.assertEqual(unit.touches, 0)
+
+    def test_a_boot_that_is_not_the_production_boot_is_sent_nothing(self):
+        unit = self.world.add_unit(self.package, state="receiver",
+                                   receiver_identity=("Other", "Other Updater"))
+        with self.assertRaises(updater.ReceiverRejected) as caught:
+            self.world.update(self.package)
+        self.assertIn("not a production boot", str(caught.exception))
+        self.assertTrue(all(boot.reads == 0 and not boot.passes
+                            for boot in unit.boots))
 
     def test_receiver_rejecting_at_close_raises_receiver_rejected(self):
         unit = self.world.add_unit(self.package, accept=False)
