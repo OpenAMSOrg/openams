@@ -218,6 +218,24 @@ class StatusContractTests(unittest.TestCase):
             "message": None, "pressure": 0.5, "set_point": 0.45}])
         json.dumps(replies)
 
+    def test_the_toolchange_macros_are_advertised_when_they_exist(self):
+        """oams_macros.cfg's OPENAMS_LOAD/OPENAMS_UNLOAD run the toolchange
+        T<n> runs, cut included, so a screen's buttons use them over the
+        manager's toolhead-only commands."""
+        mgr, _, _ = build_manager()
+        mgr.printer = types.SimpleNamespace(lookup_object=lambda name:
+            types.SimpleNamespace(get_status=lambda now: {"commands": {
+                command: {} for command in (
+                    "OPENAMS_LOAD", "OPENAMS_UNLOAD",
+                    "OAMSM_LOAD_TO_TOOLHEAD", "OAMSM_UNLOAD_FROM_TOOLHEAD",
+                    "OAMSM_LOAD_FILAMENT_CANCEL", "OAMSM_CLEAR_ERRORS")
+            }}))
+        self.assertEqual(mgr.get_status(10.)["commands"], {
+            "load": "OPENAMS_LOAD",
+            "unload": "OPENAMS_UNLOAD",
+            "cancel": "OAMSM_LOAD_FILAMENT_CANCEL",
+            "reset": "OAMSM_CLEAR_ERRORS"})
+
     def test_old_macro_installation_does_not_advertise_unavailable_ui_commands(self):
         mgr, _, _ = build_manager()
         mgr.printer = types.SimpleNamespace(lookup_object=lambda name:

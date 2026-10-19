@@ -17,8 +17,13 @@ filament in at least one bay.
 
 ## Loading and unloading
 
-These are the two commands a touchscreen or Mainsail macro should call. They
-coordinate the AMS with your printer's extruder macros.
+A screen's load and unload buttons (HelixScreen, the OpenAMS Mainsail panel
+and display) run the complete toolchange, `OPENAMS_LOAD` and `OPENAMS_UNLOAD`
+([below](#the-complete-toolchange)): they cut, clean the nozzle and run your
+hooks, as `T<n>` does. Set the cutter before you use them.
+
+For a load or unload without the cutter, for example while you bring a printer
+up, two commands coordinate the AMS with your printer's extruder macros:
 
 ```gcode
 OAMSM_LOAD_TO_TOOLHEAD GROUP=T0

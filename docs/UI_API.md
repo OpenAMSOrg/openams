@@ -19,14 +19,14 @@ handling is opt-in: a load with `SLOT=...`, or an unload with `STRICT=1`, raises
 a G-code error on failure so the new UI sequence cannot continue after it.
 
 **HelixScreen** load and unload controls need no macro merging. They run the
-commands the manager advertises (below). On this host those are the manager's
-own `OAMSM_LOAD_TO_TOOLHEAD` and `OAMSM_UNLOAD_FROM_TOOLHEAD`, registered
-whatever macros the printer has. They are not the `T<n>` toolchange: they do
-not run `_TX` or `CUT_FILAMENT`. They move the AMS and call the printer's
-`toolhead_load_macro` and `toolhead_unload_macro` for the extruder
-([`[oams_manager]`](guide/configure.md#oams_manager)). The default unload macro,
-`UNLOAD_FILAMENT`, does not cut, so set one that suits the printer before
-using a screen's unload.
+commands the manager advertises (below): `OPENAMS_LOAD` and `OPENAMS_UNLOAD`
+from `oams_macros.cfg`, the same toolchange `T<n>` runs. A screen's unload
+cuts and its load cleans the nozzle, with the printer's own `OAMS_CUT`, hooks
+and `CLEAN_NOZZLE`, so set the cutter before using them. Without
+`oams_macros.cfg` the manager advertises its own `OAMSM_LOAD_TO_TOOLHEAD` and
+`OAMSM_UNLOAD_FROM_TOOLHEAD` instead, which do not cut: they move the AMS and
+call `toolhead_load_macro` and `toolhead_unload_macro` for the extruder
+([`[oams_manager]`](guide/configure.md#oams_manager)).
 
 `commands` lists only operations whose command is registered. A client must
 disable an operation whose command is missing, and only that operation:
@@ -65,8 +65,8 @@ The status object has this shape:
   "schema": "openams.manager",
   "ready": true,
   "commands": {
-    "load": "OAMSM_LOAD_TO_TOOLHEAD",
-    "unload": "OAMSM_UNLOAD_FROM_TOOLHEAD",
+    "load": "OPENAMS_LOAD",
+    "unload": "OPENAMS_UNLOAD",
     "cancel": "OAMSM_LOAD_FILAMENT_CANCEL",
     "reset": "OAMSM_CLEAR_ERRORS"
   },
@@ -201,43 +201,55 @@ The advertised command names differ by plugin:
 
 | Plugin | `commands.load` | `commands.unload` |
 |--------|-----------------|-------------------|
-| `openams` (unified host) | `OAMSM_LOAD_TO_TOOLHEAD` | `OAMSM_UNLOAD_FROM_TOOLHEAD` |
+| `openams` with `oams_macros.cfg` (every install) | `OPENAMS_LOAD` | `OPENAMS_UNLOAD` |
+| `openams` without it | `OAMSM_LOAD_TO_TOOLHEAD` | `OAMSM_UNLOAD_FROM_TOOLHEAD` |
 | `klipper_openams` | `OPENAMS_LOAD` | `OPENAMS_UNLOAD` |
 
 A UI must follow the map and never hard-code these names. `cancel` and `reset`
-are advertised as `OAMSM_LOAD_FILAMENT_CANCEL` and `OAMSM_CLEAR_ERRORS` by both.
+are advertised as `OAMSM_LOAD_FILAMENT_CANCEL` and `OAMSM_CLEAR_ERRORS` by
+every row.
 
 ### Load a selected slot
 
 ```gcode
-OAMSM_LOAD_TO_TOOLHEAD GROUP=T0 SLOT=0
+OPENAMS_LOAD GROUP=T0 SLOT=0
 ```
 
 To serve a tool or material, a client picks the slot from the group: the
 member already loaded if there is one, otherwise a member whose slot reports
 `ready`. HelixScreen does not send a load for a group with no ready member.
 
-`OAMSM_LOAD_TO_TOOLHEAD` runs `OAMSM_LOAD_FILAMENT` for the group (and the
-exact slot when `SLOT` is given), then the configured toolhead load macro once
-the filament has settled at the toolhead. `OAMSM_VALIDATE_LOAD` rejects a
-malformed, unknown, unavailable, or incorrectly grouped slot before any
-motion. If the toolhead macro fails, the AMS load is not unwound: the filament
-stays loaded with its forward follower armed. Temperatures, cutter positions,
-and motion distances remain the responsibility of the printer's configured
-macros. The `OPENAMS_LOAD` toolchange macro, when merged from
-`oams_macros.cfg`, is not advertised.
+`OPENAMS_LOAD` is the toolchange `T<n>` runs (`_TX`), aimed at one slot. Both
+`GROUP` and `SLOT` are required. `OAMSM_VALIDATE_LOAD` rejects a malformed,
+unknown, unavailable, or incorrectly grouped slot before any motion. When the
+lane holds another slot, it cuts and unloads that one first. It homes when
+the axes are not homed, heats to the filament's temperature, loads the slot,
+reloads the extruder and runs `CLEAN_NOZZLE`, announcing each step as the
+lane's `stage`. A failure raises a G-code error without pausing the printer.
+The slot already loaded is not loaded again. Cutter positions, temperatures
+and distances come from `_oams_macro_variables`, `OAMS_CUT` and the hooks.
+
+The fallback `OAMSM_LOAD_TO_TOOLHEAD` runs `OAMSM_LOAD_FILAMENT` for the group
+(and the exact slot when `SLOT` is given), then the configured toolhead load
+macro once the filament has settled at the toolhead. If that macro fails, the
+AMS load is not unwound: the filament stays loaded with its forward follower
+armed.
 
 ### Unload
 
 ```gcode
-OAMSM_UNLOAD_FROM_TOOLHEAD FPS=fps
+OPENAMS_UNLOAD FPS=fps
 ```
 
-`OAMSM_UNLOAD_FROM_TOOLHEAD` reverse-follows while the configured toolhead
-unload macro retracts the filament, then rewinds the AMS with
-`OAMSM_UNLOAD_FILAMENT`. `FPS` selects the lane and is optional with a single
-lane. When the manager reports no loaded slot, this command does not move the
-printer.
+`OPENAMS_UNLOAD` is the toolchange's unload (`SAFE_UNLOAD_FILAMENT`): home and
+heat when needed, cut, retract with the reverse follower, then rewind the AMS.
+`FPS` selects the lane and is optional with a single lane or when the active
+extruder names one. When the lane holds nothing, it does not move the
+printer. A failure raises a G-code error without pausing.
+
+The fallback `OAMSM_UNLOAD_FROM_TOOLHEAD` does not cut: it reverse-follows
+while the configured toolhead unload macro retracts the filament, then rewinds
+the AMS with `OAMSM_UNLOAD_FILAMENT`.
 
 ### Cancel or reset
 

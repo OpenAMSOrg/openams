@@ -54,7 +54,8 @@ python3 ~/openams/tools/agent/bringup_check.py --selftest
 ## Use it
 
 Slice with one tool per filament group: `T0` loads the bay assigned to group
-`T0`, and so on. Loads and unloads from Mainsail's console:
+`T0`, and so on. A screen's load and unload buttons run the same toolchange,
+cut included. Loads and unloads from Mainsail's console, without the cutter:
 
 ```gcode
 OAMSM_LOAD_TO_TOOLHEAD GROUP=T0

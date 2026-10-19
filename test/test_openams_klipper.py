@@ -553,6 +553,25 @@ def test_ui_sensor_failure_aborts_outer_macro(setup):
     assert "CLEAN_NOZZLE" not in printer.trace
 
 
+def test_a_screen_runs_the_toolchange_it_is_advertised(setup):
+    # HelixScreen runs whatever commands.load/unload name (docs/UI_API.md):
+    # with oams_macros.cfg loaded that is the toolchange, so a screen's
+    # unload cuts and its load cleans the nozzle, as T<n> does.
+    printer, manager, unit = setup(loaded=0)
+    commands = manager.get_status(0.)["commands"]
+    assert (commands["load"], commands["unload"]) == ("OPENAMS_LOAD", "OPENAMS_UNLOAD")
+    reports = stage_reports(printer, manager)
+    printer.gcode.run_script(commands["unload"] + " FPS=fps")
+    steps = [r for r, _ in reports if " NAME=" in r]
+    assert steps.index("OAMSM_STAGE NAME=cut FPS=fps") < steps.index(
+        "OAMSM_STAGE NAME=retract FPS=fps")
+    assert unit.current_spool is None
+    printer.trace.clear()
+    printer.gcode.run_script(commands["load"] + " GROUP=T1 SLOT=2")
+    assert unit.current_spool == 2
+    assert printer.trace.index("feed:2") < printer.trace.index("CLEAN_NOZZLE")
+
+
 def test_ui_unload_of_empty_machine_does_not_move(setup):
     printer, _, _ = setup()
     printer.gcode.run_script("OPENAMS_UNLOAD")

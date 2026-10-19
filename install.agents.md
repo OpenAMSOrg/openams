@@ -607,6 +607,9 @@ List these in the report, with the commands. Never run them yourself.
   reloading.
 - **First load and unload, with someone watching:**
   `OAMSM_LOAD_TO_TOOLHEAD GROUP=T0`, then `OAMSM_UNLOAD_FROM_TOOLHEAD`.
+- **Screen buttons:** HelixScreen's and the OpenAMS panel's load and unload run
+  the full toolchange, cutter moves included. Use them only once the cutter
+  positions are set (`M_CUTTER`).
 - **The slicer:** emit `T<n>` at each toolchange (the group name).
 - **RFID:** a reader whose chip does not answer (L5) is wiring or hardware.
 

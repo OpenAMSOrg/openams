@@ -242,9 +242,11 @@ The manager owns topology validation, the runout monitor and the load callbacks.
 Nothing here is required. Two options are easy to get wrong:
 
 - `toolhead_load_macro:` and `toolhead_unload_macro:` (default `LOAD_FILAMENT`
-  and `UNLOAD_FILAMENT`) are extruder-only callbacks. They must not call an
-  `OAMSM_*` command, and the name must be one macro (letters, digits and
-  underscores), or Klipper says `toolhead_load_macro must name one non-OAMSM
+  and `UNLOAD_FILAMENT`) are extruder-only callbacks for `OAMSM_LOAD_TO_TOOLHEAD`
+  and `OAMSM_UNLOAD_FROM_TOOLHEAD`, the loads and unloads that do not cut.
+  Screens and `T<n>` run the toolchange instead and do not call them. They must
+  not call an `OAMSM_*` command, and the name must be one macro (letters, digits
+  and underscores), or Klipper says `toolhead_load_macro must name one non-OAMSM
   G-code macro (letters, digits, underscores only)`.
 
   The unload macro must heat the extruder and eject the filament past the

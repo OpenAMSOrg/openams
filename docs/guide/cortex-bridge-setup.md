@@ -375,7 +375,9 @@ your job is to watch the filament path.
    The toolhead ejects the filament past its gears and the AMS rewinds it to
    the bay.
 5. With filament in two bays and the cutter set, run a real swap: `T0`, then
-   `T1`, then `T0`. Watch the cutter, the retract and the purge.
+   `T1`, then `T0`. Watch the cutter, the retract and the purge. A screen's
+   load and unload buttons run this same toolchange, so use them only once the
+   cutter is set.
 
 **Check:** both loads reached the toolhead and both unloads returned the
 filament to its bay. You are ready to print: slice with one tool per

@@ -1019,16 +1019,24 @@ class OAMSManager(oams_ext.ManagerHooks):
     def _ui_commands(self):
         """{action: command name} for only the UI API v1 actions whose G-code
         command is actually registered (docs/UI_API.md 'commands'). Load and
-        unload are the manager's toolhead-coordinating commands, so every UI
-        runs the same sequence regardless of which printer macros are merged."""
+        unload are oams_macros.cfg's OPENAMS_LOAD and OPENAMS_UNLOAD, so a
+        screen's buttons run the toolchange T<n> runs (cut, retract, feed,
+        CLEAN_NOZZLE, the printer's hooks and OAMS_CUT). Without that file
+        they fall back to the manager's toolhead-coordinating commands, which
+        run only toolhead_load_macro/toolhead_unload_macro around the AMS."""
         available = self.printer.lookup_object("gcode").get_status(
             self.reactor.monotonic())["commands"]
-        return {key: command for key, command in (
-            ("load", "OAMSM_LOAD_TO_TOOLHEAD"),
-            ("unload", "OAMSM_UNLOAD_FROM_TOOLHEAD"),
-            ("cancel", "OAMSM_LOAD_FILAMENT_CANCEL"),
-            ("reset", "OAMSM_CLEAR_ERRORS"),
-        ) if command in available}
+        commands = {}
+        for key, candidates in (
+                ("load", ("OPENAMS_LOAD", "OAMSM_LOAD_TO_TOOLHEAD")),
+                ("unload", ("OPENAMS_UNLOAD", "OAMSM_UNLOAD_FROM_TOOLHEAD")),
+                ("cancel", ("OAMSM_LOAD_FILAMENT_CANCEL",)),
+                ("reset", ("OAMSM_CLEAR_ERRORS",))):
+            for command in candidates:
+                if command in available:
+                    commands[key] = command
+                    break
+        return commands
 
     def _ui_units(self):
         slot_ids = self._slot_id_map()

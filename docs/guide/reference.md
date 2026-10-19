@@ -78,8 +78,8 @@ Nothing here is required.
 | `reload_before_toolhead_distance:` | `0.0` | Extra margin (mm) before the runout auto-reload point |
 | `monitor_interval:` | `1.0` | Runout/health monitor period |
 | `positioning_wait:` | `10.0` | Seconds to let a unit finish positioning a freshly inserted spool (0 disables) |
-| `toolhead_load_macro:` | `LOAD_FILAMENT` | Extruder-only capture/prime callback |
-| `toolhead_unload_macro:` | `UNLOAD_FILAMENT` | Extruder-only retract callback; must heat and eject past the extruder gears (about 100 mm), see `_OAMS_TOOLHEAD_EJECT` in `oams_macros.cfg` |
+| `toolhead_load_macro:` | `LOAD_FILAMENT` | Extruder-only capture/prime callback of `OAMSM_LOAD_TO_TOOLHEAD` |
+| `toolhead_unload_macro:` | `UNLOAD_FILAMENT` | Extruder-only retract callback of `OAMSM_UNLOAD_FROM_TOOLHEAD`; must heat and eject past the extruder gears (about 100 mm), see `_OAMS_TOOLHEAD_EJECT` in `oams_macros.cfg` |
 | `openams_config_path:` | `oams.cfg` beside `printer.cfg` | Where group edits and calibration results are written |
 
 ### Policy switches
