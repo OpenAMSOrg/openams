@@ -285,8 +285,10 @@ class Harness(object):
         return self.component.linker.status()["bays"][key]
 
 
-class RegistrationTest(unittest.TestCase):
-    def test_registers_endpoints_notification_and_klippy_ready(self):
+class RegistrationTest(unittest.IsolatedAsyncioTestCase):
+    # Built inside a running loop, as Moonraker builds components: on Python
+    # 3.8 and 3.9, asyncio.Lock() needs a current event loop.
+    async def test_registers_endpoints_notification_and_klippy_ready(self):
         h = Harness()
         paths = [entry[0] for entry in h.server.endpoints]
         self.assertIn("/server/openams_spoolman/status", paths)

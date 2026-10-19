@@ -75,9 +75,11 @@ class _PrivateRotatingFileHandler(RotatingFileHandler):
             flags |= os.O_NOFOLLOW
         descriptor = os.open(self.baseFilename, flags, 0o640)
         os.fchmod(descriptor, 0o640)
+        # FileHandler has `errors` only from Python 3.9; None is open()'s
+        # own default, which is what 3.8 used.
         return open(
             descriptor, self.mode, encoding=self.encoding,
-            errors=self.errors, closefd=True,
+            errors=getattr(self, "errors", None), closefd=True,
         )
 
 
