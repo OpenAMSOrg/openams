@@ -241,13 +241,31 @@ class EnsurePgConfigTests(unittest.TestCase):
         self.bash = shutil.which("bash")
         self.env = dict(
             os.environ,
-            PATH=str(self.bindir) + os.pathsep + os.environ["PATH"],
+            PATH=str(self.bindir) + os.pathsep + self.path_without_pg_config(),
             TMPDIR=str(self.tmpdir),
             FAKE_CALLS=str(self.calls),
             OPENAMS_SNAPSHOT_BASE="file://" + str(self.snapshot),
         )
 
     # -- the fake host ----------------------------------------------------
+
+    def path_without_pg_config(self):
+        """This host's PATH with its own pg_config hidden, so the fake host
+        decides whether there is one. GitHub's runners ship PostgreSQL's: each
+        PATH directory that has a pg_config is replaced by a mirror of links to
+        everything else in it."""
+        dirs = []
+        for index, directory in enumerate(os.environ["PATH"].split(os.pathsep)):
+            if not os.path.exists(os.path.join(directory, "pg_config")):
+                dirs.append(directory)
+                continue
+            mirror = self.root / ("path%d" % index)
+            mirror.mkdir()
+            for name in os.listdir(directory):
+                if name != "pg_config":
+                    (mirror / name).symlink_to(os.path.join(directory, name))
+            dirs.append(str(mirror))
+        return os.pathsep.join(dirs)
 
     def stub(self, name, body=""):
         """Put a command on PATH that records its call and then runs its body."""

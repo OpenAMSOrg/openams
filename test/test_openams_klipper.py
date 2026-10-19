@@ -1512,7 +1512,8 @@ EXPECTED_MACROS = {
     "_OAMS_HOOK",
     "OPENAMS_LOAD", "OPENAMS_UNLOAD",
     "_LOAD_FS_IN", "_LOAD_FS_OUT", "_UNLOAD_FS_OUT",
-    "OAMS_TORTURE_TEST", "OAMS_TOOLCHANGE_TORTURE_TEST", "T0", "T1", "T2", "T3"}
+    "OAMS_TORTURE_TEST", "OAMS_TOOLCHANGE_TORTURE_TEST", "T0", "T1", "T2", "T3",
+    "_OAMS_TOOLHEAD_EJECT"}
 NEW_VARIABLES = {"extrusion_unload_additional_length": 250, "unload_speed": 1000,
                  "additional_unload_speed": 5000, "minimum_extrude_temperature": 0,
                  "unknown_material_temperature": 235, "max_operation_temperature": 0}
