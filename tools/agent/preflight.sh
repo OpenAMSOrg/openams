@@ -12,6 +12,7 @@
 # files, runs `systemctl show`/`ip`/`git` queries and HTTP GETs only.
 # install.agents.md says what every key means and what to do with it.
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 URL=http://127.0.0.1:7125
 KPATH_ARG=""
 CFG_ARG=""
@@ -158,6 +159,24 @@ if [ -f "$cfg/moonraker.conf" ]; then
     done
 fi
 if curl -s --max-time 3 http://localhost:7912/api/v1/info > /dev/null 2>&1; then say SPOOLMAN_LOCAL yes; else say SPOOLMAN_LOCAL no; fi
+
+# --- gco-routines -----------------------------------------------------------------
+# [gco_routines] loads only on a Klipper whose klippy/gcode.py it was tested
+# against; any other stops Klipper at startup. The accepted list lives in the
+# gco-routines checkout, so before the installer clones it the answer is unknown.
+gco="$HOME/gco-routines"
+gco_answer=$(python3 "$ROOT/install_helpers/gco_baseline.py" --klipper "$kpath" --gco-routines "$gco" 2> /dev/null)
+gco_baseline=$(echo "$gco_answer" | sed -n 's/^GCO_BASELINE=//p')
+say GCODE_PY_SHA256 "$(echo "$gco_answer" | sed -n 's/^GCODE_PY_SHA256=//p')"
+say GCO_BASELINE "${gco_baseline:-unknown}"
+gco_active=""
+[ -d "$cfg" ] && gco_active=$(grep -rlE '^\[gco_routines\]' "$cfg" --include='*.cfg' 2> /dev/null | head -1)
+if [ -n "$gco_active" ]; then
+    say GCO_ACTIVE "yes ($gco_active)"
+    [ "$gco_baseline" = no ] && ASKS+=("gco-routines is enabled ([gco_routines] in $gco_active) but does not accept this Klipper, so Klipper stops at startup: ask the human whether to disable it (comment out [gco_routines] and the oams_macros_ordered.cfg include)")
+else
+    say GCO_ACTIVE no
+fi
 
 # --- other MMU software -------------------------------------------------------
 foreign=""

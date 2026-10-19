@@ -92,7 +92,7 @@ needed, the file says so, and says what to decide between.
 | `T0`..`T3` macros | the toolchange commands; `oams_macros.cfg` defines `T0`-`T3`, more need adding (section 6.4) | `oams_macros.cfg` |
 | `oams_manager` | OpenAMS's coordinator; its status object says whether OpenAMS is ready | `[oams_manager]` |
 | Spoolman | a spool database server (port 7912); optional, the installer sets it up by default | `~/Spoolman` |
-| gco-routines | an optional Klipper extra the installer also clones; installing it changes no behavior | `~/gco-routines` |
+| gco-routines | an optional Klipper extra the installer also clones; installing it changes no behavior. Enabling it works only on a Klipper it was tested against (`GCO_BASELINE`); on any other, Klipper stops at startup | `~/gco-routines` |
 
 ### What `install.sh` changes
 
@@ -153,8 +153,11 @@ Read these keys. They decide later steps:
 | `PRINT_STATE` | `printing`, `paused` | STOP (rule 1). `standby`, `complete`, `cancelled`, `error`: go on |
 | `KLIPPER_SERVICES` | more than one | several printers on one host. ASK which one; then use `-s`, `-k`, `-c` in section 3 |
 | `KLIPPER_PATH`, `CONFIG_DIR` | not `~/klipper`, `~/printer_data/config` | pass `-k KLIPPER_PATH -c CONFIG_DIR` to `install.sh` |
-| `KLIPPER_FLAVOR` | `kalico` | supported; nothing changes |
+| `KLIPPER_FLAVOR` | `kalico` | supported; nothing changes. gco-routines may not be: read `GCO_BASELINE` |
 | `KLIPPY_ENV_PYTHON` | below 3.9 | gco-routines will be skipped; add `--skip-gco-routines` |
+| `GCO_BASELINE` | `no` | gco-routines does not accept this Klipper. Install as usual: installing it changes nothing. It stays off (section 6.4); say so in the report |
+| `GCO_BASELINE` | `unknown` | `~/gco-routines` is not cloned yet. The installer prints the answer (section 3.2) |
+| `GCO_ACTIVE` | `yes (<file>)` with `GCO_BASELINE=no` | gco-routines is enabled on a Klipper it refuses, so Klipper cannot start. The preflight asks; on yes, comment out `[gco_routines]` and `[include oams_macros_ordered.cfg]` (rule 6) |
 | `OAMS_EXTRA` | `none` | **fresh install**: sections 2 to 9 |
 | `OAMS_EXTRA` | `openams (...)` | **update**: sections 2, 3, 5, 7, 8, 10. Skip section 6 unless the audit (section 5) shows errors |
 | `OAMS_EXTRA` | `broken (...)` | OpenAMS's link is there but its target is gone (the checkout moved or was deleted). Treat it as a fresh install: `install.sh` relinks |
@@ -221,7 +224,8 @@ cd ~/openams && ./install.sh <flags> 2>&1 | tee ~/openams-agent-install.log; ech
 | `[ERROR] This script must not run as root` | you used sudo/root | rerun as the Klipper user |
 | `[ERROR] ... klipper_mmu` (name clash) | a foreign `klipper_mmu.py` in extras | STOP |
 | `[ERROR] --spoolman-url needs a URL` / `cannot be combined` | your flags | fix the flags, rerun |
-| `[WARNING]` about gco-routines | optional part skipped | note it for the report and go on |
+| `[WARNING] gco-routines: this Klipper is not a version it accepts` | installed, and must stay off | note it for the report and go on. Never enable it |
+| any other `[WARNING]` about gco-routines | optional part skipped | note it for the report and go on |
 | `[WARNING] Could not download the latest Spoolman release` / Spoolman install failed | network or apt | note it and go on (OpenAMS works without Spoolman) |
 | `Installation failed; attempting to restore the Klipper service.` | a step failed | STOP. Attach `~/openams-agent-install.log` |
 
@@ -424,6 +428,11 @@ already used by another `[mcu]`. If there is more than one: ASK.
   - the PID values.
   
   A human calibrates these (section 9).
+- **gco-routines stays off.** Never add `[gco_routines]` or uncomment
+  `[include oams_macros_ordered.cfg]`. Enabling it is the human's decision, and
+  works only when `GCO_BASELINE=yes` or the installer printed
+  `gco-routines: this Klipper is a version it accepts`. On any other Klipper it
+  stops Klipper at startup.
 
 ### 6.5 Macros: collisions and what OpenAMS needs from the printer
 
@@ -618,6 +627,7 @@ OpenAMS install report
 - Changes I made (file:line, what, why):
   - ...
 - Units: <I_SUMMARY units line>   Groups: <I_SUMMARY groups line>
+- gco-routines: installed and off | skipped (<why>); accepts this Klipper: <GCO_BASELINE, or the installer's answer>
 - Audit: AUDIT errors=0 warnings=<n> manual=<n>
 - Bring-up: <the BRINGUP line>; WARN levels: <each L line that warned, verbatim>
 - Self-test: <RESULT line>

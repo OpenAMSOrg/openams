@@ -99,6 +99,8 @@ Prints one `KEY=value` per line, then any `STOP_REASON=` and `ASK=` lines, then
 | `KLIPPER_SERVICES` | How many Klipper services; more than one needs `-s` |
 | `KLIPPER_PATH`, `KLIPPER_COMMIT`, `KLIPPER_DIRTY_FILES` | Which checkout and how modified |
 | `KLIPPY_ENV_PYTHON` | Klipper's Python version |
+| `GCO_BASELINE`, `GCODE_PY_SHA256` | Whether gco-routines accepts this Klipper: `yes`, `no`, or `unknown` before `~/gco-routines` is cloned |
+| `GCO_ACTIVE` | Whether a config file has `[gco_routines]`; with `GCO_BASELINE=no`, Klipper cannot start |
 | `KLIPPER_MMU_NAME_CLASH` | `klippy/extras/klipper_mmu.py` exists; the installer refuses |
 | `CONFIG_DIR`, `PRINTER_CFG`, `MOONRAKER_CONF` | Whether the config directory exists and holds both files |
 | `PRINT_STATE` | `printing` or `paused` is a STOP |
@@ -117,6 +119,7 @@ Prints one `KEY=value` per line, then any `STOP_REASON=` and `ASK=` lines, then
 | `mcu '<name>': Unable to connect` / `Timeout on connect` | Wrong UUID, board unpowered, CAN down | Check `CAN_can0_STATE`, then the UUID, power and cable. A bus that stays flaky: [CAN patches guide](../../klipper_patches/can/GUIDE.md) |
 | `mcu 'host': Unable to connect` | The Klipper user is not in group `tty`, so it cannot open `/tmp/klipper_host_mcu` | `sudo usermod -a -G tty <user>` and restart Klipper |
 | `Section '<x>' is not a valid config section` | The extra is not installed | Run `./install.sh` again |
+| `Unsupported Klipper GCodeDispatch baseline` | `[gco_routines]` is enabled on a Klipper gco-routines was not tested against, often right after a Klipper update | Comment out `[gco_routines]` and `[include oams_macros_ordered.cfg]`, or bring Klipper to a version it accepts ([gco-routines](install.md#gco-routines)) |
 | `Unknown config object 'heaters'` | An OpenAMS from before 2026-10-18 reads `[hdc1080]` before any heater section, as it is when `[include oams.cfg]` sits above `[printer]` | Update OpenAMS; the include can stay where the installer put it |
 | `Option '<x>' in section '<y>' must be specified` | A required option is missing | Add it from [`oams_sample.cfg`](../../oams_sample.cfg) |
 | `bambu_lab_tag_processor key must contain exactly 16 hexadecimal bytes` | The tag key is missing or not 32 hex characters | Set a real key locally, never from a public repository |
@@ -195,6 +198,7 @@ Prints one `KEY=value` per line, then any `STOP_REASON=` and `ASK=` lines, then
 | `[ERROR] -u already removes the Klipper patches if they are applied; drop --remove-klipper-patches.` | `-u` with that flag | Drop the flag |
 | `<path>/klippy/extras/klipper_mmu.py exists and would compete with the klipper_mmu Klipper extra; remove it first.` | A previous MMU install owns the name | Ask what installed it, then remove it |
 | `[WARNING] the openams_spoolman component is not linked into Moonraker (no checkout at "…")` | No Moonraker checkout found | Spool editing stays off; run the installer again with `-c` set |
+| `[WARNING] gco-routines: this Klipper is not a version it accepts` | gco-routines was not tested against this Klipper's `klippy/gcode.py` | Nothing is wrong. Leave `[gco_routines]` out; OpenAMS works fully without it |
 | `[WARNING] …` about a gco-routines directory | A non-Git or diverged checkout | Left alone on purpose; migrate it yourself |
 | `[skipped: OPENAMS_NO_SERVICE=1] systemctl …` | The test switch is set | Unset `OPENAMS_NO_SERVICE` |
 | `[WARNING] Spoolman is installed but does not answer at …` | Spoolman's own installer failed part-way (it still prints "installed successfully") | `sudo journalctl -u Spoolman -n 50 --no-pager` shows why; run `./install.sh` again, which installs this host's Spoolman again when it does not answer |

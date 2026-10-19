@@ -1,4 +1,5 @@
 """Offline installer tests: real local Git repos, temporary files, fake services."""
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -87,6 +88,35 @@ class GcoInstallerTests(unittest.TestCase):
         self.assertEqual(target.resolve(), self.checkout / "klippy_extra/gco_routines")
         self.helper()
         self.assertEqual((self.config / "oams_macros.cfg").read_text(), self.original_macros)
+
+    def write_baseline(self, accepted):
+        """A Klipper dispatcher, and a gco-routines that accepts it or not."""
+        (self.klipper / "klippy/gcode.py").write_bytes(b"# a dispatcher\n")
+        sha = hashlib.sha256(b"# a dispatcher\n").hexdigest() if accepted else "a" * 64
+        self.write_remote("klippy_extra/gco_routines/integration.py",
+                          'KNOWN_GCODE_SHA256 = frozenset({"%s"})\n' % sha)
+        self.commit_remote("Baseline list")
+
+    def test_install_says_when_this_klipper_is_accepted(self):
+        self.write_baseline(accepted=True)
+        result = self.helper()
+        self.assertIn("gco-routines: this Klipper is a version it accepts", result.stdout)
+        self.assertNotIn("[WARNING]", result.stderr)
+
+    def test_install_warns_never_to_enable_it_on_a_klipper_it_refuses(self):
+        self.write_baseline(accepted=False)
+        result = self.helper()
+        self.assertIn("[WARNING] gco-routines: this Klipper is not a version it accepts",
+                      result.stderr)
+        self.assertIn("do not add [gco_routines]", result.stderr)
+        # Installing it still changes nothing: the link is made, nothing enabled.
+        self.assertTrue((self.klipper / "klippy/extras/gco_routines").is_symlink())
+        self.assertNotIn("gco_routines", (self.config / "printer.cfg").read_text())
+
+    def test_install_says_when_it_cannot_tell(self):
+        result = self.helper()
+        self.assertIn("could not tell whether this Klipper is a version it accepts",
+                      result.stdout)
 
     def test_prepare_fetches_but_does_not_advance_installed_source(self):
         self.helper()

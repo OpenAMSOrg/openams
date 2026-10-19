@@ -158,7 +158,7 @@ gco-routines is an optional Klipper extra that renders macros in ordered chunks.
 The installer clones it to `~/gco-routines` and links it as
 `klippy/extras/gco_routines`. **Installing it changes nothing**: no Klipper
 source is patched and no dependency is upgraded. Concurrent toolchanges are a
-separate, manual step:
+separate, manual step, and only for a Klipper gco-routines accepts (see below):
 
 1. In `printer.cfg`, put `[gco_routines]` **above** `[include oams.cfg]` and
    before any section or include that defines macros.
@@ -170,10 +170,26 @@ and `WAIT` joins it before the toolhead reload. Stock Klipper rejects the
 `render_mode` option the ordered file sets, so never include that file without
 `[gco_routines]`.
 
-It needs Python 3.9 or newer in Klipper's environment and accepts only tested
-Klipper baselines. An existing non-Git directory, a modified checkout, another
-branch or a foreign `gco_routines` path is never overwritten: the installer
-prints one warning and still installs OpenAMS. `--skip-gco-routines` skips the
+It needs Python 3.9 or newer in Klipper's environment, and it works only on a
+Klipper it was tested against. It identifies one by the SHA-256 of
+`klippy/gcode.py`; on any other, `[gco_routines]` stops Klipper at startup with
+`Unsupported Klipper GCodeDispatch baseline`. Kalico, vendor forks and Klipper
+checkouts older than the tested one are usually refused. The installer says
+which yours is: `gco-routines: this Klipper is a version it accepts`, or a
+`[WARNING]` that it is not. After a Klipper update, check again before you
+restart:
+
+```bash
+python3 ~/openams/install_helpers/gco_baseline.py --klipper ~/klipper --gco-routines ~/gco-routines
+```
+
+It prints `GCO_BASELINE=yes`, `no`, or `unknown` (no gco-routines checkout).
+OpenAMS works fully without gco-routines; only the overlapped toolchange needs
+it.
+
+An existing non-Git directory, a modified checkout, another branch or a
+foreign `gco_routines` path is never overwritten: the installer prints one
+warning and still installs OpenAMS. `--skip-gco-routines` skips the
 step with no network access; `--require-gco-routines` makes any problem stop the
 install. `-u` leaves the checkout alone. To remove the extra, first remove the
 activation lines, then:

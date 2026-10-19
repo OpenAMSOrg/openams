@@ -1,6 +1,7 @@
 # Sourced by install-openams.sh. Preparation happens before stopping Klipper;
 # the working tree is advanced only after Klipper has stopped.
 GCO_ROUTINES_URL="https://github.com/OpenAMSOrg/gco-routines.git"
+GCO_HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # GCO_ROUTINES_SKIP=1 (--skip-gco-routines) skips the step. GCO_ROUTINES_REQUIRE=1
 # (--require-gco-routines) makes any problem fatal; otherwise a problem only
@@ -125,5 +126,25 @@ install_gco_routines()
     git -C "$GCO_ROUTINES_PATH" merge --ff-only "$GCO_ROUTINES_COMMIT" || return 1
     python3 "$GCO_ROUTINES_PATH/tools/install_gco_routines.py" --klipper "$KLIPPER_PATH" || return 1
     printf 'gco-routines installed. Existing macros and render modes were not changed.\n'
-    printf 'Activation is opt-in; review supported Klipper versions and configuration in %s/README.md.\n' "$GCO_ROUTINES_PATH"
+    report_gco_baseline
+}
+
+# Installing changes nothing, but [gco_routines] loads only on a Klipper whose
+# klippy/gcode.py it was tested against; any other stops Klipper at startup.
+# Say which this one is, so nobody enables it on a Klipper it refuses.
+report_gco_baseline()
+{
+    local result baseline sha
+    result="$(python3 "$GCO_HELPER_DIR/gco_baseline.py" --klipper "$KLIPPER_PATH" --gco-routines "$GCO_ROUTINES_PATH" 2>/dev/null)"
+    baseline="$(sed -n 's/^GCO_BASELINE=//p' <<<"$result")"
+    sha="$(sed -n 's/^GCODE_PY_SHA256=//p' <<<"$result")"
+    case "$baseline" in
+        yes)
+            printf 'gco-routines: this Klipper is a version it accepts. Enabling it is opt-in; see %s/docs/guide/install.md.\n' "$GCO_ROUTINES_PATH";;
+        no)
+            printf '[WARNING] gco-routines: this Klipper is not a version it accepts (klippy/gcode.py sha256 %s).\n' "$sha" >&2
+            printf '[WARNING] gco-routines: do not add [gco_routines] or include oams_macros_ordered.cfg: Klipper would stop at startup. OpenAMS works fully without them.\n' >&2;;
+        *)
+            printf 'gco-routines: could not tell whether this Klipper is a version it accepts; check %s/docs/guide/install.md before enabling it.\n' "$GCO_ROUTINES_PATH";;
+    esac
 }
