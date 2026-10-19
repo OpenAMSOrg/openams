@@ -18,32 +18,31 @@ behavior, including informational replies on hardware failure. Strict error
 handling is opt-in: a load with `SLOT=...`, or an unload with `STRICT=1`, raises
 a G-code error on failure so the new UI sequence cannot continue after it.
 
-To enable **HelixScreen** load/unload controls, manually merge the updated
-sections from `oams_macros.cfg` into your printer's customized macro file:
-`OPENAMS_LOAD`, `OPENAMS_UNLOAD`, `_TX`, `SAFE_UNLOAD_FILAMENT`, `CUT_FILAMENT`,
-`_LOAD_FS_IN`, `_LOAD_FS_OUT`, `_UNLOAD_FS_OUT`, and every `_OAMS_...` helper
-macro they call. Preserve your calibrated variables and printer-specific
-cutter, parking, and nozzle-cleaning changes. The updated macros also change
-untargeted toolchanges (`T0`...) and `SAFE_UNLOAD_FILAMENT`: on a failed load,
-failed unload, enabled sensor failure, or a pause arriving mid-toolchange they
-turn the follower off, pause, and raise an error, which ends an SD print. UI
-(`STRICT`) requests raise without pausing. See
-[Changes from the previous oams_macros.cfg](guide/macro-changes.md#changes-from-the-previous-oams_macroscfg)
-for the complete list. Restart Klipper after reviewing the merged macros. The
-installer deliberately does not replace an existing macro file, even when rerun.
+**HelixScreen** load and unload controls need no macro merging. They run the
+commands the manager advertises (below). On this host those are the manager's
+own `OAMSM_LOAD_TO_TOOLHEAD` and `OAMSM_UNLOAD_FROM_TOOLHEAD`, registered
+whatever macros the printer has. They are not the `T<n>` toolchange: they do
+not run `_TX` or `CUT_FILAMENT`. They move the AMS and call the printer's
+`toolhead_load_macro` and `toolhead_unload_macro` for the extruder
+([`[oams_manager]`](guide/configure.md#oams_manager)). The default unload macro,
+`UNLOAD_FILAMENT`, does not cut, so set one that suits the printer before
+using a screen's unload.
 
-Until those macros are present, status remains available but `commands` omits
-the unavailable load/unload operations. Clients must disable an operation if
-its advertised command is missing, and only that operation: HelixScreen keeps
-showing status and offering the advertised operations, and refuses load (and
-tool changes) or unload until the matching command appears.
+`commands` lists only operations whose command is registered. A client must
+disable an operation whose command is missing, and only that operation:
+HelixScreen keeps showing status and offering the advertised operations, and
+refuses load (and tool changes) or unload until the matching command appears.
 
-HelixScreen implements this API natively from v1.1.0-beta.1
-([prestonbrown/helixscreen#1691](https://github.com/prestonbrown/helixscreen/pull/1691)).
-Its `HELIX_MOCK_AMS=openams` test mode, proposed in
-[prestonbrown/helixscreen#1753](https://github.com/prestonbrown/helixscreen/pull/1753),
-runs HelixScreen's real OpenAMS backend against a mock `oams_manager`. The API
-does not add a KlipperScreen plugin or an AFC dependency.
+HelixScreen implements this API natively. The OpenAMS backend
+([prestonbrown/helixscreen#1691](https://github.com/prestonbrown/helixscreen/pull/1691))
+was merged into upstream HelixScreen on 2026-09-26. It ships in the v1.1.0
+pre-releases from v1.1.0-beta.1, and in stable releases from v1.1.0; the v1.0.x
+stable releases do not have it. HelixScreen's `HELIX_MOCK_AMS=openams` test
+mode, from
+[prestonbrown/helixscreen#1753](https://github.com/prestonbrown/helixscreen/pull/1753)
+and on HelixScreen's main since 2026-10-08, runs its real OpenAMS backend
+against a mock `oams_manager`. The API does not add a KlipperScreen plugin or
+an AFC dependency.
 
 ## Discovery and subscription
 

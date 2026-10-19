@@ -78,7 +78,9 @@ install separately: [update the Cortex Bridge firmware](docs/guide/cortex-bridge
   the OpenAMS build of Mainsail that carries it
   ([OpenAMSOrg/mainsail](https://github.com/OpenAMSOrg/mainsail), built from
   [openams-ui](https://github.com/OpenAMSOrg/openams-ui)).
-- **HelixScreen** supports OpenAMS natively from v1.1.0-beta.1.
+- **HelixScreen** supports OpenAMS natively: the OpenAMS backend is part of
+  upstream HelixScreen. It ships in the v1.1.0 pre-releases now and in stable
+  releases from v1.1.0; v1.0.x does not have it.
 - **Your own UI:** the versioned [OpenAMS UI API](docs/UI_API.md), including
   the Cortex Bridge status and firmware update calls.
 
