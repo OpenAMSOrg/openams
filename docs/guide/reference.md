@@ -111,7 +111,7 @@ Per-printer values the toolchange macros read. Sample defaults, from
 | `extrusion_unload_length` | `32` | Retract after the cut |
 | `reload_speed` | `1000` | Reload speed |
 | `unload_speed` | `1000` | Speed of the post-cut retract |
-| `extrusion_unload_additional_length` | `250` | Extra retract while the unit rewinds |
+| `extrusion_unload_additional_length` | `250` | Extra retract before the unit rewinds |
 | `additional_unload_speed` | `5000` | Speed of that extra retract |
 | `minimum_extrude_temperature` | `0` | Lowest hotend temperature a flow heats to, and at which cut and retract may run |
 | `unknown_material_temperature` | `235` | What a flow heats to when no bay temperature is known |

@@ -296,7 +296,7 @@ OpenAMS ships none of them, so a printer only has the ones it writes:
 | Hook | Runs |
 |---|---|
 | `_OAMS_HOOK_BEFORE_HEAT` | before the heat step, or where it would be |
-| `_OAMS_HOOK_AFTER_CUT` | after the cut, before the retract |
+| `_OAMS_HOOK_AFTER_CUT` | right after the cut, before the extruder retracts (where the old `PARK_MACRO` line was) |
 | `_OAMS_HOOK_AFTER_RETRACT` | after the retract, before the load (a swap only) |
 | `_OAMS_HOOK_AFTER_FEED` | after the load succeeded |
 

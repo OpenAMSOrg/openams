@@ -1417,6 +1417,23 @@ def test_a_hook_without_a_step_runs_inside_the_step_around_it(setup, klipper, st
             < trace.index("OAMSM_STAGE NAME=retract FPS=fps"))
 
 
+@pytest.mark.parametrize("strict", [False, True], ids=["legacy", "ordered"])
+def test_the_after_cut_hook_runs_before_the_extruder_retracts(setup, klipper, strict):
+    # A park in _OAMS_HOOK_AFTER_CUT leaves the cutter right after the cut,
+    # where the old PARK_MACRO line was, instead of waiting there while the
+    # extruder retracts.
+    printer, manager, unit = setup(loaded=0)
+    load_user_macros(printer, klipper, hook("AFTER_CUT"))
+    run(printer, "OPENAMS_UNLOAD", strict)
+    trace = printer.trace
+    cut = trace.index("G0 X81 Y355 F5000")
+    park = trace.index("G0 X201 Y201")
+    retracts = [i for i, command in enumerate(trace)
+                if command.startswith("G1 E-") and i > cut]
+    assert retracts and cut < park < retracts[0]
+    assert unit.current_spool is None
+
+
 @pytest.mark.parametrize("command, loaded, steps, hooks", [
     ("OPENAMS_LOAD GROUP=T1 SLOT=2", 0, "heat,cut,retract,feed", 4),
     ("T1", None, "heat,feed", 2),

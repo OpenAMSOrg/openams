@@ -460,7 +460,9 @@ already used by another `[mcu]`. If there is more than one: ASK.
        `variable_label: "<text>"` (both quoted) when the action deserves a step
        of its own on the display; leave them out when it should just run inside
        the step around it. The point's position is the display's: a wipe
-       belongs to `AFTER_CUT`, a purge to `AFTER_FEED`.
+       belongs to `AFTER_CUT`, a purge to `AFTER_FEED`. An uncommented
+       `PARK_MACRO` line (or other moves) right after `CUT_FILAMENT` in the
+       old copy goes into `AFTER_CUT`, which runs at that same place.
      - nozzle cleaning is already the owner's: `CLEAN_NOZZLE`.
   3. Comment out the old definition, with
      `# openams-agent: moved to <the macro you wrote>`.

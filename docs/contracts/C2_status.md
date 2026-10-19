@@ -642,7 +642,7 @@ them. The points, and where each one sits in the plans above:
 | Point | Called | A hook with a step lands |
 |---|---|---|
 | `_OAMS_HOOK_BEFORE_HEAT` | where the heat step is entered, or where it would be | before `heat` |
-| `_OAMS_HOOK_AFTER_CUT` | after the cut, before the retract | after `cut` |
+| `_OAMS_HOOK_AFTER_CUT` | right after the cutter moves, before the extruder retracts and the toolhead sensor check | after `cut` |
 | `_OAMS_HOOK_AFTER_RETRACT` | after the retract, before the load (a swap only) | after `retract` |
 | `_OAMS_HOOK_AFTER_FEED` | after the load succeeded, before the plan ends | after `feed` |
 

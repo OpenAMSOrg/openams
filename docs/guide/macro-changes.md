@@ -76,6 +76,9 @@ through the hooks. The changes:
   For `T0`-`T19`, an unknown filament group still fails before any motion.
 - `SAFE_UNLOAD_FILAMENT` sets `M83` before the first retract and retracts at
   `unload_speed`. `CUT_FILAMENT` issues `G90` before the cutter moves.
+- The `# PARK_MACRO` line after `CUT_FILAMENT` is gone. A park you added there
+  goes into `_OAMS_HOOK_AFTER_CUT`, which runs at the same place: right after
+  the cut, before the extruder retracts.
 - Four new variables in `[gcode_macro _oams_macro_variables]`, with these
   defaults when absent: `unload_speed: 1000`,
   `extrusion_unload_additional_length: 250`, `additional_unload_speed: 5000`,
