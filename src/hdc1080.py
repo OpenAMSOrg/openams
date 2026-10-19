@@ -288,6 +288,8 @@ class HDC1080:
         }
 
 def load_config(config):
-    # Register sensor
-    pheater = config.get_printer().lookup_object("heaters")
+    # Register sensor. load_object, not lookup_object: [hdc1080] is read
+    # before any heater section when oams.cfg is included above [printer],
+    # and Klipper creates "heaters" only when a section first asks for it.
+    pheater = config.get_printer().load_object(config, "heaters")
     pheater.add_sensor_factory("HDC1080", HDC1080)

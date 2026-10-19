@@ -117,6 +117,7 @@ Prints one `KEY=value` per line, then any `STOP_REASON=` and `ASK=` lines, then
 | `mcu '<name>': Unable to connect` / `Timeout on connect` | Wrong UUID, board unpowered, CAN down | Check `CAN_can0_STATE`, then the UUID, power and cable. A bus that stays flaky: [CAN patches guide](../../klipper_patches/can/GUIDE.md) |
 | `mcu 'host': Unable to connect` | The Klipper user is not in group `tty`, so it cannot open `/tmp/klipper_host_mcu` | `sudo usermod -a -G tty <user>` and restart Klipper |
 | `Section '<x>' is not a valid config section` | The extra is not installed | Run `./install.sh` again |
+| `Unknown config object 'heaters'` | An OpenAMS from before 2026-10-18 reads `[hdc1080]` before any heater section, as it is when `[include oams.cfg]` sits above `[printer]` | Update OpenAMS; the include can stay where the installer put it |
 | `Option '<x>' in section '<y>' must be specified` | A required option is missing | Add it from [`oams_sample.cfg`](../../oams_sample.cfg) |
 | `bambu_lab_tag_processor key must contain exactly 16 hexadecimal bytes` | The tag key is missing or not 32 hex characters | Set a real key locally, never from a public repository |
 | `both OpenAMS RFID readers must use one MCU` | The two reader pin sets point at different MCUs | Put both readers on one unit's MCU |
