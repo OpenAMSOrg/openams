@@ -8,6 +8,9 @@ should read [README.md](README.md) instead.
 It is written so that a small model can follow it literally. Where judgment is
 needed, the file says so, and says what to decide between.
 
+For why loads, unloads and toolchanges work or fail on a real machine, and
+which fixes not to suggest, read [AGENTS.md](AGENTS.md).
+
 ---
 
 ## 0. How to use this file
@@ -501,6 +504,29 @@ already used by another `[mcu]`. If there is more than one: ASK.
     RESPOND MSG="CLEAN_NOZZLE: no nozzle cleaner configured"
   ```
 - **`[pause_resume]`** must exist (`E_PAUSE_RESUME`).
+- **`[exclude_object]`** must exist. The toolchange macro `_TX` reads
+  `printer.exclude_object`, and without the section every toolchange fails with
+  a jinja `UndefinedError`. The audit doesn't check this yet.
+  - **Run:** `grep -n '^\[exclude_object\]' "$CFG"/*.cfg`
+  - **If nothing:** ASK: "OpenAMS's toolchange reads [exclude_object], which
+    this printer doesn't have. May I add an empty [exclude_object] section to
+    printer.cfg?" On yes, add it to `printer.cfg` with
+    `# openams-agent: needed by the OpenAMS toolchange`.
+- **`max_extrude_only_distance`** in `[extruder]` must be at least
+  `extrusion_unload_additional_length` (default 250). The unload retracts that
+  length in one move, and Klipper refuses an extrude-only move longer than
+  `max_extrude_only_distance` (default 50): `Extrude only move too long`. The
+  audit doesn't check this yet.
+  - **Run:** `grep -n -E '^\[extruder[0-9]*\]|^max_extrude_only_distance' "$CFG"/*.cfg`
+    (the option exists only in `[extruder]` sections, so a match after an
+    `[extruder]` header belongs to it).
+  - **If it is missing or below that length:** ASK: "OpenAMS retracts <n> mm
+    in one move after each cut, and this printer's max_extrude_only_distance is
+    <value or 50 by default>. May I set max_extrude_only_distance: <n + 50> in
+    [extruder]?"
+  - On yes, and only if `[extruder]` is in `printer.cfg`, add the line there
+    with `# openams-agent: OpenAMS unload retract`. If `[extruder]` lives in
+    another file, don't edit it (rule 7): put the request in the report.
 - **Do not change** `PRINT_START`, `PRINT_END`, `PAUSE`, `RESUME`,
   `CANCEL_PRINT` or the slicer. The report tells the human what the slicer needs.
 - **The cutter and toolhead lengths** are in `[gcode_macro _oams_macro_variables]`
@@ -607,6 +633,20 @@ List these in the report, with the commands. Never run them yourself.
 - **PTFE length:** `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<idx> SPOOL=<bay>`. Then set
   `ptfe_length` (`M_PTFE_ZERO`). Until then, a runout pauses instead of
   reloading.
+- **The printer's half, before the first load.** Each of these is a hand
+  test the human does. Each one finds a problem that no OpenAMS setting can fix
+  (see [AGENTS.md](AGENTS.md#field-facts)):
+  - **The path:** unhook the tube at the toolhead, and push fresh filament by
+    hand through the whole path. It must not catch anywhere.
+    - The tube must be 3 mm ID / 4 mm OD up to the toolhead coupler.
+    - Nothing may sit in front of the extruder gears: no filament switch, and
+      no ball sensor.
+    - The buffer must have the spring that came with the hardware, not a
+      stiffer one.
+  - **The extruder:** without the AMS, extrude and retract about 100 mm, then
+    again with light resistance on the filament. It must keep moving.
+  - **The cutter:** `CUT_FILAMENT` alone, then pull the filament out of the
+    toolhead by hand. It must come free, with a clean cut.
 - **First load and unload, with someone watching:**
   `OAMSM_LOAD_TO_TOOLHEAD GROUP=T0`, then `OAMSM_UNLOAD_FROM_TOOLHEAD`.
 - **Screen buttons:** HelixScreen's and the OpenAMS panel's load and unload run

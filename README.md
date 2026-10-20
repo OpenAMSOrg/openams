@@ -95,6 +95,7 @@ install separately: [update the Cortex Bridge firmware](docs/guide/cortex-bridge
 | [Troubleshooting](docs/guide/troubleshooting.md) | An error message, matched to its cause. |
 | [Configuration reference](docs/guide/reference.md) | Every option and command. |
 | [install.agents.md](install.agents.md) | You are installing with an AI agent. |
+| [AGENTS.md](AGENTS.md) | You are an AI agent working on this code, or helping someone whose printer doesn't load, unload or change tools. |
 | [docs/README.md](docs/README.md) | Contracts, testing, the UI API and klipper-mmu internals. |
 
 ## Getting help
