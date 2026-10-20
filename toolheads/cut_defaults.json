@@ -1,0 +1,3009 @@
+{
+ "schema": 1,
+ "generated": "2026-10-19",
+ "units": "mm; heights are above the nozzle tip, along the filament axis",
+ "about": "Starting values for [gcode_macro _oams_macro_variables], measured in each toolhead's published CAD (a section through the filament axis) with the OpenAMS toolhead tool. They are starting points: tune them on the printer (the reload test has the last word). Cutter coordinates (pre_cut/cut/post_cut) depend on the printer and are not here.",
+ "parameters": {
+  "retract_length": "mm pulled back before the cut, so the tip leaves the melt zone and the cut is made in solid filament. Starting value: top of the heater block + 2.5 mm, rounded up to 0.5 mm.",
+  "extrusion_unload_length": "mm pulled back after the cut, so the cut end clears the extruder gears. Starting value: gear nip to blade + 5 mm, rounded up to 1 mm.",
+  "extrusion_reload_length": "mm pushed from the gears (where the AMS stops) down to the stub the cut left. Starting value: gear nip to blade, rounded to 0.5 mm.",
+  "hotend_meltzone_compensation": "extra mm on the reload to refill what drips out while parked (no silicone plug). Starting value 0."
+ },
+ "heights": {
+  "nip": "drive gear axis (where the gears grip the filament)",
+  "blade": "blade plane",
+  "meltzone_top": "top of the heater block",
+  "heatsink_top": "top of the hotend heatsink",
+  "heatbreak_top": "top of the heatbreak",
+  "tube_seat": "where the PTFE tube bottoms out at the top of the toolhead"
+ },
+ "combos": [
+  {
+   "id": "sb-cw2-filamatrix-bambu",
+   "toolhead": "Stealthburner",
+   "extruder": "Clockwork 2",
+   "cutter": "FilamATrix",
+   "hotend": "Bambu X1",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 86.27,
+    "blade": 61.91,
+    "heatsink_top": 47.59,
+    "heatbreak_top": null,
+    "tube_seat": 124.89,
+    "meltzone_top": null
+   },
+   "distances": {
+    "nip_to_tip": 86.27,
+    "nip_to_blade": 24.36,
+    "blade_to_tip": 61.91
+   },
+   "narrow_passages": [
+    {
+     "z_bottom": 92.25,
+     "z_top": 95.0,
+     "width": 2.4
+    },
+    {
+     "z_bottom": 66.5,
+     "z_top": 80.75,
+     "width": 2.47
+    }
+   ],
+   "openams": {},
+   "checks": [
+    "warn: no parts overlap in the section: Full Blade (LDO) (1) / Blade_Holder: 1.3 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-cw2-filamatrix-dragonhf",
+   "toolhead": "Stealthburner",
+   "extruder": "Clockwork 2",
+   "cutter": "FilamATrix",
+   "hotend": "Dragon HF",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 86.27,
+    "blade": 61.91,
+    "heatsink_top": 45.72,
+    "heatbreak_top": 43.51,
+    "tube_seat": 124.89,
+    "meltzone_top": 17.34
+   },
+   "distances": {
+    "nip_to_tip": 86.27,
+    "nip_to_blade": 24.36,
+    "blade_to_tip": 61.91,
+    "meltzone_top": 17.34
+   },
+   "narrow_passages": [
+    {
+     "z_bottom": 92.25,
+     "z_top": 95.0,
+     "width": 2.4
+    },
+    {
+     "z_bottom": 66.5,
+     "z_top": 80.75,
+     "width": 2.47
+    }
+   ],
+   "openams": {
+    "retract_length": 20.0,
+    "extrusion_reload_length": 24.5,
+    "extrusion_unload_length": 30.0,
+    "hotend_meltzone_compensation": 0.0
+   },
+   "checks": [
+    "warn: no parts overlap in the section: Full Blade (LDO) (1) / Blade_Holder: 1.3 mm²; Block / V6 Nozzle: 1.3 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-cw2-filamatrix-dragonuhf",
+   "toolhead": "Stealthburner",
+   "extruder": "Clockwork 2",
+   "cutter": "FilamATrix",
+   "hotend": "Dragon UHF",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 96.72,
+    "blade": 72.36,
+    "heatsink_top": 64.27,
+    "heatbreak_top": null,
+    "tube_seat": 135.34,
+    "meltzone_top": 36.5
+   },
+   "distances": {
+    "nip_to_tip": 96.72,
+    "nip_to_blade": 24.36,
+    "blade_to_tip": 72.36,
+    "meltzone_top": 36.5
+   },
+   "narrow_passages": [
+    {
+     "z_bottom": 77.0,
+     "z_top": 91.0,
+     "width": 2.4
+    },
+    {
+     "z_bottom": 102.75,
+     "z_top": 105.5,
+     "width": 2.4
+    }
+   ],
+   "openams": {
+    "retract_length": 39.0,
+    "extrusion_reload_length": 24.5,
+    "extrusion_unload_length": 30.0,
+    "hotend_meltzone_compensation": 0.0
+   },
+   "checks": [
+    "warn: no parts overlap in the section: SB_Dragon_UHF_Front / SB_Dragon_UHF_Rear: 313.8 mm²; Full Blade (LDO) (1) / Blade_Holder: 1.3 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-cw2-filamatrix-dragonuhfmini",
+   "toolhead": "Stealthburner",
+   "extruder": "Clockwork 2",
+   "cutter": "FilamATrix",
+   "hotend": "Dragon UHF Mini",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 88.47,
+    "blade": 64.11,
+    "heatsink_top": 56.27,
+    "heatbreak_top": null,
+    "tube_seat": 127.09,
+    "meltzone_top": null
+   },
+   "distances": {
+    "nip_to_tip": 88.47,
+    "nip_to_blade": 24.36,
+    "blade_to_tip": 64.11
+   },
+   "narrow_passages": [
+    {
+     "z_bottom": 68.75,
+     "z_top": 82.75,
+     "width": 2.4
+    },
+    {
+     "z_bottom": 94.5,
+     "z_top": 97.25,
+     "width": 2.4
+    }
+   ],
+   "openams": {},
+   "checks": [
+    "warn: no parts overlap in the section: SB_Dragon_UHF_mini_Rear / SB_Dragon_UHF_mini_Front: 309.7 mm²; Full Blade (LDO) (1) / Blade_Holder: 1.3 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-cw2-filamatrix-rapido2hf",
+   "toolhead": "Stealthburner",
+   "extruder": "Clockwork 2",
+   "cutter": "FilamATrix",
+   "hotend": "Rapido 2 HF",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 88.37,
+    "blade": 64.01,
+    "heatsink_top": 60.1,
+    "heatbreak_top": null,
+    "tube_seat": 126.99,
+    "meltzone_top": 17.4
+   },
+   "distances": {
+    "nip_to_tip": 88.37,
+    "nip_to_blade": 24.36,
+    "blade_to_tip": 64.01,
+    "meltzone_top": 17.4
+   },
+   "narrow_passages": [
+    {
+     "z_bottom": 68.75,
+     "z_top": 82.75,
+     "width": 2.4
+    },
+    {
+     "z_bottom": 94.0,
+     "z_top": 97.25,
+     "width": 2.52
+    }
+   ],
+   "openams": {
+    "retract_length": 20.0,
+    "extrusion_reload_length": 24.5,
+    "extrusion_unload_length": 30.0,
+    "hotend_meltzone_compensation": 0.0
+   },
+   "checks": [
+    "warn: no parts overlap in the section: SB_Rapido_HF_V2_Front / Rapdio 2-hf.prt v029: 1.7 mm²; Full Blade (LDO) (1) / Blade_Holder: 1.3 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-cw2-filamatrix-rapido2uhf",
+   "toolhead": "Stealthburner",
+   "extruder": "Clockwork 2",
+   "cutter": "FilamATrix",
+   "hotend": "Rapido 2 UHF",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 96.77,
+    "blade": 72.41,
+    "heatsink_top": 68.6,
+    "heatbreak_top": 45.6,
+    "tube_seat": 135.39,
+    "meltzone_top": 25.9
+   },
+   "distances": {
+    "nip_to_tip": 96.77,
+    "nip_to_blade": 24.36,
+    "blade_to_tip": 72.41,
+    "meltzone_top": 25.9
+   },
+   "narrow_passages": [
+    {
+     "z_bottom": 102.75,
+     "z_top": 105.5,
+     "width": 2.4
+    },
+    {
+     "z_bottom": 77.0,
+     "z_top": 91.25,
+     "width": 2.47
+    }
+   ],
+   "openams": {
+    "retract_length": 28.5,
+    "extrusion_reload_length": 24.5,
+    "extrusion_unload_length": 30.0,
+    "hotend_meltzone_compensation": 0.0
+   },
+   "checks": [
+    "warn: no parts overlap in the section: SB_Rapido_UHF_V2_Front / Rapido_2.0_uhf v027: 3.2 mm²; Rapido_2.0_uhf v015 / Rapido_2.0_uhf v038: 1.9 mm²; Rapido_2.0_uhf v018 / Rapido_2.0_uhf v038: 1.8 mm²; Rapido_2.0_uhf v012 / Rapido_2.0_uhf v027: 1.5 mm²; Full Blade (LDO) (1) / Blade_Holder: 1.3 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-cw2-filamatrix-rapidohf",
+   "toolhead": "Stealthburner",
+   "extruder": "Clockwork 2",
+   "cutter": "FilamATrix",
+   "hotend": "Rapido HF",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 87.87,
+    "blade": 63.51,
+    "heatsink_top": 55.6,
+    "heatbreak_top": 29.6,
+    "tube_seat": 126.49,
+    "meltzone_top": 24.05
+   },
+   "distances": {
+    "nip_to_tip": 87.87,
+    "nip_to_blade": 24.36,
+    "blade_to_tip": 63.51,
+    "meltzone_top": 24.05
+   },
+   "narrow_passages": [
+    {
+     "z_bottom": 68.25,
+     "z_top": 82.25,
+     "width": 2.4
+    },
+    {
+     "z_bottom": 93.5,
+     "z_top": 96.75,
+     "width": 2.52
+    }
+   ],
+   "openams": {
+    "retract_length": 27.0,
+    "extrusion_reload_length": 24.5,
+    "extrusion_unload_length": 30.0,
+    "hotend_meltzone_compensation": 0.0
+   },
+   "checks": [
+    "warn: channel clear for 1.75 mm filament (outside the gears): 0.4 mm at z 7.25–27.0",
+    "warn: no parts overlap in the section: SB_Rapido_HF_Front / Heatsink Assembly004: 1.6 mm²; Full Blade (LDO) (1) / Blade_Holder: 1.3 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-cw2-filamatrix-rapidouhf",
+   "toolhead": "Stealthburner",
+   "extruder": "Clockwork 2",
+   "cutter": "FilamATrix",
+   "hotend": "Rapido UHF",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 96.37,
+    "blade": 72.01,
+    "heatsink_top": 68.1,
+    "heatbreak_top": 45.1,
+    "tube_seat": 134.99,
+    "meltzone_top": 32.55
+   },
+   "distances": {
+    "nip_to_tip": 96.37,
+    "nip_to_blade": 24.36,
+    "blade_to_tip": 72.01,
+    "meltzone_top": 32.55
+   },
+   "narrow_passages": [
+    {
+     "z_bottom": 76.75,
+     "z_top": 90.75,
+     "width": 2.4
+    },
+    {
+     "z_bottom": 102.0,
+     "z_top": 105.25,
+     "width": 2.52
+    }
+   ],
+   "openams": {
+    "retract_length": 35.5,
+    "extrusion_reload_length": 24.5,
+    "extrusion_unload_length": 30.0,
+    "hotend_meltzone_compensation": 0.0
+   },
+   "checks": [
+    "warn: no parts overlap in the section: Nozzle (1) / UHF_MeltZone_Extender: 2.7 mm²; Heatbreak (1) / Heater_Mount: 2.2 mm²; SB_Rapido_UHF_Front / Heatsink (1): 1.6 mm²; Heater_Mount / Nozzle (1): 1.6 mm²; Full Blade (LDO) (1) / Blade_Holder: 1.3 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-cw2-filamatrix-revovoron",
+   "toolhead": "Stealthburner",
+   "extruder": "Clockwork 2",
+   "cutter": "FilamATrix",
+   "hotend": "Revo Voron",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 86.27,
+    "blade": 61.91,
+    "heatsink_top": 48.8,
+    "heatbreak_top": null,
+    "tube_seat": 124.89,
+    "meltzone_top": 14.6
+   },
+   "distances": {
+    "nip_to_tip": 86.27,
+    "nip_to_blade": 24.36,
+    "blade_to_tip": 61.91,
+    "meltzone_top": 14.6
+   },
+   "narrow_passages": [
+    {
+     "z_bottom": 92.25,
+     "z_top": 95.0,
+     "width": 2.4
+    },
+    {
+     "z_bottom": 66.5,
+     "z_top": 80.75,
+     "width": 2.47
+    }
+   ],
+   "openams": {
+    "retract_length": 17.5,
+    "extrusion_reload_length": 24.5,
+    "extrusion_unload_length": 30.0,
+    "hotend_meltzone_compensation": 0.0
+   },
+   "checks": [
+    "warn: no parts overlap in the section: Full Blade (LDO) (1) / Blade_Holder: 1.3 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-g2e-filamatrix-bambu",
+   "toolhead": "Stealthburner",
+   "extruder": "Galileo 2",
+   "cutter": "FilamATrix",
+   "hotend": "Bambu X1",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 100.26,
+    "blade": 61.89,
+    "heatsink_top": 47.59,
+    "heatbreak_top": null,
+    "tube_seat": 126.22,
+    "meltzone_top": null
+   },
+   "distances": {
+    "nip_to_tip": 100.26,
+    "nip_to_blade": 38.37,
+    "blade_to_tip": 61.89
+   },
+   "narrow_passages": [],
+   "openams": {},
+   "checks": [
+    "warn: gears grip a 1.75 mm filament: nowhere across the gears is there a filament-sized gap: closest -0.01 mm at y -0.30 (the model draws the idler touching the drive gear)",
+    "warn: extruder lines up with the hotend axis: the gears grip at x -0.71, y -0.30 mm: 0.77 mm from the nozzle axis",
+    "warn: no parts overlap in the section: COMPOUND / COMPOUND001: 13.7 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-g2e-filamatrix-dragonhf",
+   "toolhead": "Stealthburner",
+   "extruder": "Galileo 2",
+   "cutter": "FilamATrix",
+   "hotend": "Dragon HF",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 100.26,
+    "blade": 61.89,
+    "heatsink_top": 45.72,
+    "heatbreak_top": 43.51,
+    "tube_seat": 126.22,
+    "meltzone_top": 17.34
+   },
+   "distances": {
+    "nip_to_tip": 100.26,
+    "nip_to_blade": 38.37,
+    "blade_to_tip": 61.89,
+    "meltzone_top": 17.34
+   },
+   "narrow_passages": [],
+   "openams": {
+    "retract_length": 20.0,
+    "extrusion_reload_length": 38.5,
+    "extrusion_unload_length": 44.0,
+    "hotend_meltzone_compensation": 0.0
+   },
+   "checks": [
+    "warn: gears grip a 1.75 mm filament: nowhere across the gears is there a filament-sized gap: closest -0.01 mm at y -0.30 (the model draws the idler touching the drive gear)",
+    "warn: extruder lines up with the hotend axis: the gears grip at x -0.71, y -0.30 mm: 0.77 mm from the nozzle axis",
+    "warn: no parts overlap in the section: SB_Dragon_HF_Rear / SB_Dragon_HF_Front001: 146.7 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-g2e-filamatrix-dragonuhf",
+   "toolhead": "Stealthburner",
+   "extruder": "Galileo 2",
+   "cutter": "FilamATrix",
+   "hotend": "Dragon UHF",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 110.71,
+    "blade": 72.34,
+    "heatsink_top": 64.27,
+    "heatbreak_top": null,
+    "tube_seat": 136.67,
+    "meltzone_top": 36.5
+   },
+   "distances": {
+    "nip_to_tip": 110.71,
+    "nip_to_blade": 38.37,
+    "blade_to_tip": 72.34,
+    "meltzone_top": 36.5
+   },
+   "narrow_passages": [],
+   "openams": {
+    "retract_length": 39.0,
+    "extrusion_reload_length": 38.5,
+    "extrusion_unload_length": 44.0,
+    "hotend_meltzone_compensation": 0.0
+   },
+   "checks": [
+    "warn: gears grip a 1.75 mm filament: nowhere across the gears is there a filament-sized gap: closest -0.01 mm at y -0.30 (the model draws the idler touching the drive gear)",
+    "warn: extruder lines up with the hotend axis: the gears grip at x -0.71, y -0.30 mm: 0.77 mm from the nozzle axis",
+    "warn: no parts overlap in the section: SB_Dragon_UHF_Front / SB_Dragon_UHF_Rear: 66.1 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-g2e-filamatrix-dragonuhfmini",
+   "toolhead": "Stealthburner",
+   "extruder": "Galileo 2",
+   "cutter": "FilamATrix",
+   "hotend": "Dragon UHF Mini",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 102.46,
+    "blade": 64.09,
+    "heatsink_top": 56.27,
+    "heatbreak_top": null,
+    "tube_seat": 128.42,
+    "meltzone_top": null
+   },
+   "distances": {
+    "nip_to_tip": 102.46,
+    "nip_to_blade": 38.37,
+    "blade_to_tip": 64.09
+   },
+   "narrow_passages": [],
+   "openams": {},
+   "checks": [
+    "warn: gears grip a 1.75 mm filament: nowhere across the gears is there a filament-sized gap: closest -0.01 mm at y -0.30 (the model draws the idler touching the drive gear)",
+    "warn: extruder lines up with the hotend axis: the gears grip at x -0.71, y -0.30 mm: 0.77 mm from the nozzle axis",
+    "warn: no parts overlap in the section: SB_Dragon_UHF_mini_Rear / SB_Dragon_UHF_mini_Front: 248.9 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-g2e-filamatrix-rapido2hf",
+   "toolhead": "Stealthburner",
+   "extruder": "Galileo 2",
+   "cutter": "FilamATrix",
+   "hotend": "Rapido 2 HF",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 102.36,
+    "blade": 63.99,
+    "heatsink_top": 60.1,
+    "heatbreak_top": null,
+    "tube_seat": 128.32,
+    "meltzone_top": 17.4
+   },
+   "distances": {
+    "nip_to_tip": 102.36,
+    "nip_to_blade": 38.37,
+    "blade_to_tip": 63.99,
+    "meltzone_top": 17.4
+   },
+   "narrow_passages": [],
+   "openams": {
+    "retract_length": 20.0,
+    "extrusion_reload_length": 38.5,
+    "extrusion_unload_length": 44.0,
+    "hotend_meltzone_compensation": 0.0
+   },
+   "checks": [
+    "warn: gears grip a 1.75 mm filament: nowhere across the gears is there a filament-sized gap: closest -0.01 mm at y -0.30 (the model draws the idler touching the drive gear)",
+    "warn: extruder lines up with the hotend axis: the gears grip at x -0.71, y -0.30 mm: 0.77 mm from the nozzle axis",
+    "warn: no parts overlap in the section: SB_Rapido_HF_V2_Rear / SB_Rapido_HF_V2_Front: 72.5 mm²; SB_Rapido_HF_V2_Front / Rapdio 2-hf.prt v029: 1.6 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-g2e-filamatrix-rapido2uhf",
+   "toolhead": "Stealthburner",
+   "extruder": "Galileo 2",
+   "cutter": "FilamATrix",
+   "hotend": "Rapido 2 UHF",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 110.76,
+    "blade": 72.39,
+    "heatsink_top": 68.6,
+    "heatbreak_top": 45.6,
+    "tube_seat": 136.72,
+    "meltzone_top": 25.9
+   },
+   "distances": {
+    "nip_to_tip": 110.76,
+    "nip_to_blade": 38.37,
+    "blade_to_tip": 72.39,
+    "meltzone_top": 25.9
+   },
+   "narrow_passages": [],
+   "openams": {
+    "retract_length": 28.5,
+    "extrusion_reload_length": 38.5,
+    "extrusion_unload_length": 44.0,
+    "hotend_meltzone_compensation": 0.0
+   },
+   "checks": [
+    "warn: gears grip a 1.75 mm filament: nowhere across the gears is there a filament-sized gap: closest -0.01 mm at y -0.30 (the model draws the idler touching the drive gear)",
+    "warn: extruder lines up with the hotend axis: the gears grip at x -0.71, y -0.30 mm: 0.77 mm from the nozzle axis",
+    "warn: no parts overlap in the section: SB_Rapido_UHF_V2_Front / SB_Rapido_UHF_V2_Rear: 72.4 mm²; SB_Rapido_UHF_V2_Front / Rapido_2.0_uhf v027: 3.1 mm²; Rapido_2.0_uhf v018 / Rapido_2.0_uhf v038: 1.9 mm²; Rapido_2.0_uhf v015 / Rapido_2.0_uhf v038: 1.7 mm²; Rapido_2.0_uhf v012 / Rapido_2.0_uhf v027: 1.5 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-g2e-filamatrix-rapidohf",
+   "toolhead": "Stealthburner",
+   "extruder": "Galileo 2",
+   "cutter": "FilamATrix",
+   "hotend": "Rapido HF",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 101.86,
+    "blade": 63.49,
+    "heatsink_top": 55.6,
+    "heatbreak_top": 29.6,
+    "tube_seat": 127.82,
+    "meltzone_top": 24.05
+   },
+   "distances": {
+    "nip_to_tip": 101.86,
+    "nip_to_blade": 38.37,
+    "blade_to_tip": 63.49,
+    "meltzone_top": 24.05
+   },
+   "narrow_passages": [],
+   "openams": {
+    "retract_length": 27.0,
+    "extrusion_reload_length": 38.5,
+    "extrusion_unload_length": 44.0,
+    "hotend_meltzone_compensation": 0.0
+   },
+   "checks": [
+    "warn: gears grip a 1.75 mm filament: nowhere across the gears is there a filament-sized gap: closest -0.01 mm at y -0.30 (the model draws the idler touching the drive gear)",
+    "warn: extruder lines up with the hotend axis: the gears grip at x -0.71, y -0.30 mm: 0.77 mm from the nozzle axis",
+    "warn: channel clear for 1.75 mm filament (outside the gears): 0.4 mm at z 7.25–27.0"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-g2e-filamatrix-rapidouhf",
+   "toolhead": "Stealthburner",
+   "extruder": "Galileo 2",
+   "cutter": "FilamATrix",
+   "hotend": "Rapido UHF",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 110.36,
+    "blade": 71.99,
+    "heatsink_top": 68.1,
+    "heatbreak_top": 45.1,
+    "tube_seat": 136.32,
+    "meltzone_top": 32.55
+   },
+   "distances": {
+    "nip_to_tip": 110.36,
+    "nip_to_blade": 38.37,
+    "blade_to_tip": 71.99,
+    "meltzone_top": 32.55
+   },
+   "narrow_passages": [],
+   "openams": {
+    "retract_length": 35.5,
+    "extrusion_reload_length": 38.5,
+    "extrusion_unload_length": 44.0,
+    "hotend_meltzone_compensation": 0.0
+   },
+   "checks": [
+    "warn: gears grip a 1.75 mm filament: nowhere across the gears is there a filament-sized gap: closest -0.01 mm at y -0.30 (the model draws the idler touching the drive gear)",
+    "warn: extruder lines up with the hotend axis: the gears grip at x -0.71, y -0.30 mm: 0.77 mm from the nozzle axis",
+    "warn: no parts overlap in the section: SB_Rapido_UHF_Front / SB_Rapido_UHF_Rear: 72.4 mm²; Nozzle (1) / UHF_MeltZone_Extender: 2.7 mm²; Heatbreak (1) / Heater_Mount: 2.2 mm²; Heater_Mount / Nozzle (1): 1.6 mm²; SB_Rapido_UHF_Front / Heatsink (1): 1.5 mm²"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  },
+  {
+   "id": "sb-g2e-filamatrix-revovoron",
+   "toolhead": "Stealthburner",
+   "extruder": "Galileo 2",
+   "cutter": "FilamATrix",
+   "hotend": "Revo Voron",
+   "status": "cad-measured",
+   "heights": {
+    "nip": 100.26,
+    "blade": 61.89,
+    "heatsink_top": 48.8,
+    "heatbreak_top": null,
+    "tube_seat": 126.22,
+    "meltzone_top": 14.6
+   },
+   "distances": {
+    "nip_to_tip": 100.26,
+    "nip_to_blade": 38.37,
+    "blade_to_tip": 61.89,
+    "meltzone_top": 14.6
+   },
+   "narrow_passages": [],
+   "openams": {
+    "retract_length": 17.5,
+    "extrusion_reload_length": 38.5,
+    "extrusion_unload_length": 44.0,
+    "hotend_meltzone_compensation": 0.0
+   },
+   "checks": [
+    "warn: gears grip a 1.75 mm filament: nowhere across the gears is there a filament-sized gap: closest -0.01 mm at y -0.30 (the model draws the idler touching the drive gear)",
+    "warn: extruder lines up with the hotend axis: the gears grip at x -0.71, y -0.30 mm: 0.77 mm from the nozzle axis"
+   ],
+   "cad": [
+    {
+     "file": "Stealthburner_FilamATrix.step",
+     "url": "https://github.com/thunderkeys/FilamATrix/blob/main/CAD/Stealthburner_FilamATrix.step.zip",
+     "sha256": "08f56246254a0fec17a6da701e5573c7969ccb6e1f0762768802f70f46b7f9c8"
+    }
+   ],
+   "notes": null
+  }
+ ],
+ "community": {
+  "about": "Values other MMU systems ship for these toolheads, kept as references. Their parameters measure different things from the OpenAMS ones (see meaning); don't copy them across.",
+  "combos": [
+   {
+    "system": "Happy Hare",
+    "name": "A4T WWBMG Bambu TZ3",
+    "toolhead": "A4T",
+    "extruder": "WW-BMG",
+    "hotend": "Bambu",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 79.3,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_bambu_tz3#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 68.0,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_bambu_tz3#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 9.0,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_bambu_tz3#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 0.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_bambu_tz3#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "A4T WWBMG Dragon Ace Volcano MZE",
+    "toolhead": "A4T",
+    "extruder": "WW-BMG",
+    "hotend": "Dragon Ace",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 89.5,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_dragon_ace_volcano_mze#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 76.5,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_dragon_ace_volcano_mze#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 9.0,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_dragon_ace_volcano_mze#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 44.9,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_dragon_ace_volcano_mze#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "A4T WWBMG Dragon HF MZE",
+    "toolhead": "A4T",
+    "extruder": "WW-BMG",
+    "hotend": "Dragon HF",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 66.4,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_dragon_hf_mze#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 54.1,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_dragon_hf_mze#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 9.3,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_dragon_hf_mze#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 28.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_dragon_hf_mze#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "A4T WWBMG for A4T Dragon Ace",
+    "toolhead": "A4T",
+    "extruder": "WW-BMG",
+    "hotend": "Dragon Ace",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 88.0,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_for_a4t_dragon_ace#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 76.5,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_for_a4t_dragon_ace#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 9.5,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_for_a4t_dragon_ace#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 36.5,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_for_a4t_dragon_ace#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "A4T WWBMG Rapido2 Plus HF",
+    "toolhead": "A4T",
+    "extruder": "WW-BMG",
+    "hotend": "Rapido 2 HF",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 88.5,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_rapido2_plus_hf#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 77.0,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_rapido2_plus_hf#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 9.7,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_rapido2_plus_hf#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 20.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_rapido2_plus_hf#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "A4T WWBMG Revo Voron",
+    "toolhead": "A4T",
+    "extruder": "WW-BMG",
+    "hotend": "Revo Voron",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 82.6,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_revo_voron#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 69.5,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_revo_voron#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 9.7,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_revo_voron#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 9.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwbmg_revo_voron#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "A4T WWG2 Dragon HF MZE",
+    "toolhead": "A4T",
+    "extruder": "WW-G2",
+    "hotend": "Dragon HF",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 96.1,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwg2_dragon_hf_mze#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 77.6,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwg2_dragon_hf_mze#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 13.2,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwg2_dragon_hf_mze#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 34.7,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.a4t_wwg2_dragon_hf_mze#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Afterburner Clockwork Dragon HF",
+    "toolhead": "Afterburner",
+    "extruder": null,
+    "hotend": "Dragon HF",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 76.8,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.afterburner_clockwork_dragon_hf#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 67.7,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.afterburner_clockwork_dragon_hf#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 8.0,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.afterburner_clockwork_dragon_hf#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 22.3,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.afterburner_clockwork_dragon_hf#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "AntHead WWBMG Rapido 2 HF",
+    "toolhead": "AntHead",
+    "extruder": "WW-BMG",
+    "hotend": "Rapido 2 HF",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 98.672,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.anthead_wwbmg_rapido_2_hf#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 83.86,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.anthead_wwbmg_rapido_2_hf#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 6.716,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.anthead_wwbmg_rapido_2_hf#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 5.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.anthead_wwbmg_rapido_2_hf#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "AntHead WWG2 Revo Voron",
+    "toolhead": "AntHead",
+    "extruder": "WW-G2",
+    "hotend": "Revo Voron",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 91.0,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.anthead_wwg2_revo_voron#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 75.0,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.anthead_wwg2_revo_voron#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 13.6,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.anthead_wwg2_revo_voron#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 9.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.anthead_wwg2_revo_voron#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "AntHead WWG2 TZv6",
+    "toolhead": "AntHead",
+    "extruder": "WW-G2",
+    "hotend": "TZ",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 68.6,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.anthead_wwg2_tzv6#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 50.9,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.anthead_wwg2_tzv6#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 13.0,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.anthead_wwg2_tzv6#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 1.2,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.anthead_wwg2_tzv6#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Diploduct BMG Ender 3 V2",
+    "toolhead": null,
+    "extruder": null,
+    "hotend": null,
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 106.82,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.diploduct_bmg_ender_3_v2#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 62.0,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.diploduct_bmg_ender_3_v2#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 8.0,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.diploduct_bmg_ender_3_v2#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 2.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.diploduct_bmg_ender_3_v2#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "E34M1 Sherpa Mini Alps v6",
+    "toolhead": null,
+    "extruder": "Sherpa Mini",
+    "hotend": null,
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 72.0,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.e34m1_sherpa_mini_alps_v6#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 62.0,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.e34m1_sherpa_mini_alps_v6#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 8.0,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.e34m1_sherpa_mini_alps_v6#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 0.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.e34m1_sherpa_mini_alps_v6#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Ender3 V3 KE",
+    "toolhead": null,
+    "extruder": null,
+    "hotend": null,
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 90.0,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.ender3_v3_ke#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 62.0,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.ender3_v3_ke#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 29.0,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.ender3_v3_ke#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 2.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.ender3_v3_ke#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Jabberwocky",
+    "toolhead": "Jabberwocky",
+    "extruder": null,
+    "hotend": null,
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 86.0,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.jabberwocky#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 74.3,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.jabberwocky#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 8.9,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.jabberwocky#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 22.5,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.jabberwocky#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "QIDI Q1 Pro",
+    "toolhead": null,
+    "extruder": null,
+    "hotend": null,
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 75.0,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.qidi_q1_pro#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 78.0,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.qidi_q1_pro#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 24.0,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.qidi_q1_pro#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 2.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.qidi_q1_pro#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "QIDI Q2 Extruder",
+    "toolhead": null,
+    "extruder": null,
+    "hotend": null,
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 72.0,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.qidi_q2#L10"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 62.0,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.qidi_q2#L12"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 8.0,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.qidi_q2#L14"
+     },
+     "toolhead_residual_filament": {
+      "mm": 2.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.qidi_q2#L16"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner Clockwork2 Bambu X1",
+    "toolhead": "Stealthburner",
+    "extruder": "Clockwork 2",
+    "hotend": "Bambu",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 85.0,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_bambu_x1#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 75.0,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_bambu_x1#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 13.0,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_bambu_x1#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 22.5,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_bambu_x1#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner Clockwork2 Dragon HF",
+    "toolhead": "Stealthburner",
+    "extruder": "Clockwork 2",
+    "hotend": "Dragon HF",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 70.3,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_dragon_hf#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 62.2,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_dragon_hf#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 12.4,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_dragon_hf#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 30.6,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_dragon_hf#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner Clockwork2 Rapido HF",
+    "toolhead": "Stealthburner",
+    "extruder": "Clockwork 2",
+    "hotend": "Rapido HF",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 84.82,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_rapido_hf#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 74.84,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_rapido_hf#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 13.0,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_rapido_hf#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 5.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_rapido_hf#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner Clockwork2 Revo",
+    "toolhead": "Stealthburner",
+    "extruder": "Clockwork 2",
+    "hotend": "Revo Voron",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 72.0,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_revo#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 62.0,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_revo#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 13.0,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_revo#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 2.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_revo#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner Clockwork2 Revo Voron",
+    "toolhead": "Stealthburner",
+    "extruder": "Clockwork 2",
+    "hotend": "Revo Voron",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 85.1,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_revo_voron#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 75.8,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_revo_voron#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 16.6,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_revo_voron#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 2.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_clockwork2_revo_voron#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner G2E Bambu X1",
+    "toolhead": "Stealthburner",
+    "extruder": "Galileo 2",
+    "hotend": "Bambu",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 99.5,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_bambu_x1#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 79.5,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_bambu_x1#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 13.3,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_bambu_x1#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 22.5,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_bambu_x1#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner G2E Dragon HF",
+    "toolhead": "Stealthburner",
+    "extruder": "Galileo 2",
+    "hotend": "Dragon HF",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 99.5,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_dragon_hf#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 79.0,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_dragon_hf#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 13.29,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_dragon_hf#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 5.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_dragon_hf#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner G2E Rapido HF",
+    "toolhead": "Stealthburner",
+    "extruder": "Galileo 2",
+    "hotend": "Rapido HF",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 99.38,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_rapido_hf#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 79.78,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_rapido_hf#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 13.29,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_rapido_hf#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 5.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_rapido_hf#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner G2E Revo",
+    "toolhead": "Stealthburner",
+    "extruder": "Galileo 2",
+    "hotend": "Revo Voron",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 99.18,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_revo#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 79.58,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_revo#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 13.29,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_revo#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 2.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.stealthburner_g2e_revo#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "XOL Metrix Sherpa Mini CNC Rapido 1 UHF",
+    "toolhead": "Xol",
+    "extruder": "Sherpa Mini",
+    "hotend": "Rapido UHF",
+    "cutter": "FilamATrix",
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 102.0,
+      "meaning": "extruder gear entrance (nip) to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.xol_metrix_sherpa_mini_cnc_rapido_1_uhf#L8"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 82.0,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.xol_metrix_sherpa_mini_cnc_rapido_1_uhf#L10"
+     },
+     "toolhead_entry_to_extruder": {
+      "mm": 38.0,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.xol_metrix_sherpa_mini_cnc_rapido_1_uhf#L12"
+     },
+     "toolhead_residual_filament": {
+      "mm": 40.0,
+      "meaning": "filament left in nozzle/melt zone after unload (reduces load length)",
+      "source": "https://github.com/moggieuk/Happy-Hare/blob/70aa90fb9aa18787de445235bd26a0665168c441/installer/toolheads/Kconfig.xol_metrix_sherpa_mini_cnc_rapido_1_uhf#L14"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner CW2 Clockwork 2",
+    "toolhead": "Stealthburner",
+    "extruder": "Clockwork 2",
+    "hotend": null,
+    "cutter": null,
+    "values": {
+     "toolhead_entry_to_extruder": {
+      "mm": 13,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters (line 309)"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner G2E Galileo 2 (G2E)",
+    "toolhead": "Stealthburner",
+    "extruder": "Galileo 2",
+    "hotend": null,
+    "cutter": null,
+    "values": {
+     "toolhead_entry_to_extruder": {
+      "mm": 13.29,
+      "meaning": "extruder entry sensor trigger point to extruder gears",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters (line 309)"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner CW2 Clockwork 2 Rapido/R2",
+    "toolhead": "Stealthburner",
+    "extruder": "Clockwork 2",
+    "hotend": "Rapido HF",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 84.82,
+      "meaning": "extruder gear entrance (nip) to nozzle tip | note: tested? source unspecified",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:315 (wiki table)"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 74.84,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip | note: tested? source unspecified",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:316 (wiki table)"
+     },
+     "blade_pos": {
+      "mm": 60.01,
+      "meaning": "internal nozzle tip to cutter blade | note: tested? source unspecified",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:317 (wiki table)"
+     },
+     "retract_length": {
+      "mm": 31.5,
+      "meaning": "retract before cut from internal nozzle tip | note: tested? source unspecified",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:318 (wiki table)"
+     },
+     "pushback_length": {
+      "mm": 29.0,
+      "meaning": "push-back after cut | note: tested? source unspecified",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:319 (wiki table)"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner CW2 Clockwork 2 Revo",
+    "toolhead": "Stealthburner",
+    "extruder": "Clockwork 2",
+    "hotend": "Revo Voron",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 72,
+      "meaning": "extruder gear entrance (nip) to nozzle tip | note: blade_pos 37.5 equals the generic default, treat as unverified; from @moggieuk",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:315 (wiki table)"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 62,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip | note: blade_pos 37.5 equals the generic default, treat as unverified; from @moggieuk",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:316 (wiki table)"
+     },
+     "blade_pos": {
+      "mm": 37.5,
+      "meaning": "internal nozzle tip to cutter blade | note: blade_pos 37.5 equals the generic default, treat as unverified; from @moggieuk",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:317 (wiki table)"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner G2E Galileo 2 (G2E) Rapido/R2",
+    "toolhead": "Stealthburner",
+    "extruder": "Galileo 2",
+    "hotend": "Rapido HF",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 99.38,
+      "meaning": "extruder gear entrance (nip) to nozzle tip | note: no user attribution in table",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:326 (wiki table)"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 79.78,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip | note: no user attribution in table",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:327 (wiki table)"
+     },
+     "blade_pos": {
+      "mm": 61.22,
+      "meaning": "internal nozzle tip to cutter blade | note: no user attribution in table",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:328 (wiki table)"
+     },
+     "retract_length": {
+      "mm": 32.22,
+      "meaning": "retract before cut from internal nozzle tip | note: no user attribution in table",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:329 (wiki table)"
+     },
+     "pushback_length": {
+      "mm": 31.22,
+      "meaning": "push-back after cut | note: no user attribution in table",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:330 (wiki table)"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner G2E Galileo 2 (G2E) Dragon HF",
+    "toolhead": "Stealthburner",
+    "extruder": "Galileo 2",
+    "hotend": "Dragon HF",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 99.5,
+      "meaning": "extruder gear entrance (nip) to nozzle tip | note: from discord user @yogibear2244",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:326 (wiki table)"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 79,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip | note: from discord user @yogibear2244",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:327 (wiki table)"
+     },
+     "blade_pos": {
+      "mm": 59.25,
+      "meaning": "internal nozzle tip to cutter blade | note: from discord user @yogibear2244",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:328 (wiki table)"
+     },
+     "retract_length": {
+      "mm": 36,
+      "meaning": "retract before cut from internal nozzle tip | note: from discord user @yogibear2244",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:329 (wiki table)"
+     },
+     "pushback_length": {
+      "mm": 20,
+      "meaning": "push-back after cut | note: from discord user @yogibear2244",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:330 (wiki table)"
+     }
+    }
+   },
+   {
+    "system": "Happy Hare",
+    "name": "Stealthburner G2E Galileo 2 (G2E) Revo",
+    "toolhead": "Stealthburner",
+    "extruder": "Galileo 2",
+    "hotend": "Revo Voron",
+    "cutter": null,
+    "values": {
+     "toolhead_extruder_to_nozzle": {
+      "mm": 99.18,
+      "meaning": "extruder gear entrance (nip) to nozzle tip | note: taken from CAD, NOT tested; retract/pushback estimated from Rapido",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:326 (wiki table)"
+     },
+     "toolhead_sensor_to_nozzle": {
+      "mm": 79.58,
+      "meaning": "toolhead (post-gear/at-nozzle-side) sensor trigger point to nozzle tip | note: taken from CAD, NOT tested; retract/pushback estimated from Rapido",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:327 (wiki table)"
+     },
+     "blade_pos": {
+      "mm": 61.03,
+      "meaning": "internal nozzle tip to cutter blade | note: taken from CAD, NOT tested; retract/pushback estimated from Rapido",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:328 (wiki table)"
+     },
+     "retract_length": {
+      "mm": 32.03,
+      "meaning": "retract before cut from internal nozzle tip | note: taken from CAD, NOT tested; retract/pushback estimated from Rapido",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:329 (wiki table)"
+     },
+     "pushback_length": {
+      "mm": 31.03,
+      "meaning": "push-back after cut | note: taken from CAD, NOT tested; retract/pushback estimated from Rapido",
+      "source": "https://github.com/moggieuk/Happy-Hare/wiki/Happy-Hare-Parameters.md:330 (wiki table)"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Stealthburner & CW2 / Revo Voron",
+    "toolhead": "Stealthburner",
+    "extruder": "Clockwork 2",
+    "hotend": "Revo Voron",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 52.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip) | doc note: (if `pin_tool_end` is NOT defined) / 29 (if `pin_tool_end` is defined)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L31"
+     },
+     "tool_stn (pin_tool_end defined)": {
+      "mm": 29.0,
+      "meaning": "tool_stn when post-extruder sensor pin_tool_end is defined",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L31"
+     },
+     "tool_stn_unload": {
+      "mm": 62.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L32"
+     },
+     "retract_length": {
+      "mm": 22.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L33"
+     },
+     "pushback_length": {
+      "mm": 20.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L34"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Stealthburner & CW2 / Rapido HF",
+    "toolhead": "Stealthburner",
+    "extruder": "Clockwork 2",
+    "hotend": "Rapido HF",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 64.1,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip) | doc note: (if `pin_tool_end` is NOT defined) / 41.1 (if `pin_tool_end` is defined)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L38"
+     },
+     "tool_stn (pin_tool_end defined)": {
+      "mm": 41.1,
+      "meaning": "tool_stn when post-extruder sensor pin_tool_end is defined",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L38"
+     },
+     "tool_stn_unload": {
+      "mm": 105.9,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L39"
+     },
+     "retract_length": {
+      "mm": 10.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L40"
+     },
+     "pushback_length": {
+      "mm": 10.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L41"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Stealthburner & CW2 / Rapido V2 HF",
+    "toolhead": "Stealthburner",
+    "extruder": "Clockwork 2",
+    "hotend": "Rapido 2 HF",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 74.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip) | doc note: (if `pin_tool_end` is NOT defined) / 52 (if `pin_tool_end` is defined)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L45"
+     },
+     "tool_stn (pin_tool_end defined)": {
+      "mm": 52.0,
+      "meaning": "tool_stn when post-extruder sensor pin_tool_end is defined",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L45"
+     },
+     "tool_stn_unload": {
+      "mm": 71.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L46"
+     },
+     "retract_length": {
+      "mm": 20.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L47"
+     },
+     "pushback_length": {
+      "mm": 10.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L48"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Stealthburner & CW2 / Dragon ACE with UHF  mini holder / 3mm spacer",
+    "toolhead": "Stealthburner",
+    "extruder": "Clockwork 2",
+    "hotend": "Dragon Ace",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 60.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L52"
+     },
+     "tool_stn_unload": {
+      "mm": 106.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L53"
+     },
+     "retract_length": {
+      "mm": 22.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L54"
+     },
+     "pushback_length": {
+      "mm": 20.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L55"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Stealthburner & CW2 / Bambu X1 Hotend",
+    "toolhead": "Stealthburner",
+    "extruder": "Clockwork 2",
+    "hotend": "Bambu",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 55.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L59"
+     },
+     "tool_stn_unload": {
+      "mm": 62.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L60"
+     },
+     "retract_length": {
+      "mm": 25.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L61"
+     },
+     "pushback_length": {
+      "mm": 23.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm) | doc note: `",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L62"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Stealthburner / Other extruders / G2E and Dragon HF",
+    "toolhead": "Stealthburner",
+    "extruder": "Galileo 2",
+    "hotend": "Dragon HF",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 79.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L69"
+     },
+     "tool_stn_unload": {
+      "mm": 100.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L70"
+     },
+     "retract_length": {
+      "mm": 30.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L71"
+     },
+     "pushback_length": {
+      "mm": 25.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L72"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Stealthburner / Other extruders / G2E and Mosquito Magnum",
+    "toolhead": "Stealthburner",
+    "extruder": "Galileo 2",
+    "hotend": "Mosquito Magnum",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 72.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L76"
+     },
+     "tool_stn_unload": {
+      "mm": 68.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L77"
+     },
+     "retract_length": {
+      "mm": 33.4,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L78"
+     },
+     "pushback_length": {
+      "mm": 33.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L79"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Stealthburner / Other extruders / G2E and Revo",
+    "toolhead": "Stealthburner",
+    "extruder": "Galileo 2",
+    "hotend": "Revo Voron",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 73.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip) | doc note: (if `pin_tool_end` is NOT defined) / 40 (if `pin_tool_end` is defined)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L83"
+     },
+     "tool_stn (pin_tool_end defined)": {
+      "mm": 40.0,
+      "meaning": "tool_stn when post-extruder sensor pin_tool_end is defined",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L83"
+     },
+     "tool_stn_unload": {
+      "mm": 119.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L84"
+     },
+     "retract_length": {
+      "mm": 22.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L85"
+     },
+     "pushback_length": {
+      "mm": 21.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L86"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Stealthburner / Other extruders / G2SA and Revo",
+    "toolhead": "Stealthburner",
+    "extruder": "Galileo 2",
+    "hotend": "Revo Voron",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 78.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L90"
+     },
+     "tool_stn_unload": {
+      "mm": 62.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L91"
+     },
+     "retract_length": {
+      "mm": 35.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L92"
+     },
+     "pushback_length": {
+      "mm": 30.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L93"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Stealthburner / Other extruders / LGX and Dragon UHF",
+    "toolhead": "Stealthburner",
+    "extruder": "LGX Lite",
+    "hotend": "Dragon UHF",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 74.5,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L97"
+     },
+     "tool_stn_unload": {
+      "mm": 45.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L98"
+     },
+     "retract_length": {
+      "mm": 33.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L99"
+     },
+     "pushback_length": {
+      "mm": 24.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L100"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Xol-Metrix / WWG2 and Rapido HF",
+    "toolhead": "Xol",
+    "extruder": "WW-G2",
+    "hotend": "Rapido HF",
+    "cutter": "FilamATrix",
+    "values": {
+     "tool_stn": {
+      "mm": 75.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip) | doc note: (without post extruder sensor)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L107"
+     },
+     "tool_stn_unload": {
+      "mm": 30.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L108"
+     },
+     "retract_length": {
+      "mm": 32.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L109"
+     },
+     "pushback_length": {
+      "mm": 27.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L110"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Xol-Metrix / LXG Lite and Rapido V2 HF",
+    "toolhead": "Xol",
+    "extruder": "LGX Lite",
+    "hotend": "Rapido 2 HF",
+    "cutter": "FilamATrix",
+    "values": {
+     "tool_stn": {
+      "mm": 72.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L114"
+     },
+     "tool_stn_unload": {
+      "mm": 54.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L115"
+     },
+     "retract_length": {
+      "mm": 2.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L116"
+     },
+     "pushback_length": {
+      "mm": 0.4,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L117"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Xol-Metrix / Orbiter and Dragon HF",
+    "toolhead": "Xol",
+    "extruder": "Orbiter",
+    "hotend": "Dragon HF",
+    "cutter": "FilamATrix",
+    "values": {
+     "tool_stn": {
+      "mm": 16.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L121"
+     },
+     "tool_stn_unload": {
+      "mm": 70.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L122"
+     },
+     "retract_length": {
+      "mm": 17.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L123"
+     },
+     "pushback_length": {
+      "mm": 15.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L124"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Xol-Metrix / Orbiter 2 and Revo",
+    "toolhead": "Xol",
+    "extruder": "Orbiter 2",
+    "hotend": "Revo Voron",
+    "cutter": "FilamATrix",
+    "values": {
+     "tool_stn": {
+      "mm": 70.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L128"
+     },
+     "tool_stn_unload": {
+      "mm": 110.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L129"
+     },
+     "retract_length": {
+      "mm": 20.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L130"
+     },
+     "pushback_length": {
+      "mm": 0.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L131"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Xol-Metrix / Orbiter 2.5 and Rapido V2 HF",
+    "toolhead": "Xol",
+    "extruder": "Orbiter 2.5",
+    "hotend": "Rapido 2 HF",
+    "cutter": "FilamATrix",
+    "values": {
+     "tool_stn": {
+      "mm": 72.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L135"
+     },
+     "tool_stn_unload": {
+      "mm": 100.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L136"
+     },
+     "retract_length": {
+      "mm": 20.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L137"
+     },
+     "pushback_length": {
+      "mm": 25.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L138"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Xol-Metrix / Sherpa Mini and Rapido HF",
+    "toolhead": "Xol",
+    "extruder": "Sherpa Mini",
+    "hotend": "Rapido HF",
+    "cutter": "FilamATrix",
+    "values": {
+     "tool_stn": {
+      "mm": 40.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L142"
+     },
+     "tool_stn_unload": {
+      "mm": 100.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L143"
+     },
+     "retract_length": {
+      "mm": 5.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L144"
+     },
+     "pushback_length": {
+      "mm": 3.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L145"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Xol-Metrix / Sherpa Mini and Rapido V2 HF",
+    "toolhead": "Xol",
+    "extruder": "Sherpa Mini",
+    "hotend": "Rapido 2 HF",
+    "cutter": "FilamATrix",
+    "values": {
+     "tool_stn": {
+      "mm": 26.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L149"
+     },
+     "tool_stn_unload": {
+      "mm": 100.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L150"
+     },
+     "retract_length": {
+      "mm": 25.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L151"
+     },
+     "pushback_length": {
+      "mm": 5.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L152"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Xol-Metrix / WWG2 and Revo",
+    "toolhead": "Xol",
+    "extruder": "WW-G2",
+    "hotend": "Revo Voron",
+    "cutter": "FilamATrix",
+    "values": {
+     "tool_stn": {
+      "mm": 30.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L156"
+     },
+     "tool_stn_unload": {
+      "mm": 62.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L157"
+     },
+     "retract_length": {
+      "mm": 22.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L158"
+     },
+     "pushback_length": {
+      "mm": 20.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L159"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Dragonburner / Orbiter with Phaetus Next G",
+    "toolhead": "Dragon Burner",
+    "extruder": "Orbiter",
+    "hotend": "Next G",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 75.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L166"
+     },
+     "tool_stn_unload": {
+      "mm": 75.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L167"
+     },
+     "retract_length": {
+      "mm": 15.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L168"
+     },
+     "pushback_length": {
+      "mm": 15.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L169"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Dragonburner / Orbiter with Dragon HF",
+    "toolhead": "Dragon Burner",
+    "extruder": "Orbiter",
+    "hotend": "Dragon HF",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 55.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L173"
+     },
+     "tool_stn_unload": {
+      "mm": 65.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L174"
+     },
+     "retract_length": {
+      "mm": 20.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L175"
+     },
+     "pushback_length": {
+      "mm": 25.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L176"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Dragonburner / Orbiter 2 with Phaetus Conch",
+    "toolhead": "Dragon Burner",
+    "extruder": "Orbiter 2",
+    "hotend": "Conch",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 55.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L180"
+     },
+     "tool_stn_unload": {
+      "mm": 100.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L181"
+     },
+     "retract_length": {
+      "mm": 20.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L182"
+     },
+     "pushback_length": {
+      "mm": 15.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L183"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "VZBot Goliath / Vz-Hextrudort with Goliath",
+    "toolhead": "VzBot",
+    "extruder": "Vz-Hextrudort",
+    "hotend": "Goliath",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 40.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L190"
+     },
+     "tool_stn_unload": {
+      "mm": 60.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L191"
+     },
+     "retract_length": {
+      "mm": 12.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L192"
+     },
+     "pushback_length": {
+      "mm": 5.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L193"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Jabberwocky / Phaetus Conch",
+    "toolhead": "Jabberwocky",
+    "extruder": null,
+    "hotend": "Conch",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 27.23,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L199"
+     },
+     "tool_stn_unload": {
+      "mm": 96.8,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L200"
+     },
+     "retract_length": {
+      "mm": 21.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L201"
+     },
+     "pushback_length": {
+      "mm": 12.45,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L202"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "A4T / WWBMG (dual sensor), CrossBow Cutter, Rapido 2HF",
+    "toolhead": "A4T",
+    "extruder": "WW-BMG",
+    "hotend": "Rapido 2 HF",
+    "cutter": "Crossbow",
+    "values": {
+     "tool_stn": {
+      "mm": 40.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L209"
+     },
+     "tool_stn_unload": {
+      "mm": 65.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L210"
+     },
+     "retract_length": {
+      "mm": 32.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L211"
+     },
+     "pushback_length": {
+      "mm": 27.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L212"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "A4T / WWBMG (dual sensor), CrossBow Cutter, Chube compact",
+    "toolhead": "A4T",
+    "extruder": "WW-BMG",
+    "hotend": "Chube Compact",
+    "cutter": "Crossbow",
+    "values": {
+     "tool_stn": {
+      "mm": 28.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L216"
+     },
+     "tool_stn_unload": {
+      "mm": 60.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L217"
+     },
+     "retract_length": {
+      "mm": 25.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L218"
+     },
+     "pushback_length": {
+      "mm": 23.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L219"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "A4T / WWBMG (dual sensor), CrossBow Cutter, Revo Voron",
+    "toolhead": "A4T",
+    "extruder": "WW-BMG",
+    "hotend": "Revo Voron",
+    "cutter": "Crossbow",
+    "values": {
+     "tool_stn": {
+      "mm": 30.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L223"
+     },
+     "tool_stn_unload": {
+      "mm": 75.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L224"
+     },
+     "retract_length": {
+      "mm": 22.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L225"
+     },
+     "pushback_length": {
+      "mm": 20.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L226"
+     }
+    }
+   },
+   {
+    "system": "AFC",
+    "name": "Custom / Other / Hemera XS with Revo",
+    "toolhead": null,
+    "extruder": null,
+    "hotend": "Revo Voron",
+    "cutter": null,
+    "values": {
+     "tool_stn": {
+      "mm": 22.0,
+      "meaning": "AFC: toolhead sensor (or gear nip if ramming) to top of filament left in hotend after cut/pushback (NOT nozzle tip)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L233"
+     },
+     "tool_stn_unload": {
+      "mm": 0.0,
+      "meaning": "AFC: extruder move to unload after cut until sensor clear / out of gears",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L234"
+     },
+     "retract_length": {
+      "mm": 20.0,
+      "meaning": "AFC_CUT retract before cut (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L235"
+     },
+     "pushback_length": {
+      "mm": 0.0,
+      "meaning": "AFC_CUT pushback of cut stub (mm)",
+      "source": "https://github.com/AFCProject/Documentation/blob/b26c34bf3891e27c11c4c26bd9d7f6ad9a14e32c/docs/initial-startup/06-hotend-values.md#L236"
+     }
+    }
+   }
+  ]
+ },
+ "catalog": {
+  "toolheads": [
+   {
+    "id": "stealthburner",
+    "name": "Voron Stealthburner",
+    "repo": "https://github.com/VoronDesign/Voron-Stealthburner",
+    "license": "GPL-3.0 (GitHub metadata)"
+   },
+   {
+    "id": "dragonburner",
+    "name": "Dragon Burner v8 (chirpy2605)",
+    "repo": "https://github.com/chirpy2605/voron/tree/main/V0/Dragon_Burner",
+    "license": "GPL-3.0 (repo-level, GitHub metadata)"
+   },
+   {
+    "id": "xol",
+    "name": "Xol Toolhead (Armchair Heavy Industries)",
+    "repo": "https://github.com/Armchair-Heavy-Industries/Xol-Toolhead",
+    "license": "CC BY-NC-SA 4.0 (GitHub says NOASSERTION; README states CC BY-NC-SA 4.0; DFA/Sherpa Mini parts under Annex license)"
+   },
+   {
+    "id": "a4t",
+    "name": "A4T (Another 4010 Toolhead, Armchair Heavy Industries / DW-Tas) - NOT Armored Turtle",
+    "repo": "https://github.com/Armchair-Heavy-Industries/A4T",
+    "license": "CC BY-NC-SA 4.0 (GitHub says NOASSERTION)"
+   }
+  ],
+  "cutters": [
+   {
+    "id": "filamatrix",
+    "name": "FilamATrix (thunderkeys)",
+    "repo": "https://github.com/thunderkeys/FilamATrix",
+    "license": "GPL-3.0 (repo LICENSE); last push 2026-04-28"
+   },
+   {
+    "id": "crossbow",
+    "name": "Crossbow CNC filament cutter (DW-Tas)",
+    "repo": "https://github.com/DW-Tas/Crossbow-Filament-Cutter",
+    "license": "CC BY-NC-SA 4.0 (non-commercial applies to selling Crossbow itself, not to using it); last push 2026-10-10"
+   },
+   {
+    "id": "vzbot_magneto",
+    "name": "Magneto Filament Cutter for VzBot printheads (Treintjes)",
+    "repo": "https://github.com/Treintjes/Magneto_Filament_Cutter",
+    "license": "CC BY-NC 4.0 (per README image; no LICENSE file); last push 2025-03-23"
+   },
+   {
+    "id": "a4t_kutter",
+    "name": "A4T-KutteR",
+    "license": "CC BY-NC-SA 4.0 (derivative of Armchair Heavy Industries A4T); last push 2026-09-23 (last commit 2025-06-25)"
+   }
+  ],
+  "hotends": [
+   {
+    "id": "phaetus_dragon_sf_hf",
+    "name": "Phaetus Dragon ST (SF) / HF (incl. Phaetus x Voron edition, TriangleLab Dragon)",
+    "maker": "Phaetus (TriangleLab)",
+    "rank": 1,
+    "mount": "Dragon-style: 4x M2.5 screws on a 16 mm circle into the heatsink (Ø22 flange), Ø12 groove neck for a clamp mount (3.7 mm lug + Ø16 collars), V6 nozzle thread (M6x1.0)",
+    "variants": [
+     {
+      "id": "dragon_hf_phaetus_drawing",
+      "top_to_tip_mm": 62.2,
+      "heatbreak_top_to_tip_mm": 43.51,
+      "block_top_mm": 17.34,
+      "block_bottom_mm": 5.18,
+      "bore": "~2 mm all-metal throat, ~3.8 mm heatbreak ID, Ø4.1 PTFE-tube bore in the top collar; 0.1 mm thin-wall heatbreak (vendor)",
+      "source": "Phaetus Dragon-HF-Wireframes.pdf (62.2 overall, 26.0 fins, Ø22.0/22.3 flange, Ø4.1 top bore); heatbreak top 43.51 / block 5.18-17.34 / heatsink top 45.72 from the FilamATrix SB STEP (given); CAD slice of Phaetus Dragon HF.stp agrees: block 5.3-17.0, heatsink flange top ~45.3 (+-0.5)"
+     },
+     {
+      "id": "dragon_st",
+      "top_to_tip_mm": 62.2,
+      "heatbreak_top_to_tip_mm": 43.51,
+      "block_top_mm": 17.34,
+      "block_bottom_mm": 5.18,
+      "bore": "same as HF",
+      "source": "Phaetus Dragon-ST-Wireframes.pdf and Dragon ST.stp: identical outer dimensions and block extents as HF (CAD section: block 5.3-17.0); retailer listings 22.3x26x62.2 for both; heatbreak top assumed same as HF (not measured separately)"
+     },
+     {
+      "id": "dragon_hf_voron_edition",
+      "top_to_tip_mm": 45.5,
+      "heatbreak_top_to_tip_mm": null,
+      "block_top_mm": null,
+      "block_bottom_mm": null,
+      "bore": "as HF",
+      "source": "Phaetus x Voron HF wireframe (Dragon-Hotend-Voron-Edition-HF.pdf): no top collar, 45.5 from heatsink top to tip, 26.0 fins, 18.5 block/sock height, 19.0 x 26.3 block footprint"
+     }
+    ]
+   },
+   {
+    "id": "e3d_revo_voron",
+    "name": "E3D Revo Voron (RapidChange)",
+    "maker": "E3D",
+    "rank": 2,
+    "mount": "Revo-style: 4x M3 bolts, rigid 16 mm-ish square/round heatsink mount designed for Stealthburner; nozzle is a Revo heater+nozzle cartridge changed cold",
+    "variants": [
+     {
+      "id": "revo_voron_12v_24v",
+      "top_to_tip_mm": 48.8,
+      "heatbreak_top_to_tip_mm": null,
+      "block_top_mm": 14.6,
+      "block_bottom_mm": 2.5,
+      "bore": "2.0 mm metal bore from ~37.5 to ~41 mm; Ø4.1 PTFE bore above ~41.3 mm up to the top (about 7.5 mm of PTFE-tube entry)",
+      "source": "E3D Revo Voron Reference CAD (Printables 713137), horizontal slices every 0.5 mm: overall 48.8 mm; heater core 2.5-14.6 mm (Ø12.9-16.7); heatbreak neck 15-19 mm; heatsink 19.0-48.8 mm"
+     }
+    ]
+   },
+   {
+    "id": "phaetus_rapido_v1",
+    "name": "Phaetus Rapido v1 / Rapido Plus (HF, UHF)",
+    "maker": "Phaetus",
+    "rank": 3,
+    "mount": "Dragon-style 4x M2.5 on 16 mm circle, Ø12 groove neck, V6 nozzle thread, extended plated-copper block under a silicone shroud",
+    "variants": [
+     {
+      "id": "rapido_hf",
+      "top_to_tip_mm": 70.7,
+      "heatbreak_top_to_tip_mm": null,
+      "block_top_mm": 29.6,
+      "block_bottom_mm": 3.7,
+      "bore": "Ti heatbreak; PTFE tube enters top collar",
+      "source": "Phaetus Rapido HF wireframes.pdf: 70.7 overall, 55.3 heatsink top, 27.3 fin stack (26.0 fins), Ø22.5; block/shroud extents from Rapido Hotend HF.stp component bounding boxes (shroud 3.7-29.6 above the nozzle-tip solid, estimated: copper block sits inside)"
+     },
+     {
+      "id": "rapido_uhf",
+      "top_to_tip_mm": 79.2,
+      "heatbreak_top_to_tip_mm": null,
+      "block_top_mm": 36.8,
+      "block_bottom_mm": 4.0,
+      "bore": "as HF",
+      "source": "Phaetus Rapido UHF wireframes.pdf: 79.2 overall, 63.8 heatsink top (62.5 to fin top), Ø22.5; shroud 4.0-36.8 from Rapido Hotend UHF.stp (estimated)"
+     }
+    ]
+   },
+   {
+    "id": "phaetus_rapido_v2",
+    "name": "Phaetus Rapido 2 / 2 Plus / 2F (HF, UHF)",
+    "maker": "Phaetus",
+    "rank": 4,
+    "mount": "Rapido-style Dragon pattern (4x M2.5, 16 mm) like v1; orientation of heatsink matters (SB README)",
+    "variants": [
+     {
+      "id": "rapido2_hf",
+      "top_to_tip_mm": null,
+      "heatbreak_top_to_tip_mm": null,
+      "block_top_mm": null,
+      "block_bottom_mm": null,
+      "bore": "not extracted",
+      "source": "No usable drawing (wireframes are .dwg); STEP is an exploded assembly (parts placed far apart), so no top-to-tip could be derived. Component sizes: nozzle solid 14.1 mm long, block solid 23.4 mm long (includes shroud?)."
+     },
+     {
+      "id": "rapido2_uhf",
+      "top_to_tip_mm": null,
+      "heatbreak_top_to_tip_mm": null,
+      "block_top_mm": null,
+      "block_bottom_mm": null,
+      "bore": "not extracted",
+      "source": "Rapido_2.0_uhf.stp exploded as above; one body 95.8 mm long (heatsink + mounts)."
+     }
+    ]
+   },
+   {
+    "id": "phaetus_dragon_uhf",
+    "name": "Phaetus Dragon UHF (and UHF Mini)",
+    "maker": "Phaetus",
+    "rank": 5,
+    "mount": "Dragon pattern 4x M2.5 on 16 mm, Ø12 groove neck; 22.0 x 24.4 extended block",
+    "variants": [
+     {
+      "id": "dragon_uhf",
+      "top_to_tip_mm": 79.0,
+      "heatbreak_top_to_tip_mm": null,
+      "block_top_mm": 36.5,
+      "block_bottom_mm": 12.5,
+      "bore": "as Dragon",
+      "source": "Phaetus Dragon-UHF-Wireframes.pdf: 79.0 overall, 63.6 heatsink top, 27.1 flange+fins (26.0 fins), block 22.0 x 24.4. Block top = heatsink bottom (63.6-27.1=36.5); block bottom ~12.5 read off the drawing at scale (estimated, +-1.5). The \"revised version\" STEP is 83.2 mm long and inverted, i.e. 4.2 mm longer than the drawing."
+     }
+    ]
+   },
+   {
+    "id": "chube_compact",
+    "name": "Chube Compact (Luke's Laboratory)",
+    "maker": "Luke's Laboratory",
+    "rank": 6,
+    "mount": "4x M3 on a 16 mm bolt circle (Dragon pattern, M3), V6 nozzle interface, Ti Chalice heatbreak, 6x16 (or 15/20) mm cartridge + 3x15 mm PT1000, silicone sock plus metal shield",
+    "variants": [
+     {
+      "id": "chube_compact",
+      "top_to_tip_mm": 47.2,
+      "heatbreak_top_to_tip_mm": 33.0,
+      "block_top_mm": null,
+      "block_bottom_mm": null,
+      "bore": "all-metal Ti Chalice heatbreak (bore not published)",
+      "source": "Fabreeko/West3D listings: 47.2 mm overall incl. nozzle, melt zone 33 mm (read as: top of melt zone 33 mm above tip, same convention as the Chube Air integration drawing where top of meltzone is 42 or 52 mm); block heights not published"
+     }
+    ]
+   },
+   {
+    "id": "mellow_nf_crazy",
+    "name": "Mellow NF-Crazy (Volcano)",
+    "maker": "Mellow",
+    "rank": 7,
+    "mount": "Mosquito-style clamp mount / 2x M3 square nuts; Volcano-size block (slightly more square than Mosquito)",
+    "variants": [
+     {
+      "id": "nf_crazy_volcano",
+      "top_to_tip_mm": null,
+      "heatbreak_top_to_tip_mm": null,
+      "block_top_mm": null,
+      "block_bottom_mm": null,
+      "bore": null,
+      "source": "no datasheet or STEP found; vendor page not indexed"
+     }
+    ]
+   },
+   {
+    "id": "phaetus_dragon_ace",
+    "name": "Phaetus/TriangleLab Dragon Ace (Volcano block)",
+    "maker": "Phaetus / TriangleLab",
+    "rank": 8,
+    "mount": "Dragon-style frame, extra long Volcano-type ceramic heater block, V6 nozzle",
+    "variants": [
+     {
+      "id": "dragon_ace",
+      "top_to_tip_mm": 51.0,
+      "heatbreak_top_to_tip_mm": null,
+      "block_top_mm": 25.9,
+      "block_bottom_mm": 5.1,
+      "bore": "V6 nozzle 0.4 etc.; bore not measured",
+      "source": "Hotend solid \"Dragon_ACE\" (TriangleLab mock-up) inside the SB_Printhead_Dragon_ACE STEP: nozzle tip z=-4.4, block z 0.7-21.5, silicone sock -2.4..22.6, heatsink frame 23.6-46.6, top 46.6; all re-referenced to the tip"
+     }
+    ]
+   },
+   {
+    "id": "bambu_x1c_hotend",
+    "name": "Bambu Lab X1C/P1 hotend (and TriangleLab CHC clones)",
+    "maker": "Bambu Lab",
+    "rank": 9,
+    "mount": "Bambu clip-in assembly (heater plate + nozzle in a 25 x 15.7 x ~20 housing), no V6 thread",
+    "variants": [
+     {
+      "id": "bambu_x1c",
+      "top_to_tip_mm": 44.3,
+      "heatbreak_top_to_tip_mm": null,
+      "block_top_mm": null,
+      "block_bottom_mm": null,
+      "bore": "~1.8 mm metal bore from h~24 to the top, 4.0 mm in the lower section",
+      "source": "Community model Hotend.STEP (Printables 533213): overall 44.3 mm; nozzle to ~17.8; 25 x 15.7 heater+heatsink housing from 17.8 to ~38; 7.5 x 12 neck above. Boundaries between block and heatsink not resolved"
+     }
+    ]
+   },
+   {
+    "id": "trianglelab_tz_v6_2",
+    "name": "TriangleLab TZ-V6-2.0 / E3D V6 (with V6 nozzles)",
+    "maker": "TriangleLab / E3D",
+    "rank": 10,
+    "mount": "V6 groove mount (Ø16/Ø12 groove, 3.7 mm lug) for the E3D V6; TZ-V6-2.0 is a V6-style groove-mount with a plated-copper Volcano-length block",
+    "variants": [
+     {
+      "id": "tz_v6_2_stock_nozzle",
+      "top_to_tip_mm": 62.3,
+      "heatbreak_top_to_tip_mm": 42.1,
+      "block_top_mm": 25.4,
+      "block_bottom_mm": 4.0,
+      "bore": "~2 mm throat; heatbreak Ø4",
+      "source": "FilamATrix TZ V6 2.0 STEP (Printables 1170130), solid tz-v2-hotend extracted: top 62.3; block 4.0-25.4; nozzle 0-10.7; heatbreak (Ø4 solid) 25.4-42.1; heatsink fins 26.6-45.6; collars to 62.3"
+     },
+     {
+      "id": "e3d_v6_community_model",
+      "top_to_tip_mm": 61.66,
+      "heatbreak_top_to_tip_mm": null,
+      "block_top_mm": 17.7,
+      "block_bottom_mm": 5.8,
+      "bore": "2.0 mm all-metal bore to ~29.5, then 4.2 mm PTFE bore to the top",
+      "source": "Community E3D V6 assembly (Printables 51963), slices: nozzle 0-5.8 (hex), block 5.8-17.7 (23 x 16), heatsink Ø22.3 from 19.0 to ~46.5, collars Ø16/Ø12/Ø16 to 61.66. The model comes from the E3D drawing, not an E3D CAD release"
+     }
+    ]
+   },
+   {
+    "id": "phaetus_dragonfly_bmo_bms",
+    "name": "Phaetus Dragonfly BMO / BMS (6- and 7-fin)",
+    "maker": "Phaetus",
+    "rank": 11,
+    "mount": "V6 groove-mount style heatsink with Ø16/Ø12 groove, copper block",
+    "variants": [
+     {
+      "id": "dragonfly_bmo",
+      "top_to_tip_mm": 62.3,
+      "heatbreak_top_to_tip_mm": null,
+      "block_top_mm": 18.3,
+      "block_bottom_mm": 3.5,
+      "bore": "PTFE tube 33.0 mm deep from the top, then metal bore",
+      "source": "Phaetus BMO-Wireframes.pdf: 62.3 overall, 45.6 heatsink top (collar region 16.7), PTFE depth 33.0 (PTFE-lined heatbreak); block 3.5-18.3 read from the drawing at scale (estimated)"
+     },
+     {
+      "id": "dragonfly_bms_7fin",
+      "top_to_tip_mm": 55.1,
+      "heatbreak_top_to_tip_mm": null,
+      "block_top_mm": 19.0,
+      "block_bottom_mm": 6.7,
+      "bore": "not published",
+      "source": "BMS-7 fins STEP component bounding boxes: nozzle solid 0-14.1, block 6.7-19.0, heatsink 24.1-52.5, overall 55.1"
+     }
+    ]
+   },
+   {
+    "id": "slice_mosquito",
+    "name": "Slice Engineering Mosquito / Mosquito Magnum+",
+    "maker": "Slice Engineering",
+    "rank": 12,
+    "mount": "Mosquito clamp mount (own interface), PTFE-less all-metal, quick-release nozzle design",
+    "variants": [
+     {
+      "id": "mosquito_original",
+      "top_to_tip_mm": 47.0,
+      "heatbreak_top_to_tip_mm": null,
+      "block_top_mm": 18.3,
+      "block_bottom_mm": 5.8,
+      "bore": "2.15 mm all-metal bore, 4.1 mm top bore",
+      "source": "Slice STEP mosquito_model_to_publish.STEP slices: overall 47.0; nozzle 0-5.8; block 5.8-18.3 (width 23-27 incl. cartridges); heatbreak/thread 18.5-21.8; heatsink 21.8-47.0 (Slice says 41 mm for Magnum in its comparison table, that figure was not checked)"
+     },
+     {
+      "id": "mosquito_magnum_plus",
+      "top_to_tip_mm": 66.0,
+      "heatbreak_top_to_tip_mm": null,
+      "block_top_mm": null,
+      "block_bottom_mm": null,
+      "bore": "3.4 mm bore in the upper body (not fully resolved)",
+      "source": "Magnum+ LOW-FI STEP slices: overall 66.0 incl. top collar; wide 20-25 mm body 8-37; not resolved further"
+     }
+    ]
+   }
+  ]
+ }
+}

@@ -121,6 +121,11 @@ Per-printer values the toolchange macros read. Sample defaults, from
 The four unload-related variables and the three temperature variables have those
 defaults when the line is missing, so an older config keeps working.
 
+The sample's toolhead values suit one printer. For starting values measured
+in your toolhead's CAD (`retract_length`, `extrusion_unload_length`,
+`extrusion_reload_length`), see the [toolhead database](../../toolheads/README.md):
+`python3 tools/toolhead_defaults.py list`.
+
 ## `[mfrc522 <name>]`
 
 One driver owns both readers on one software-SPI bus; needs mainboard firmware
