@@ -69,7 +69,10 @@ it stops the follower, `PAUSE`, and raises a G-code error, so an SD print ends
 through `on_error_gcode` instead of continuing without filament.
 
 Point the slicer at these names: set its toolchange G-code to `T` and the tool
-index. Test with a two-color print before trusting a long one.
+index. Its own multi-material moves (ramming, cooling moves, parking, loading,
+toolchange retracts) have to be off: [slicer/](../../slicer/README.md) has
+OrcaSlicer profiles and the settings for OrcaSlicer and PrusaSlicer. Test with a
+two-color print before trusting a long one.
 
 For more than four tools, add a group for each and uncomment the matching
 `T<n>` macro at the bottom of `oams_macros.cfg`:
