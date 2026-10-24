@@ -24,7 +24,7 @@ is the step-by-step installation.
 
 ## The board
 
-![Cortex Bridge Rev A4, component side](../images/cortex-bridge-a4-top.png)
+![Cortex Bridge Rev A4, component side](../images/cortex-bridge-a4-photo.jpg)
 
 Component side. USB-C (J1) is on the left edge, with the green PWR IN terminal
 (P1) below it. The BUFFER connector (CN1) is on the right edge. The small white
@@ -36,9 +36,9 @@ are not used during installation.
 Underside. The **REV A4** marking identifies the board revision, and the
 **24V − +** marking sits next to the power terminal.
 
-Both pictures are renders of the standard assembly, not photographs. The
-**10BASE-T** outline on the top silkscreen is an Ethernet option that is not
-fitted; its pads are empty on a standard board.
+The component side is a photograph of a standard board; the underside is a
+render. The **10BASE-T** outline on the top silkscreen is an Ethernet option
+that is not fitted; its pads are empty on a standard board.
 
 ## Connectors
 

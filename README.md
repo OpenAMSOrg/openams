@@ -5,7 +5,7 @@ printer: automatic filament changes from your slicer's `T0`, `T1`, ... tools,
 runout reload from a spare spool, spool tracking with Spoolman, and a panel in
 Mainsail.
 
-![The Cortex Bridge, Rev A4](docs/images/cortex-bridge-a4-top.png)
+![The Cortex Bridge, Rev A4](docs/images/cortex-bridge-a4-photo.jpg)
 
 ## Pick your hardware
 
