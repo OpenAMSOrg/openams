@@ -133,7 +133,26 @@ class FakeServer(object):
         return self.database if name == "database" else default
 
     def get_event_loop(self):
-        return asyncio.get_event_loop()
+        return MoonrakerEventLoop(asyncio.get_event_loop())
+
+
+class MoonrakerEventLoop(object):
+    """What Moonraker's get_event_loop() returns: its own EventLoop
+    (moonraker/eventloop.py), not asyncio's. It runs blocking work with
+    run_in_thread and has no run_in_executor, so a component calling that
+    fails here as it does in Moonraker."""
+
+    def __init__(self, aioloop):
+        self.aioloop = aioloop
+
+    def create_task(self, coro):
+        return self.aioloop.create_task(coro)
+
+    def delay_callback(self, delay, callback, *args):
+        return self.aioloop.call_later(delay, callback, *args)
+
+    def run_in_thread(self, callback, *args):
+        return self.aioloop.run_in_executor(None, callback, *args)
 
 
 class FakeConfig(object):
@@ -251,15 +270,15 @@ class IndexTests(TaglibTestCase):
         self.assertEqual(self.call("colors", material="Nope"),
                          {"material": "Nope", "colors": []})
 
-    def test_indexing_runs_in_an_executor(self):
+    def test_indexing_runs_in_a_thread(self):
         called = []
-        original = self.loop.run_in_executor
+        original = MoonrakerEventLoop.run_in_thread
 
-        def spy(executor, func, *args):
+        def spy(loop, func, *args):
             called.append(func)
-            return original(executor, func, *args)
+            return original(loop, func, *args)
 
-        with mock.patch.object(self.loop, "run_in_executor", spy):
+        with mock.patch.object(MoonrakerEventLoop, "run_in_thread", spy):
             self.make()
         self.assertIn(library.scan, called)
 

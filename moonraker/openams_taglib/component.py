@@ -124,12 +124,11 @@ class OpenAmsTaglib(object):
         return self._task is not None and not self._task.done()
 
     async def _index(self):
-        head = await self.eventloop.run_in_executor(
-            None, library.read_head, self.path)
-        entries, skipped = await self.eventloop.run_in_executor(
-            None, library.scan, self.path)
-        revision = await self.eventloop.run_in_executor(
-            None, library.revision, self.path)
+        # Moonraker's EventLoop runs blocking work with run_in_thread; it has
+        # no run_in_executor of its own.
+        head = await self.eventloop.run_in_thread(library.read_head, self.path)
+        entries, skipped = await self.eventloop.run_in_thread(library.scan, self.path)
+        revision = await self.eventloop.run_in_thread(library.revision, self.path)
         self.library.load(entries, skipped, revision)
         self._head = head
         self.library.state = "ready"
