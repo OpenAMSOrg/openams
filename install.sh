@@ -40,7 +40,7 @@ if [ ! -d "${MOONRAKER_CONFIG_DIR}" ]; then
     MOONRAKER_CONFIG_DIR="${HOME}/klipper_config"
 fi
 
-usage(){ echo "Usage: $0 [-k <klipper path>] [-s <klipper service name>] [-c <configuration path>] [-r <gco-routines checkout>] [-u] [--with-mcu-addon] [--skip-gco-routines | --require-gco-routines] [--with-klipper-patches | --remove-klipper-patches] [--spoolman-url <url> | --no-spoolman] [--cortex-bridge | --no-cortex-bridge] [--mainsail-panel]" 1>&2; exit 1; }
+usage(){ echo "Usage: $0 [-k <klipper path>] [-s <klipper service name>] [-c <configuration path>] [-r <gco-routines checkout>] [-u] [--with-mcu-addon] [--skip-gco-routines | --require-gco-routines] [--with-klipper-patches | --remove-klipper-patches] [--spoolman-url <url> | --no-spoolman] [--cortex-bridge | --no-cortex-bridge] [--no-taglib-download] [--mainsail-panel]" 1>&2; exit 1; }
 # Parse command line arguments. The one long option is pulled out first so
 # getopts never sees it, then the short options are parsed as before.
 SHORT_ARGS=()
@@ -65,6 +65,7 @@ for arg in "$@"; do
         --cortex-bridge) CORTEX_BRIDGE_ON=1;;
         --no-cortex-bridge) CORTEX_BRIDGE_OFF=1;;
         --mainsail-panel) MAINSAIL_PANEL=1;;
+        --no-taglib-download) NO_TAGLIB_DOWNLOAD=1;;
         -h|--help) usage;;
         *) SHORT_ARGS+=("$arg");;
     esac
@@ -212,42 +213,49 @@ link_extension()
     echo "[OK]"
 }
 
-# Link the openams_spoolman Moonraker component into a Moonraker checkout
-# (C4 §1, §6-§8). Skipped, with a message, when no Moonraker checkout is
-# found at MOONRAKER_PATH; does not touch moonraker.conf (a separate task).
+# Link the openams_spoolman (C4 §1, §6-§8) and openams_taglib Moonraker
+# components into a Moonraker checkout. Skipped, with a message, when no
+# Moonraker checkout is found at MOONRAKER_PATH; moonraker.conf is left to
+# configure_spoolman and configure_taglib.
 link_moonraker_component()
 {
     if [ ! -d "${MOONRAKER_PATH}/moonraker/components" ]; then
-        echo "No Moonraker checkout found at \"${MOONRAKER_PATH}\"; skipping the openams_spoolman component link."
+        echo "No Moonraker checkout found at \"${MOONRAKER_PATH}\"; skipping the openams_spoolman and openams_taglib component links."
         return 0
     fi
-    echo -n "Linking the openams_spoolman Moonraker component... "
-    # Moonraker loads components only when it starts: a link that is new or
-    # points somewhere else needs a restart, even when moonraker.conf already
-    # has [openams_spoolman] and no other step restarts it.
-    if [ "$(readlink "${MOONRAKER_PATH}/moonraker/components/openams_spoolman" 2>/dev/null)" != \
-            "${SCRIPT_DIR}/moonraker/openams_spoolman" ]; then
-        MOONRAKER_COMPONENT_CHANGED=1
-    fi
-    ln -sfn "${SCRIPT_DIR}/moonraker/openams_spoolman" "${MOONRAKER_PATH}/moonraker/components/openams_spoolman"
-    # Keep Moonraker's own checkout clean for its update manager: the link is
-    # an untracked file there.
-    local exclude="${MOONRAKER_PATH}/.git/info/exclude"
-    if [ -d "${MOONRAKER_PATH}/.git/info" ] && \
-            ! grep -qx "moonraker/components/openams_spoolman" "${exclude}" 2>/dev/null; then
-        echo "moonraker/components/openams_spoolman" >> "${exclude}"
-    fi
-    echo "[OK]"
+    local name
+    for name in openams_spoolman openams_taglib; do
+        echo -n "Linking the ${name} Moonraker component... "
+        # Moonraker loads components only when it starts: a link that is new or
+        # points somewhere else needs a restart, even when moonraker.conf
+        # already has [${name}] and no other step restarts it.
+        if [ "$(readlink "${MOONRAKER_PATH}/moonraker/components/${name}" 2>/dev/null)" != \
+                "${SCRIPT_DIR}/moonraker/${name}" ]; then
+            MOONRAKER_COMPONENT_CHANGED=1
+        fi
+        ln -sfn "${SCRIPT_DIR}/moonraker/${name}" "${MOONRAKER_PATH}/moonraker/components/${name}"
+        # Keep Moonraker's own checkout clean for its update manager: the link
+        # is an untracked file there.
+        local exclude="${MOONRAKER_PATH}/.git/info/exclude"
+        if [ -d "${MOONRAKER_PATH}/.git/info" ] && \
+                ! grep -qx "moonraker/components/${name}" "${exclude}" 2>/dev/null; then
+            echo "moonraker/components/${name}" >> "${exclude}"
+        fi
+        echo "[OK]"
+    done
 }
 
-# Remove the component link made by link_moonraker_component (uninstall).
+# Remove the component links made by link_moonraker_component (uninstall).
 unlink_moonraker_component()
 {
-    local link="${MOONRAKER_PATH}/moonraker/components/openams_spoolman"
-    if [ -L "${link}" ]; then
-        rm -f "${link}"
-        echo "Removed the openams_spoolman Moonraker component link."
-    fi
+    local name link
+    for name in openams_spoolman openams_taglib; do
+        link="${MOONRAKER_PATH}/moonraker/components/${name}"
+        if [ -L "${link}" ]; then
+            rm -f "${link}"
+            echo "Removed the ${name} Moonraker component link."
+        fi
+    done
 }
 
 # Link OpenAMS helper scripts to Klipper
@@ -739,6 +747,129 @@ remove_spoolman_section()
     echo "Spoolman, its data and the [spoolman] section of moonraker.conf were left in place; remove them yourself if you no longer want Spoolman."
 }
 
+# The tag library's checkout and its update manager entry (the name Mainsail
+# and Fluidd show).
+TAGLIB_URL="https://github.com/queengooborg/Bambu-Lab-RFID-Library.git"
+TAGLIB_UPDATER="Bambu-Lab-RFID-Library"
+
+# Print an option of moonraker.conf's [openams_taglib] section (empty when the
+# section or the option is missing).
+moonraker_taglib_option()
+{
+    local cfg="${MOONRAKER_CONFIG_DIR}/moonraker.conf"
+    [ -f "$cfg" ] || return 0
+    awk -v key="$1" '
+        /^\[/ { in_s = ($0 ~ /^\[openams_taglib\][ \t]*$/); next }
+        in_s && $0 ~ "^" key "[ \t]*[:=]" {
+            sub("^" key "[ \t]*[:=][ \t]*", ""); sub(/[ \t]+$/, ""); print; exit
+        }
+    ' "$cfg"
+}
+
+# Write [openams_taglib] into moonraker.conf when missing, download the
+# library when it is not there, and, once the checkout exists, add it to
+# Moonraker's update manager. The restart is left to the end of the install
+# (MOONRAKER_COMPONENT_CHANGED).
+configure_taglib()
+{
+    echo -n "Configuring the tag library in moonraker.conf... "
+    local cfg="${MOONRAKER_CONFIG_DIR}/moonraker.conf"
+    if [ ! -f "$cfg" ]; then
+        echo "[SKIPPED] moonraker.conf not found."
+        return 0
+    fi
+    if [ ! -e "${MOONRAKER_PATH}/moonraker/components/openams_taglib" ]; then
+        echo "[WARNING] the openams_taglib component is not linked into Moonraker (no checkout at \"${MOONRAKER_PATH}\"); not adding [openams_taglib]."
+        return 0
+    fi
+    if moonraker_has_section openams_taglib; then
+        echo "already configured [SKIPPED]"
+    else
+        { echo ""; echo "[openams_taglib]"; } >> "$cfg" || {
+            echo "[ERROR] Could not write moonraker.conf." >&2
+            return 1
+        }
+        MOONRAKER_COMPONENT_CHANGED=1
+        echo "[OK]"
+    fi
+
+    local path url
+    path="$(moonraker_taglib_option path)"
+    path="${path:-${OPENAMS_TAGLIB_PATH:-${HOME}/Bambu-Lab-RFID-Library}}"
+    case "$path" in
+        "~") path="$HOME";;
+        "~/"*) path="${HOME}/${path#"~/"}";;
+    esac
+    url="$(moonraker_taglib_option url)"
+    url="${url:-$TAGLIB_URL}"
+
+    if [ ! -d "$path" ] && [ "${NO_TAGLIB_DOWNLOAD:-0}" != "1" ]; then
+        echo -n "Downloading the tag library to \"${path}\" (about 200 MB)... "
+        if git clone --quiet --depth 1 "$url" "$path" >/dev/null 2>&1; then
+            echo "[OK]"
+        else
+            echo "[WARNING] could not download it; the display will try on first use. Run the installer again once the printer is online to add it to the update manager."
+        fi
+    fi
+    # Moonraker refuses an update_manager section whose path does not exist.
+    [ -d "$path" ] || return 0
+    if moonraker_has_section "update_manager ${TAGLIB_UPDATER}"; then
+        return 0
+    fi
+    echo -n "Adding the tag library to Moonraker's update manager... "
+    {
+        echo ""
+        echo "[update_manager ${TAGLIB_UPDATER}]"
+        echo "type: git_repo"
+        echo "path: ${path}"
+        echo "origin: ${url}"
+        echo "primary_branch: main"
+        echo "is_system_service: False"
+    } >> "$cfg" || {
+        echo "[ERROR] Could not write moonraker.conf." >&2
+        return 1
+    }
+    MOONRAKER_COMPONENT_CHANGED=1
+    echo "[OK]"
+}
+
+# Remove one section from moonraker.conf; true when it was there.
+remove_moonraker_section()
+{
+    local cfg="${MOONRAKER_CONFIG_DIR}/moonraker.conf" tmp_cfg
+    moonraker_has_section "$1" || return 1
+    tmp_cfg="$(mktemp)"
+    awk -v name="[$1]" '
+        { line = $0; sub(/[ \t]+$/, "", line) }
+        line == name { skip=1; next }
+        /^\[/ { skip=0 }
+        !skip { print }
+    ' "$cfg" > "$tmp_cfg" || { rm -f "$tmp_cfg"; return 1; }
+    cat "$tmp_cfg" > "$cfg"
+    rm -f "$tmp_cfg"
+}
+
+# Uninstall: remove only [openams_taglib] and the library's update manager
+# entry. The downloaded library (~/Bambu-Lab-RFID-Library by default) stays.
+remove_taglib_section()
+{
+    echo -n "Removing [openams_taglib] from moonraker.conf... "
+    local cfg="${MOONRAKER_CONFIG_DIR}/moonraker.conf" removed=0
+    if [ ! -f "$cfg" ]; then
+        echo "[SKIPPED] moonraker.conf not found."
+        return 0
+    fi
+    remove_moonraker_section "update_manager ${TAGLIB_UPDATER}" && removed=1
+    remove_moonraker_section openams_taglib && removed=1
+    if [ "$removed" = "1" ]; then
+        echo "[OK]"
+        restart_moonraker
+        echo "The tag library checkout was left in place; remove it yourself if you no longer want it."
+    else
+        echo "not present [SKIPPED]"
+    fi
+}
+
 # Migrate [update_manager openams] from klipper_openams to openams.
 # Rewrites the section in place when its path or origin still references the
 # old klipper_openams repository.  Idempotent: if the section already has the
@@ -1175,6 +1306,7 @@ if [[ -z "${UNINSTALL:-}" ]]; then
     add_printer_includes
     configure_cortex_bridge_units
     configure_spoolman
+    configure_taglib
     if [ "${MAINSAIL_PANEL:-0}" = "1" ]; then
         install_mainsail_panel
     fi
@@ -1192,6 +1324,7 @@ else
     remove_printer_includes
     remove_updater
     remove_spoolman_section
+    remove_taglib_section
     remove_mainsail_panel
 fi
 KLIPPER_STOPPED=0

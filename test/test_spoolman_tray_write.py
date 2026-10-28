@@ -359,6 +359,49 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(len(h.writes()), 2)
         self.assertIn("MIN=220 MAX=240", h.writes()[1])
 
+    def test_a_web_edit_reaches_the_unit_through_the_linked_refresh(self):
+        h = Harness()
+        spool = h.spool(material="PLA", color_hex="FF0000", temp=210)
+        h.linked(spool)
+        tag = echo_of({"code": "GFL99", "material": "PLA",
+                       "color_rgba": 0xFF0000FF, "nozzle_min_c": 200,
+                       "nozzle_max_c": 220}, 5.0)
+        h.send([bay(tag=tag, spool_id=spool)])
+        self.assertEqual(len(h.writes()), 1)
+        h.patch_filament(spool, color_hex="00FF00")
+        # The periodic re-read of the linked spools (C4 §6) comes well before
+        # the sync's own 60 s one.
+        self.assertTrue(run(h.linker.refresh_linked()))
+        h.send([bay(tag=tag, spool_id=spool)])
+        h.clock.advance(tray.DEBOUNCE_SECONDS + 0.1)
+        h.send([bay(tag=tag, spool_id=spool)])
+        self.assertEqual(len(h.writes()), 2)
+        self.assertIn("COLOR=00FF00FF", h.writes()[1])
+
+    def test_the_units_echo_of_a_write_keeps_a_spool_of_another_vendor(self):
+        h = Harness()
+        spool = h.spool(material="PLA", color_hex="FF0000", vendor="Polymaker")
+        h.linked(spool, tag=summary_tag(manufacturer=None, code=None,
+                                        material="PLA", color_argb=None))
+        written = h.writes()
+        self.assertEqual(len(written), 1)
+        # The unit reports what it was given; GFL99 names Bambu.
+        echo = echo_of({"code": "GFL99", "material": "PLA",
+                        "color_rgba": 0xFF0000FF, "nozzle_min_c": 190,
+                        "nozzle_max_c": 230}, 9.0)
+        before = len(h.api.spools)
+        h.send([bay(tag=echo, spool_id=spool, link_source="manual")])
+        self.assertEqual(h.entry()["spool_id"], spool)
+        self.assertEqual(h.entry()["spool"]["vendor"], "Polymaker")
+        self.assertEqual(len(h.api.spools), before)
+        # Nor does the unit's own read of a Bambu code, later and unwritten.
+        other = summary_tag(code="GFA00", material="PLA",
+                            color_argb=0xFFFF0000, read_at=11.0)
+        h.send([bay(tag=other, spool_id=spool, link_source="manual")])
+        self.assertEqual(h.entry()["spool_id"], spool)
+        self.assertEqual(h.entry()["spool"]["vendor"], "Polymaker")
+        self.assertEqual(len(h.api.spools), before)
+
     def test_a_re_link_writes_the_new_spool(self):
         h = Harness()
         first = h.spool(material="PLA", color_hex="FF0000")
@@ -576,7 +619,7 @@ class ComponentTests(unittest.IsolatedAsyncioTestCase):
                           if g.startswith("OAMSM_SET_TRAY_INFO")])
 
     async def test_timed_passes_are_one_timer(self):
-        h = T.Harness()
+        h = T.Harness(options={"refresh_interval": "0"})   # no refresh timer
         await h.init()
         loop = h.server.get_event_loop()
         h.component._wake(30.0)

@@ -28,6 +28,7 @@ import time
 from aiohttp import WSMsgType, web
 
 from .spoolman import Spoolman, api, edit, ops
+from .taglib import Taglib
 
 # The keys of the status object's ``spool`` (C4 §8); the summary also carries
 # working values the component keeps to itself.
@@ -102,7 +103,7 @@ class MockMoonraker(object):
     """Replays a `fixtures.Fixture` over `/websocket`."""
 
     def __init__(self, fixture, host="127.0.0.1", port=7125, speed=1.0,
-                 loop=False, record_path=None, gcode_mode="ok"):
+                 loop=False, record_path=None, gcode_mode="ok", taglib=None):
         self.fixture = fixture
         self.host = host
         self.port = port
@@ -136,6 +137,11 @@ class MockMoonraker(object):
 
         self.app = web.Application()
         self.app.router.add_get("/websocket", self._websocket)
+        # The tag library service (`--taglib <path>`): plain HTTP routes.
+        self.taglib = Taglib(taglib) if taglib else None
+        if self.taglib is not None:
+            self.taglib.index()
+            self.taglib.add_routes(self.app.router)
 
     # -- public API ------------------------------------------------------
 

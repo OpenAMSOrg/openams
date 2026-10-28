@@ -177,6 +177,41 @@ snapshot, the validated groups and the live lane state, then a last line reading
 - The dryer and fault commands exist only where the firmware advertises them,
   and refuse otherwise.
 
+### Spoolman has the last word
+
+Spoolman is the authority on your spools. A Bambu tag (a genuine one, or a
+clone written onto another brand's spool) only says what the spool was when the
+tag was made; OpenAMS uses it to find the spool in Spoolman or, if there is
+none, to create one. It never changes a spool Spoolman already has.
+
+- **A UID you put on a spool wins.** To pin a tag to your own spool, add the
+  tag's UID to that spool's `Card UIDs` extra field in Spoolman. That spool is
+  used even when another spool has the same Bambu tray UID (clones of one tag
+  dump all share it, and so does a spool OpenAMS created from an earlier read).
+  The tray UID is only the fallback, and it is what lets both tags of one
+  genuine spool find the same spool.
+- **Your edits show.** Change a spool, its filament, or the filament's vendor,
+  color or material in Spoolman's own web page, or in the spool editor. The
+  editor shows at once; Spoolman's page is re-read about once a minute while
+  any bay is linked, and the display, the bay's temperature and the slicer's
+  filament list follow without the tag being read again.
+- **New spools get a vendor you choose.** A spool OpenAMS creates from a Bambu
+  tag is filed under the vendor `Bambu Lab`. To file them under another vendor,
+  set it in `moonraker.conf`:
+
+  ```
+  [openams_spoolman]
+  tag_vendor: My Filaments
+  refresh_interval: 60
+  ```
+
+  `tag_vendor` (default `Bambu Lab`) is used for the vendor, the filament lookup
+  and the new spool, and for a Bambu code a unit decoded itself. `refresh_interval`
+  (default 60 seconds; 0 turns the re-read off; at least 10 otherwise) is how
+  often the linked spools are re-read, one request to Spoolman each time. A
+  value that does not parse is logged and the default is used. Restart Moonraker
+  after changing either.
+
 ### Units that read their own tags
 
 Some units read and decode their spools' tags themselves, instead of exposing a
@@ -197,14 +232,18 @@ same.
 - **How it links to Spoolman.** Without a UID, OpenAMS never guesses between
   look-alike spools:
   1. If the bay is already linked to a spool whose material and color match the
-     summary (and whose vendor is Bambu Lab, for a Bambu code), the link stays.
+     summary, the link stays, whatever the spool's vendor: a Bambu code does
+     not turn a spool you filed under another brand into a different spool.
   2. Otherwise it looks for Spoolman spools with the same material and color
-     that are not archived and not linked to another bay. If there is exactly
-     one, it links it. A spool whose location is already this bay wins over
-     others.
+     that are not archived and not linked to another bay (for a Bambu code,
+     filed under Bambu Lab or your `tag_vendor`). If there is exactly one, it
+     links it. A spool whose location is already this bay wins over others,
+     whatever its vendor, and so does the spool this bay was linked to for the
+     same summary before.
   3. If several match, the bay stays unlinked and the spools are offered as
      suggestions: pick one with Assign spool (or `OAMSM_SET_BAY_SPOOL`).
-  4. If none match and `auto_create_spoolman_spools` is on, it creates the vendor,
+  4. If none match and `auto_create_spoolman_spools` is on, it creates the vendor
+     (Bambu Lab for a Bambu code, or your `tag_vendor`; Generic otherwise),
      filament and spool, links it, and asks you to confirm how full the new spool
      is (it starts at the filament's default weight, 1000 g if none). With
      creation off, assign a spool by hand.

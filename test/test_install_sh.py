@@ -14,6 +14,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = ROOT / "install.sh"
 GCO_URL = "https://github.com/OpenAMSOrg/gco-routines.git"
+TAGLIB_URL = "https://github.com/queengooborg/Bambu-Lab-RFID-Library.git"
 
 KLIPPER_KCONFIG = "# upstream Kconfig\nmenu \"General\"\nendmenu\n"
 KLIPPER_MAKEFILE = "# upstream Makefile\nall:\n\techo hello\n"
@@ -48,20 +49,26 @@ class InstallShTests(unittest.TestCase):
         self._build_moonraker()
         self._build_config()
         self.gitconfig = self.root / "gitconfig"
+        self.taglib_remote = self.root / "taglib-remote"
+        self.taglib = self.root / "taglib"
         self.gitconfig.write_text(
             '[user]\nname = Installer Test\nemail = installer@example.invalid\n'
-            '[url "file://%s"]\ninsteadOf = %s\n' % (self.remote, GCO_URL))
+            '[url "file://%s"]\ninsteadOf = %s\n'
+            '[url "file://%s"]\ninsteadOf = %s\n'
+            % (self.remote, GCO_URL, self.taglib_remote, TAGLIB_URL))
         self.env = dict(
             os.environ,
             OPENAMS_NO_SERVICE="1",
             OPENAMS_SPOOLMAN_INFO_URL="file:///nonexistent/openams-spoolman",
             MOONRAKER_PATH=str(self.moonraker),
+            OPENAMS_TAGLIB_PATH=str(self.taglib),
             GIT_CONFIG_GLOBAL=str(self.gitconfig),
             GIT_CONFIG_NOSYSTEM="1",
             GIT_TERMINAL_PROMPT="0",
             GIT_ALLOW_PROTOCOL="file",
         )
         self._build_gco_remote()
+        self._build_taglib_remote()
 
     def _build_klipper(self):
         (self.klipper / "klippy/extras").mkdir(parents=True)
@@ -88,6 +95,13 @@ class InstallShTests(unittest.TestCase):
         self.run_cmd("git", "init", "-b", "main", str(self.remote))
         self.run_cmd("git", "-C", str(self.remote), "add", ".")
         self.run_cmd("git", "-C", str(self.remote), "commit", "-m", "fixture")
+
+    def _build_taglib_remote(self):
+        (self.taglib_remote / "Bambu Lab").mkdir(parents=True)
+        (self.taglib_remote / "Bambu Lab/README").write_text("fixture\n")
+        self.run_cmd("git", "init", "-b", "main", str(self.taglib_remote))
+        self.run_cmd("git", "-C", str(self.taglib_remote), "add", ".")
+        self.run_cmd("git", "-C", str(self.taglib_remote), "commit", "-m", "fixture")
 
     def run_cmd(self, *args, **kwargs):
         return subprocess.run(args, env=self.env, text=True, capture_output=True,
@@ -122,6 +136,8 @@ class InstallShTests(unittest.TestCase):
             self.assertTrue((self.klipper / "scripts" / name).is_symlink(), name)
         component = self.moonraker / "moonraker/components/openams_spoolman"
         self.assertEqual(component.resolve(), (ROOT / "moonraker/openams_spoolman").resolve())
+        taglib = self.moonraker / "moonraker/components/openams_taglib"
+        self.assertEqual(taglib.resolve(), (ROOT / "moonraker/openams_taglib").resolve())
 
     def test_no_service_action_is_taken(self):
         """OPENAMS_NO_SERVICE=1 reports each service action and runs none."""
@@ -158,6 +174,101 @@ class InstallShTests(unittest.TestCase):
         result = self.install()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("systemctl restart moonraker", result.stdout)
+
+    def test_taglib_section_is_added_once(self):
+        """[openams_taglib] goes into moonraker.conf only when absent."""
+        self.configured_moonraker()
+        self.assertEqual(self.install().returncode, 0)
+        conf = (self.config / "moonraker.conf").read_text()
+        self.assertEqual(conf.count("[openams_taglib]"), 1)
+        self.assertEqual(self.install().returncode, 0)
+        self.assertEqual((self.config / "moonraker.conf").read_text(), conf)
+
+    def test_uninstall_removes_the_taglib_link_and_section(self):
+        """-u removes the openams_taglib link and section, and only those."""
+        self.configured_moonraker()
+        self.assertEqual(self.install().returncode, 0)
+        result = self.install("-u")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        conf = (self.config / "moonraker.conf").read_text()
+        self.assertNotIn("[openams_taglib]", conf)
+        self.assertIn("[spoolman]", conf)
+        components = self.moonraker / "moonraker/components"
+        self.assertFalse((components / "openams_taglib").exists())
+        self.assertFalse((components / "openams_spoolman").exists())
+
+    UPDATER = "[update_manager Bambu-Lab-RFID-Library]"
+
+    def conf_text(self):
+        return (self.config / "moonraker.conf").read_text()
+
+    def test_taglib_is_downloaded_and_added_to_the_update_manager(self):
+        """A missing library is cloned, then its update manager entry is added."""
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.taglib / ".git").is_dir())
+        self.assertIn("about 200 MB", result.stdout)
+        conf = self.conf_text()
+        self.assertEqual(conf.count(self.UPDATER), 1)
+        self.assertIn(
+            "%s\ntype: git_repo\npath: %s\n"
+            "origin: https://github.com/queengooborg/Bambu-Lab-RFID-Library.git\n"
+            "primary_branch: main\nis_system_service: False\n"
+            % (self.UPDATER, self.taglib), conf)
+
+    def test_taglib_path_option_is_the_checkout(self):
+        """path: in [openams_taglib] names the checkout, ~ expanded."""
+        (self.config / "moonraker.conf").write_text(
+            "[server]\n\n[openams_taglib]\npath: %s\n" % self.taglib)
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.taglib / ".git").is_dir())
+        self.assertIn("path: %s\n" % self.taglib, self.conf_text())
+
+    def test_an_existing_checkout_is_not_cloned_again(self):
+        self.taglib.mkdir()
+        (self.taglib / "mine").write_text("x")
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.taglib / ".git").exists())
+        self.assertIn(self.UPDATER, self.conf_text())
+
+    def test_no_taglib_download_adds_no_update_manager_entry(self):
+        result = self.install("--no-taglib-download")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.taglib.exists())
+        self.assertNotIn(self.UPDATER, self.conf_text())
+        self.assertIn("[openams_taglib]", self.conf_text())
+
+    def test_a_failed_taglib_download_is_only_a_warning(self):
+        shutil.rmtree(self.taglib_remote)
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("[WARNING] could not download it", result.stdout)
+        self.assertFalse(self.taglib.exists())
+        self.assertNotIn(self.UPDATER, self.conf_text())
+        # online again: the next run downloads it and adds the entry
+        self._build_taglib_remote()
+        self.assertEqual(self.install().returncode, 0)
+        self.assertEqual(self.conf_text().count(self.UPDATER), 1)
+
+    def test_taglib_update_manager_entry_is_added_once(self):
+        self.assertEqual(self.install().returncode, 0)
+        first = self.conf_text()
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.conf_text(), first)
+        self.assertNotIn("systemctl restart moonraker", result.stdout)
+
+    def test_uninstall_removes_the_update_manager_entry_and_keeps_the_checkout(self):
+        self.assertEqual(self.install().returncode, 0)
+        result = self.install("-u")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        conf = self.conf_text()
+        self.assertNotIn(self.UPDATER, conf)
+        self.assertNotIn("[openams_taglib]", conf)
+        self.assertTrue((self.taglib / ".git").is_dir())
+        self.assertIn("checkout was left in place", result.stdout)
 
     # ------------------------------------------------------------------
     # The MCU add-on is opt-in
@@ -418,7 +529,7 @@ class InstallShTests(unittest.TestCase):
     def test_skip_gco_routines_takes_no_gco_action(self):
         # An unreachable origin would fail a clone, so success proves no network.
         self.gitconfig.write_text("[user]\nname = x\nemail = x@example.invalid\n")
-        result = self.install("--skip-gco-routines")
+        result = self.install("--skip-gco-routines", "--no-taglib-download")
         out = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0, out)
         self.assertTrue(self._openams_linked())

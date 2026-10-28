@@ -63,15 +63,17 @@ class _Bay(object):
 
 class Linker(object):
     def __init__(self, api, run_gcode, clock=time.monotonic, cache=None,
-                 material_temps=None, wake=None):
+                 material_temps=None, wake=None, tag_vendor=BAMBU_VENDOR):
         """``wake(seconds)``, when given, asks for another status pass that
         much later: a unit's filament setting waits and retries on a clock,
-        not on status changes (C4 §7.5)."""
+        not on status changes (C4 §7.5). ``tag_vendor`` is the vendor a Bambu
+        tag's new spools are created under (C4 §5.3)."""
         self._api = api
         self._run_gcode = run_gcode
         self._clock = clock
         self._cache = cache if cache is not None else SpoolCache()
         self._material_temps = ops.material_temp_table(material_temps)
+        self._tag_vendor = tag_vendor or BAMBU_VENDOR
         self._bays = {}
         self._tray = tray.TraySync(
             run_gcode, clock, self._cache, self._reload_summary,
@@ -189,6 +191,30 @@ class Linker(object):
         await self._reachable()
         if spool is not None:
             self._cache.remember(tag or {}, spool)
+
+    async def refresh_linked(self):
+        """Re-read the linked spools from Spoolman (C4 §6): its web UI tells
+        nobody about an edit of a spool, its filament or its vendor. One
+        ``GET /v1/spool`` serves every bay. Returns whether anything a UI or
+        the host shows may have changed: a linked spool's summary, or
+        Spoolman's reachability. Silent while nothing is linked."""
+        ids = set(machine.spool_id for machine in self._bays.values()
+                  if machine.spool_id is not None and machine.state in
+                  ("linked", "pending_confirmation"))
+        ids.update(self._host_links.values())
+        if not ids:
+            return False
+        was_online = self.spoolman_online
+        try:
+            spools = await self._api.request("GET", "/v1/spool") or []
+        except SpoolmanUnavailable:
+            self.spoolman_online = False
+            return was_online
+        except SpoolmanError:
+            return False
+        self.spoolman_online = True
+        changed = self._cache.scan(spools, only=ids)
+        return bool(changed) or not was_online
 
     async def _set_location(self, spool_id, location, machine=None):
         """Mirror the bay on the spool; ``""`` clears it (C4 §5.6).
@@ -561,7 +587,8 @@ class Linker(object):
             machine.error = NO_SPOOL_ERROR
             return
         try:
-            vendor = await ops.get_or_create_vendor(self._api, BAMBU_VENDOR)
+            vendor = await ops.get_or_create_vendor(self._api,
+                                                    self._tag_vendor)
             filament = await ops.find_or_create_filament(
                 self._api, vendor["id"], tag.get("bambu") or {})
             spool = await ops.create_spool(self._api, filament["id"], tag, key)
@@ -595,18 +622,28 @@ class Linker(object):
             spool_summary = self._cache.summary(machine.spool_id)
         if spool_summary is None:
             return None
-        return ops.summary_matches(spool_summary, summary)
+        # The vendor is not compared: a spool the user filed under another
+        # brand is still the spool in the bay (C4 §4.1, Keep).
+        return ops.summary_matches(spool_summary,
+                                   dict(summary, manufacturer=None))
 
     async def _summary_decide(self, key, summary, create):
         """Match, then create (C4 §4.1). Returns ``(verdict, payload)``:
         ``link`` (the one spool), ``ambiguous`` (the candidates), ``none``, or
         ``created`` (the new spool). Raises SpoolmanUnavailable."""
         spools = await self._api.request("GET", "/v1/spool") or []
-        candidates = ops.matching_spools(
-            spools, summary, excluded=self._linked_elsewhere(key))
-        # A spool already located at this bay is preferred over the rest.
-        pool = [spool for spool in candidates
-                if spool.get("location") == key] or candidates
+        excluded = self._linked_elsewhere(key)
+        candidates = ops.matching_spools(spools, summary, excluded=excluded,
+                                         bambu_vendor=self._tag_vendor)
+        # Spoolman's own data wins over what the unit's code says of the
+        # maker: a spool already located at this bay, under any vendor, is
+        # preferred, then the one this bay and summary resolved to before.
+        anyone = ops.matching_spools(
+            spools, dict(summary, manufacturer=None), excluded=excluded)
+        remembered = self._cache.lookup_summary(key, summary)
+        pool = [spool for spool in anyone if spool.get("location") == key] \
+            or [spool for spool in anyone if spool.get("id") == remembered] \
+            or candidates
         if len(pool) == 1:
             return "link", pool[0]
         if len(pool) > 1:
@@ -614,7 +651,7 @@ class Linker(object):
         if not create:
             return "none", None
         return "created", await ops.create_summary_spool(
-            self._api, summary, key)
+            self._api, summary, key, self._tag_vendor)
 
     def _summary_for(self, key, tag):
         """The summary a read is matched by. A setting this component wrote
@@ -788,7 +825,8 @@ class Linker(object):
                 await self._set_location(old, "", machine)
             queued = await self._set_location(host_spool, key, machine)
             machine.mirror_queued = bool(queued)
-        await self._refresh_summary(host_spool, reload=True, tag=tag)
+        await self._refresh_summary(host_spool, reload=True,
+                                    tag=tag if source == "tag" else None)
 
     async def _unlink(self, unit, bay, machine):
         """Removal: clear the host's link and the location mirror (C4 §3)."""
@@ -876,7 +914,8 @@ class Linker(object):
         spool = await ops.find_spool_by_tag(self._api, tag)
         pending = False
         if spool is None:
-            vendor = await ops.get_or_create_vendor(self._api, BAMBU_VENDOR)
+            vendor = await ops.get_or_create_vendor(self._api,
+                                                    self._tag_vendor)
             filament = await ops.find_or_create_filament(
                 self._api, vendor["id"], tag.get("bambu") or {})
             spool = await ops.create_spool(self._api, filament["id"], tag, key)

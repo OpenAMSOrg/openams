@@ -43,6 +43,8 @@ class CortexBridgeInstallTests(unittest.TestCase):
         self.env = dict(
             os.environ,
             OPENAMS_NO_SERVICE="1",
+            NO_TAGLIB_DOWNLOAD="1",
+            OPENAMS_TAGLIB_PATH="/nonexistent/taglib",
             OPENAMS_SYSTEM_ROOT=str(self.sysroot),
             OPENAMS_SYSFS_USB=str(self.usb),
             OPENAMS_BRIDGE_PYTHON="/usr/bin/python3",

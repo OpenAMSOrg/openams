@@ -259,6 +259,129 @@ class StatusSchemaOfflineTest(unittest.TestCase):
         jsonschema.validate(h.linker.status(), schema)
 
 
+async def _make_spool(api, vendor_name, extra):
+    """A spool of its own vendor and filament, carrying ``extra`` as given."""
+    vendor = await api.request("POST", "/v1/vendor", body={"name": vendor_name})
+    filament = await api.request(
+        "POST", "/v1/filament",
+        body={"name": "PETG HF", "vendor_id": vendor["id"], "material": "PETG"})
+    spool = await api.request(
+        "POST", "/v1/spool", body={"filament_id": filament["id"],
+                                   "initial_weight": 1000, "remaining_weight": 1000})
+    return await api.request("PATCH", "/v1/spool/%d" % spool["id"],
+                             body={"extra": extra})
+
+
+class CardUidOrderTest(unittest.TestCase):
+    """Offline, as online, a UID in card_uids beats a shared tray UID (C4 §4,
+    §6), and what Spoolman holds now beats what the cache learned once."""
+
+    TRAY = "a" * 32
+
+    def two_spools(self, h):
+        shared = run(_make_spool(h.api, "Bambu Lab", {
+            "tray_uid": ops.encode_extra(self.TRAY)}))
+        mine = run(_make_spool(h.api, "Mine", {
+            "card_uids": ops.encode_extra("DEADBEEF")}))
+        return shared, mine
+
+    def test_the_prewarmed_cache_prefers_the_card_uid(self):
+        h = Harness()
+        shared, mine = self.two_spools(h)
+        h.start()                        # the pre-warm scan sees both
+        h.api.down = True
+        h.send([bay(tag=bambu_tag(uid="deadbeef", tray=self.TRAY))])
+        self.assertEqual(h.bay()["spool_id"], mine["id"])
+
+    def test_a_tray_key_is_only_cached_for_a_spool_that_has_it(self):
+        h = Harness()
+        shared, mine = self.two_spools(h)
+        h.start()
+        h.send([bay(tag=bambu_tag(uid="deadbeef", tray=self.TRAY))])
+        self.assertEqual(h.bay()["spool_id"], mine["id"])
+        h.api.down = True
+        # The spool's other tag: online it finds the tray spool.
+        h.send([bay(), bay(tag=bambu_tag(uid="0badf00d", tray=self.TRAY))])
+        self.assertEqual(h.bay("oams1-1")["spool_id"], shared["id"])
+
+    def test_a_uid_moved_in_spoolman_moves_in_the_cache(self):
+        h = Harness().start()
+        shared, mine = self.two_spools(h)
+        h.send([bay(tag=bambu_tag(uid="deadbeef", tray=self.TRAY))])
+        run(ops.add_card_uid(h.api, shared, "FEEDFACE"))
+        # In Spoolman's web UI the user moves FEEDFACE to their own spool.
+        h.api.spools[0]["extra"].pop("card_uids")
+        h.api.spools[1]["extra"]["card_uids"] = ops.encode_extra(
+            "DEADBEEF,FEEDFACE")
+        run(h.linker.refresh_linked())
+        h.api.down = True
+        h.send([bay(), bay(tag=bambu_tag(uid="feedface", tray="f" * 32))])
+        self.assertEqual(h.bay("oams1-1")["spool_id"], mine["id"])
+
+    def test_a_queued_uid_write_keeps_its_cache_key(self):
+        h = Harness().start()
+        shared, mine = self.two_spools(h)
+        h.api.down = True
+        h.linker._cache.enqueue({"op": "card_uid", "spool_id": shared["id"],
+                                 "uid": "FEEDFACE"})
+        h.linker._cache.remember(bambu_tag(uid="feedface", tray=self.TRAY),
+                                 h.api.spools[0])
+        h.api.down = False
+        h.linker._cache.scan(h.spools())
+        self.assertEqual(h.linker._cache.lookup(
+            bambu_tag(uid="feedface", tray="f" * 32)), shared["id"])
+
+    def test_a_replayed_create_finds_the_card_uid_spool_first(self):
+        h = Harness().start()
+        h.api.down = True
+        t = bambu_tag(uid="deadbeef", tray=self.TRAY)
+        h.send([bay(tag=t)])
+        self.assertEqual(h.linker.status()["queued_writes"], 1)
+        h.api.down = False
+        shared, mine = self.two_spools(h)
+        before = len(h.spools())
+        h.clock.advance(6)
+        h.send([bay(tag=t)])
+        self.assertEqual(len(h.spools()), before)
+        self.assertEqual(h.bay()["spool_id"], mine["id"])
+
+
+class SpoolmanWinsOfflineTest(unittest.TestCase):
+    """The cache never puts back a vendor the user changed (C4 §6)."""
+
+    def setUp(self):
+        self.store = {}
+        self.h = Harness(store=self.store).start()
+        self.h.send([bay(tag=bambu_tag())])
+        self.spool_id = self.h.bay()["spool_id"]
+        # The user changes the spool's vendor in Spoolman.
+        self.h.api.spools[0]["filament"]["vendor"] = {
+            "id": 9, "name": "Polymaker", "extra": {}}
+        self.linked = dict(spool_id=self.spool_id, link_source="tag")
+
+    def test_the_same_tag_read_offline_links_the_same_spool(self):
+        run(self.h.linker.refresh_linked())
+        self.h.send([bay(ready=False, **self.linked)])
+        self.h.api.down = True
+        self.h.send([bay(tag=bambu_tag(read_at=3.0))])
+        self.assertEqual(self.h.bay()["spool_id"], self.spool_id)
+        self.assertEqual(self.h.bay()["spool"]["vendor"], "Polymaker")
+
+    def test_a_restart_restores_the_refreshed_summary(self):
+        run(self.h.linker.refresh_linked())
+        again = Harness(store=self.store)
+        again.api.down = True
+        again.send([bay(tag=bambu_tag(read_at=9.0), **self.linked)])
+        self.assertEqual(again.bay()["spool"]["vendor"], "Polymaker")
+        # ... and the online restart reads the vendor from Spoolman itself.
+        online = Harness(store=self.store)
+        online.api = self.h.api
+        online.linker._api = self.h.api
+        online.start()
+        online.send([bay(tag=bambu_tag(read_at=9.0), **self.linked)])
+        self.assertEqual(online.bay()["spool"]["vendor"], "Polymaker")
+
+
 async def _make_matching_spool(api, uid, tray_uid):
     vendor = await api.request("POST", "/v1/vendor", body={"name": "Bambu Lab"})
     filament = await api.request(

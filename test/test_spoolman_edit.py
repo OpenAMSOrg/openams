@@ -409,5 +409,127 @@ class PendingConfirmationTest(Base):
         self.assertEqual(result["bay"]["state"], "pending_confirmation")
 
 
+class VendorSticksTest(Base):
+    """A vendor set through the edit endpoint or in Spoolman itself stays
+    through every way the tag can be read again (C4 §4, §6, §9)."""
+
+    HOST = dict(link_source="tag")
+
+    async def link_by_tag(self, store=None):
+        self.api = A.FakeSpoolman()
+        self.store = {} if store is None else store
+        self.h = await T.Harness(api=self.api, store=self.store).init()
+        await self.h.ready([T.bay(tag=T.bambu_tag())])
+        self.spool_id = self.h.bay()["spool_id"]
+        await self.host_echo(T.bambu_tag())
+
+    async def host_echo(self, tag, ready=True, harness=None):
+        harness = harness or self.h
+        harness.push({"oams_manager": {"devices": {"oams1": {"bays": [T.bay(
+            tag=tag, ready=ready, spool_id=self.spool_id, **self.HOST)]}}}})
+        await harness.flush()
+
+    def vendor(self, harness=None):
+        return ((harness or self.h).bay()["spool"] or {}).get("vendor")
+
+    def change_in_spoolman(self):
+        """Spoolman's web UI: the spool is given another vendor's filament."""
+        vendor = {"id": self.api._next_id("vendor"), "name": "Polymaker",
+                  "extra": {}}
+        self.api.vendors.append(vendor)
+        self.api.spools[0]["filament"]["vendor"] = vendor
+
+    async def changed(self, how):
+        await self.link_by_tag()
+        if how == "edit":
+            await self.edit(vendor="Polymaker")
+        else:
+            self.change_in_spoolman()
+            self.assertTrue(await self.h.component.linker.refresh_linked())
+        self.assertEqual(self.vendor(), "Polymaker")
+
+    async def each_way(self, check):
+        for how in ("edit", "web"):
+            await self.changed(how)
+            await check(how)
+
+    async def test_a_re_read_of_the_tag(self):
+        async def check(how):
+            self.h.push({"oams_manager": {"devices": {"oams1": {"bays": [
+                T.bay(tag=T.bambu_tag(read_at=2.0), spool_id=self.spool_id,
+                      **self.HOST)]}}}})
+            await self.h.flush()
+            self.assertEqual(self.vendor(), "Polymaker", how)
+            self.assertEqual(len(self.api.spools), 1, how)
+        await self.each_way(check)
+
+    async def test_removal_and_insertion(self):
+        async def check(how):
+            await self.host_echo(None, ready=False)
+            self.h.push({"oams_manager": {"devices": {"oams1": {"bays": [
+                T.bay(tag=T.bambu_tag(read_at=3.0))]}}}})
+            await self.h.flush()
+            self.assertEqual(self.h.bay()["spool_id"], self.spool_id, how)
+            self.assertEqual(self.vendor(), "Polymaker", how)
+            self.assertEqual(len(self.api.spools), 1, how)
+        await self.each_way(check)
+
+    async def test_the_second_tag_of_the_spool(self):
+        async def check(how):
+            await self.host_echo(None, ready=False)
+            self.h.push({"oams_manager": {"devices": {"oams1": {"bays": [
+                T.bay(tag=T.bambu_tag(uid="11223344", read_at=4.0))]}}}})
+            await self.h.flush()
+            self.assertEqual(self.h.bay()["spool_id"], self.spool_id, how)
+            self.assertEqual(self.vendor(), "Polymaker", how)
+            self.assertEqual(len(self.api.spools), 1, how)
+        await self.each_way(check)
+
+    async def test_the_same_tag_read_while_offline(self):
+        async def check(how):
+            await self.host_echo(None, ready=False)
+            self.api.online = False
+            self.h.push({"oams_manager": {"devices": {"oams1": {"bays": [
+                T.bay(tag=T.bambu_tag(read_at=5.0))]}}}})
+            await self.h.flush()
+            self.assertEqual(self.h.bay()["spool_id"], self.spool_id, how)
+            self.assertEqual(self.vendor(), "Polymaker", how)
+            self.api.online = True
+        await self.each_way(check)
+
+    async def test_a_restart_with_the_stored_cache(self):
+        async def check(how):
+            for online in (True, False):
+                self.api.online = online
+                again = await T.Harness(api=self.api,
+                                        store=self.store).init()
+                await again.ready([T.bay(tag=T.bambu_tag(read_at=6.0),
+                                         spool_id=self.spool_id,
+                                         **self.HOST)])
+                self.assertEqual(self.vendor(again), "Polymaker",
+                                 (how, online))
+            self.api.online = True
+        await self.each_way(check)
+
+    async def test_a_unit_that_decodes_its_own_tags(self):
+        async def check(how):
+            summary = {"uid": None, "format": "unit_summary", "read_at": 8.0,
+                       "spoolman_id": None, "bambu": None,
+                       "summary": {"code": "GFA00", "material": "PLA",
+                                   "color_argb": 0xFFFF0000,
+                                   "nozzle_min_c": 190, "nozzle_max_c": 230,
+                                   "manufacturer": "Bambu"}}
+            self.api.spools[0]["filament"]["material"] = "PLA"
+            self.api.spools[0]["filament"]["color_hex"] = "ff0000"
+            await self.h.component.linker.refresh_linked()
+            self.h.push({"oams_manager": {"devices": {"oams1": {"bays": [
+                T.bay(tag=summary, spool_id=self.spool_id, **self.HOST)]}}}})
+            await self.h.flush()
+            self.assertEqual(self.h.bay()["spool_id"], self.spool_id, how)
+            self.assertEqual(self.vendor(), "Polymaker", how)
+            self.assertEqual(len(self.api.spools), 1, how)
+        await self.each_way(check)
+
+
 if __name__ == "__main__":
     unittest.main()

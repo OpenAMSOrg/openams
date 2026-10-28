@@ -104,11 +104,12 @@ Everything else on the printer is untouched.
   - one symlink per `~/openams/src/*.py` into `~/klipper/klippy/extras/`;
   - `extras/klipper_mmu` pointing to `~/openams/klipper_mmu/host`;
   - `~/klipper/scripts/<name>.py` for each `~/openams/scripts/*.py`;
-  - `~/moonraker/moonraker/components/openams_spoolman`.
+  - `~/moonraker/moonraker/components/openams_spoolman` and `openams_taglib`.
 - **Copied only if absent:** `oams.cfg` (from `oams_sample.cfg`) into the config dir.
 - **Symlinked:** `oams_macros.cfg` and `oams_macros_ordered.cfg` in the config dir point at the checkout, so updates take effect. An existing unmodified copy (any version OpenAMS shipped) is replaced by the link; a customized one is moved to `<name>.bak-<YYYYmmdd-HHMMSS>` first and the installer prints a message. Never edit these files.
 - **`printer.cfg`:** one line `[include oams.cfg]`, above `[printer]`. Only if absent.
-- **`moonraker.conf`:** `[update_manager openams]`, `[spoolman]` and `[openams_spoolman]`, each only if absent.
+- **`moonraker.conf`:** `[update_manager openams]`, `[spoolman]`, `[openams_spoolman]`, `[openams_taglib]` and, once the library is downloaded, `[update_manager Bambu-Lab-RFID-Library]`, each only if absent.
+- **Tag library:** it clones `~/Bambu-Lab-RFID-Library` (about 200 MB) if absent, unless `--no-taglib-download`. A failed clone is a warning; run the installer again online.
 - **Spoolman:** if there is no Spoolman server, it installs one in `~/Spoolman` as the `Spoolman` service.
 - **gco-routines:** it clones `~/gco-routines` and links it as `extras/gco_routines`.
 - **Services:** it stops Klipper while it works and starts it at the end. It restarts Moonraker.
@@ -166,7 +167,7 @@ Read these keys. They decide later steps:
 | `OAMS_EXTRA` | `broken (...)` | OpenAMS's link is there but its target is gone (the checkout moved or was deleted). Treat it as a fresh install: `install.sh` relinks |
 | `OAMS_EXTRA` | `klipper_openams (...)` | **migration** from the old project. `install.sh` migrates links and the update entry by itself; the existing `oams.cfg` and macros are kept. Sections 2 to 10; in section 6, change only what the audit flags |
 | `FOREIGN_MMU` | not empty (`AFC`, `HappyHare`, `ERCF`) | another MMU system. ASK "This printer has <value> configured. OpenAMS must not run beside another MMU system on the same toolhead. Should I stop here?" Default: STOP |
-| `NETWORK_GITHUB` | `no` | add `--skip-gco-routines --no-spoolman` in section 3 |
+| `NETWORK_GITHUB` | `no` | add `--skip-gco-routines --no-spoolman --no-taglib-download` in section 3 |
 | `SUDO_NOPASSWD` | `no` | ASK the human to run section 3's command themselves, then continue at section 4 |
 | `CAN_INTERFACES` | empty | no CAN interface. If `lsusb` shows `1a86:fe11`, this is a Cortex Bridge printer: no CAN is needed; continue, and read section 6.2. Otherwise, if the AMS units connect over CAN (they normally do): STOP ("CAN is not set up on this host") |
 | `CAN_<if>_STATE` | not `UP`/`UNKNOWN` | STOP: the CAN interface is down |
@@ -200,7 +201,7 @@ Start from `./install.sh` and add:
 | Condition (from section 1) | Add |
 |---|---|
 | non-default paths or service | `-k <KLIPPER_PATH> -c <CONFIG_DIR> -s <service>` |
-| `NETWORK_GITHUB=no` | `--skip-gco-routines --no-spoolman` |
+| `NETWORK_GITHUB=no` | `--skip-gco-routines --no-spoolman --no-taglib-download` |
 | the human said "no Spoolman" | `--no-spoolman` |
 | the human gave a Spoolman address elsewhere | `--spoolman-url http://HOST:7912` |
 | `KLIPPY_ENV_PYTHON` below 3.9 | `--skip-gco-routines` |
@@ -706,8 +707,8 @@ OpenAMS install STOPPED at section <n>, step <name>
   `cd ~/openams && printf 'n\n' | ./install.sh -u`.
   - The `n` answers the installer's "Remove oams.cfg ...?" prompt.
   - It removes the links, the `[include oams.cfg]` line, `[update_manager openams]` and
-    `[openams_spoolman]`.
-  - It leaves Spoolman and its data, gco-routines and every `oams*.cfg` alone.
+    `[openams_spoolman]`, `[openams_taglib]` and `[update_manager Bambu-Lab-RFID-Library]`.
+  - It leaves Spoolman and its data, the tag library checkout, gco-routines and every `oams*.cfg` alone.
 - **Undo everything you did:**
   1. Remove OpenAMS as above.
   2. Restore the backup:

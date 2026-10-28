@@ -250,7 +250,7 @@ class Harness(object):
     """One ``OpenAmsSpoolman`` over stub Moonraker pieces the test controls."""
 
     def __init__(self, api=None, with_spoolman=True, store=None,
-                subscribe_result=None):
+                subscribe_result=None, options=None):
         self.api = api if api is not None else A.FakeSpoolman()
         self.server = StubServer()
         self.klippy_apis = StubKlippyApis(subscribe_result=subscribe_result)
@@ -259,7 +259,7 @@ class Harness(object):
         if with_spoolman:
             self.spoolman = StubSpoolman()
             self.server.components["spoolman"] = self.spoolman
-        self.config = StubConfig(self.server)
+        self.config = StubConfig(self.server, options)
         self.component = OpenAmsSpoolman(self.config, api=self.api)
 
     async def init(self):
@@ -470,6 +470,169 @@ class CachePersistenceTest(unittest.IsolatedAsyncioTestCase):
 
         h2 = await Harness(api=api, store=store).init()
         self.assertEqual(h2.component.linker.status()["queued_writes"], queued)
+
+
+class OptionsTest(unittest.IsolatedAsyncioTestCase):
+    """``tag_vendor`` and ``refresh_interval`` (C4 §5.3, §6): a typo in either
+    never stops the component."""
+
+    def _component(self, options):
+        return Harness(options=options).component
+
+    async def test_defaults(self):
+        component = self._component(None)
+        self.assertEqual(component._tag_vendor, "Bambu Lab")
+        self.assertEqual(component._refresh_interval, 60.0)
+
+    async def test_tag_vendor_is_read_and_reaches_the_linker(self):
+        h = Harness(options={"tag_vendor": " My Filaments "})
+        await h.init()
+        self.assertEqual(h.component._tag_vendor, "My Filaments")
+        self.assertEqual(h.component.linker._tag_vendor, "My Filaments")
+        await h.ready([bay(tag=bambu_tag())])
+        self.assertEqual(h.bay()["spool"]["vendor"], "My Filaments")
+
+    async def test_a_bad_tag_vendor_falls_back(self):
+        with self.assertLogs(level="WARNING"):
+            component = self._component({"tag_vendor": "x" * 80})
+        self.assertEqual(component._tag_vendor, "Bambu Lab")
+
+    async def test_refresh_interval_values(self):
+        for text, seconds in (("120", 120.0), ("10", 10.0), ("0", 0.0),
+                              (" 45.5 ", 45.5), ("", 60.0)):
+            self.assertEqual(
+                self._component({"refresh_interval": text})._refresh_interval,
+                seconds, text)
+        for text in ("often", "-5", "nan", "inf"):
+            with self.assertLogs(level="WARNING"):
+                self.assertEqual(self._component(
+                    {"refresh_interval": text})._refresh_interval, 60.0, text)
+        with self.assertLogs(level="WARNING"):
+            self.assertEqual(self._component(
+                {"refresh_interval": "3"})._refresh_interval, 10.0)
+
+    async def test_zero_arms_no_timer(self):
+        h = Harness(options={"refresh_interval": "0"})
+        await h.init()
+        self.assertEqual(h.server.get_event_loop().timers, [])
+
+
+class SpoolmanEditsTest(unittest.IsolatedAsyncioTestCase):
+    """A change made in Spoolman's web UI reaches the status, the
+    notification, the host and the slicer's lane list (C4 §6, §8)."""
+
+    async def _linked(self, **options):
+        h = Harness(options=options or None)
+        await h.init()
+        await h.ready([bay(tag=bambu_tag())])
+        self.spool_id = h.bay()["spool_id"]
+        h.push({"oams_manager": {"devices": {"oams1": {"bays": [bay(
+            tag=bambu_tag(), spool_id=self.spool_id, link_source="tag")]}}}})
+        await h.flush()
+        h.server.sent_events.clear()
+        h.klippy_apis.gcode.clear()
+        return h
+
+    def _timer(self, h):
+        timers = [t for t in h.server.get_event_loop().timers
+                  if not t.cancelled and t.delay == 60.0]
+        return timers[-1]
+
+    async def _fire(self, h):
+        self._timer(h).callback()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        await h.flush()
+
+    def _events(self, h):
+        return [args[0] for event, args in h.server.sent_events
+                if event == "openams_spoolman:status_changed"]
+
+    async def test_a_web_edit_is_notified_and_pushed(self):
+        h = await self._linked()
+        spool = h.api.spools[0]
+        spool["filament"]["vendor"] = {"id": 9, "name": "Polymaker",
+                                       "extra": {}}
+        spool["filament"]["material"] = "ASA"
+        await self._fire(h)
+        events = self._events(h)
+        self.assertEqual(len(events), 1)
+        shown = events[0]["bays"]["oams1-0"]["spool"]
+        self.assertEqual((shown["vendor"], shown["material"]),
+                         ("Polymaker", "ASA"))
+        pushes = [g for g in h.klippy_apis.gcode
+                  if g.startswith("OAMSM_SET_BAY_FILAMENT")]
+        self.assertEqual(len(pushes), 1)
+        self.assertIn('MATERIAL="ASA"', pushes[0])
+        self.assertEqual(h.bay()["spool"]["vendor"], "Polymaker")
+
+    async def test_nothing_changed_nothing_is_sent_and_the_timer_re_arms(self):
+        h = await self._linked()
+        calls = len(h.api.calls)
+        await self._fire(h)
+        self.assertEqual(self._events(h), [])
+        self.assertEqual(h.klippy_apis.gcode, [])
+        # One request per refresh, however many bays are linked.
+        self.assertEqual([c[:2] for c in h.api.calls[calls:]],
+                         [("GET", "/v1/spool")])
+        self.assertIsNotNone(h.component._refresh_handle)   # armed again
+
+    async def test_the_lane_list_follows_a_web_edit(self):
+        h = Harness()
+        await h.init()
+        status = oams_status([bay(tag=bambu_tag())])
+        status["groups"] = [{"name": "T0", "lane": "fps1", "slots": [0],
+                             "next_bay": [1, 0]}]
+        h.klippy_apis.subscribe_result = {
+            "oams_manager": status, "toolhead": {"extruder": "extruder"}}
+        await h.component._handle_klippy_ready()
+        await h.flush()
+        lanes = h.server.components["database"].namespaces["lane_data"]
+        self.assertEqual(lanes["lane1"]["vendor"], "Bambu Lab")
+        h.push({"oams_manager": {"devices": {"oams1": {"bays": [bay(
+            tag=bambu_tag(), spool_id=h.bay()["spool_id"],
+            link_source="tag")]}}}})
+        await h.flush()
+        h.api.spools[0]["filament"]["vendor"] = {"id": 9, "name": "Polymaker",
+                                                 "extra": {}}
+        await self._fire(h)
+        self.assertEqual(lanes["lane1"]["vendor"], "Polymaker")
+
+    async def test_spoolman_going_away_is_notified(self):
+        h = await self._linked()
+        h.api.online = False
+        await self._fire(h)
+        self.assertFalse(self._events(h)[-1]["spoolman_online"])
+
+    async def test_a_failing_refresh_re_arms_the_timer(self):
+        h = await self._linked()
+
+        async def fail():
+            raise RuntimeError("boom")
+        h.component.linker.refresh_linked = fail
+        before = len(h.server.get_event_loop().timers)
+        with self.assertLogs(level="ERROR"):
+            await self._fire(h)
+        self.assertEqual(len(h.server.get_event_loop().timers), before + 1)
+
+    async def test_a_restart_with_the_stored_cache_shows_the_vendor(self):
+        store = {}
+        first = Harness(store=store)
+        await first.init()
+        await first.ready([bay(tag=bambu_tag())])
+        spool_id = first.bay()["spool_id"]
+        first.api.spools[0]["filament"]["vendor"] = {
+            "id": 9, "name": "Polymaker", "extra": {}}
+        first.push({"oams_manager": {"devices": {"oams1": {"bays": [bay(
+            tag=bambu_tag(), spool_id=spool_id, link_source="tag")]}}}})
+        await first.flush()
+        await self._fire(first)
+        second = Harness(api=A.FakeSpoolman(), store=store)
+        second.api.online = False
+        await second.init()
+        await second.ready([bay(tag=bambu_tag(read_at=7.0),
+                                spool_id=spool_id, link_source="tag")])
+        self.assertEqual(second.bay()["spool"]["vendor"], "Polymaker")
 
 
 class BayFilamentTest(unittest.IsolatedAsyncioTestCase):

@@ -302,6 +302,49 @@ class SpoolTest(unittest.TestCase):
         self.assertEqual(ops.spool_summary({})["vendor"], None)
 
 
+class TagVendorOptionTest(unittest.TestCase):
+    """The ``tag_vendor`` option (C4 §5.3)."""
+
+    def test_unset_or_empty_is_bambu_lab(self):
+        for text in (None, "", "   "):
+            self.assertEqual(ops.parse_tag_vendor(text), "Bambu Lab")
+
+    def test_a_name_is_trimmed_and_kept(self):
+        self.assertEqual(ops.parse_tag_vendor("  My Filaments "), "My Filaments")
+
+    def test_a_name_that_is_too_long_is_ignored_not_fatal(self):
+        with self.assertLogs(level="WARNING"):
+            self.assertEqual(ops.parse_tag_vendor("x" * 65), "Bambu Lab")
+        self.assertEqual(ops.parse_tag_vendor("x" * 64), "x" * 64)
+
+    def test_the_option_vendor_matches_a_bambu_code(self):
+        summary = {"material": "PLA", "color_hex": None, "manufacturer": "Bambu"}
+        spool = {"material": "PLA", "color_hex": None, "vendor": "My Filaments"}
+        self.assertFalse(ops.summary_matches(spool, summary))
+        self.assertTrue(ops.summary_matches(spool, summary, "My Filaments"))
+        spool["vendor"] = "Bambu Lab"
+        self.assertTrue(ops.summary_matches(spool, summary, "My Filaments"))
+
+
+class FindSpoolByTagOrderTest(unittest.TestCase):
+    """A UID a user listed on a spool wins over the shared tray UID (C4 §4)."""
+
+    def test_the_card_uid_wins_whatever_the_order(self):
+        tag = dict(bambu_tag(), uid="04aabbcc")
+        tray = {"id": 1, "extra": {"tray_uid": ops.encode_extra(
+            tag["bambu"]["tray_uid"])}}
+        card = {"id": 2, "extra": {"card_uids": ops.encode_extra("11,04AABBCC")}}
+        for spools in ([tray, card], [card, tray]):
+            self.assertEqual(
+                run(ops.find_spool_by_tag(None, tag, spools))["id"], 2)
+
+    def test_the_tray_uid_finds_the_second_tag_of_a_spool(self):
+        tag = dict(bambu_tag(), uid="04aabbcc")
+        tray = {"id": 1, "extra": {"tray_uid": ops.encode_extra(
+            tag["bambu"]["tray_uid"])}}
+        self.assertEqual(run(ops.find_spool_by_tag(None, tag, [tray]))["id"], 1)
+
+
 class ExtruderTempTableTest(unittest.TestCase):
     """The material temperature table the host is pushed from (C4 §7.4)."""
 

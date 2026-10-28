@@ -32,6 +32,12 @@ EVENT_NAME = "openams_spoolman:status_changed"
 NOTIFY_NAME = "openams_spoolman_status"
 STARTUP_RETRY_SECONDS = 30.0
 READY_POLL_SECONDS = 2.0
+# How often the linked spools are re-read from Spoolman (C4 §6): its web UI
+# tells nobody about an edit. ``refresh_interval`` overrides it; 0 turns the
+# re-read off, and anything else is kept at least this long, since each one is
+# a ``GET /v1/spool``.
+REFRESH_SECONDS = 60.0
+MIN_REFRESH_SECONDS = 10.0
 # The remote method the host's OAMSM_SET_TRAY_INFO calls with SPOOL= (C3 §4):
 # only this component reads Spoolman.
 TRAY_WRITE_METHOD = "openams_spoolman_tray_write"
@@ -76,6 +82,11 @@ class OpenAmsSpoolman(object):
         # user's material_temps entries merged over it (C4 §7.4).
         self._material_temps = ops.parse_material_temps(
             config.get("material_temps", None))
+        # The vendor a Bambu tag's new spools are filed under (C4 §5.3).
+        self._tag_vendor = ops.parse_tag_vendor(config.get("tag_vendor", None))
+        self._refresh_interval = self._parse_refresh_interval(
+            config.get("refresh_interval", None))
+        self._refresh_handle = None
 
         # ``publish_lane_data`` (default on): keep the ``lane_data`` database
         # namespace, which OrcaSlicer's "sync filaments from printer" reads,
@@ -98,6 +109,30 @@ class OpenAmsSpoolman(object):
         # Moonraker accepts remote methods only while components load.
         self.server.register_remote_method(
             TRAY_WRITE_METHOD, self._handle_tray_write)
+
+    @staticmethod
+    def _parse_refresh_interval(text):
+        """The ``refresh_interval`` option in seconds (C4 §6): unset is 60, 0
+        is off, a number under 10 is raised to 10, and anything that is not a
+        number is logged and ignored: one typo must not stop the component."""
+        if text is None or not str(text).strip():
+            return REFRESH_SECONDS
+        try:
+            seconds = float(str(text).strip())
+        except ValueError:
+            seconds = None
+        if seconds is None or seconds != seconds or seconds < 0 \
+                or seconds == float("inf"):
+            _LOGGER.warning(
+                "openams_spoolman: refresh_interval '%s' is not a number of "
+                "seconds; using %d", text, REFRESH_SECONDS)
+            return REFRESH_SECONDS
+        if 0 < seconds < MIN_REFRESH_SECONDS:
+            _LOGGER.warning(
+                "openams_spoolman: refresh_interval %g is under %d; using %d",
+                seconds, MIN_REFRESH_SECONDS, MIN_REFRESH_SECONDS)
+            return MIN_REFRESH_SECONDS
+        return seconds
 
     def _lane_namespace(self, database):
         """The ``lane_data`` namespace. A registered local namespace is
@@ -159,13 +194,14 @@ class OpenAmsSpoolman(object):
         cache = SpoolCache(load=lambda: state, save=self._save_cache)
         self.linker = Linker(self._api, self._run_gcode, cache=cache,
                              material_temps=self._material_temps,
-                             wake=self._wake)
+                             wake=self._wake, tag_vendor=self._tag_vendor)
         spoolman = self.server.lookup_component("spoolman", None)
         seed = getattr(spoolman, "spool_id", None) \
             if spoolman is not None else None
         self.active = ActiveSpool(self._api, self._run_gcode,
                                   self._set_active_spool, seed=seed)
         self.eventloop.create_task(self._startup_retry())
+        self._arm_refresh()
 
     def _save_cache(self, state):
         if self._db is not None:
@@ -179,6 +215,27 @@ class OpenAmsSpoolman(object):
             if self.linker.spoolman_online:
                 return
             await asyncio.sleep(STARTUP_RETRY_SECONDS)
+
+    def _arm_refresh(self):
+        if self._refresh_interval > 0:
+            self._refresh_handle = self.eventloop.delay_callback(
+                self._refresh_interval, self._refresh_due)
+
+    def _refresh_due(self):
+        self._refresh_handle = None
+        self.eventloop.create_task(self._refresh())
+
+    async def _refresh(self):
+        """Re-read the linked spools (C4 §6); a change goes through a status
+        pass, which pushes what depends on a summary (C4 §7.4, §7.4.1, §7.5)
+        and notifies exactly as any status change does."""
+        try:
+            if await self.linker.refresh_linked():
+                self._schedule_pass()
+        except Exception:
+            _LOGGER.exception("openams_spoolman: the spool refresh failed")
+        finally:
+            self._arm_refresh()
 
     async def _run_gcode(self, script):
         return await self.klippy_apis.run_gcode(script)

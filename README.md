@@ -72,6 +72,42 @@ Mainsail: **Machine → Update Manager**, entry `openams`, then run
 update restarts the bridge relay and may bring new bridge firmware, which you
 install separately: [update the Cortex Bridge firmware](docs/guide/cortex-bridge-update.md).
 
+## The RFID tag library
+
+The touchscreen display ([openams-ui](https://github.com/OpenAMSOrg/openams-ui))
+has a spool tag writer that clones genuine Bambu Lab RFID tags onto magic tags,
+for a stock AMS. Its library, every tag of the
+[Bambu-Lab-RFID-Library](https://github.com/queengooborg/Bambu-Lab-RFID-Library)
+(7,026 tags in 272 colours), lives on the printer host: OpenAMS serves it to
+the display through Moonraker, and remembers which tags were cloned, so each
+clone takes a tag nobody cloned before.
+
+The installer sets it up. On a printer that already has OpenAMS:
+
+1. Update OpenAMS (Mainsail: **Machine → Update Manager**, entry `openams`),
+   then run the installer again:
+
+   ```bash
+   cd ~/openams && ./install.sh
+   ```
+
+   The update alone only brings the code. The installer links the library
+   service into Moonraker, adds `[openams_taglib]` to `moonraker.conf`,
+   downloads the library into `~/Bambu-Lab-RFID-Library` (about 200 MB, so the
+   printer needs internet access) and adds it to the update manager as
+   `Bambu-Lab-RFID-Library`, then restarts Moonraker.
+2. Flash the display with current firmware, which takes the library from
+   OpenAMS. The 4 inch board needs one USB flash, since its layout changed; its
+   Wi-Fi and printer settings stay.
+3. On the display: **Menu → Tag writer → gear → Clone from library**.
+
+New tags arrive as an update of `Bambu-Lab-RFID-Library` in the update manager,
+like any other; OpenAMS picks them up by itself. On a printer with no internet
+during the install, `./install.sh --no-taglib-download` skips the download: the
+library is then downloaded the first time the display asks for it, and running
+the installer again once the printer is online adds it to the update manager.
+Details: [the install guide](docs/guide/install.md#tag-library).
+
 ## Screens and front ends
 
 - **Mainsail:** the OpenAMS panel shows each unit, its bays and spools, and

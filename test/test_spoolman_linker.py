@@ -79,13 +79,14 @@ class Clock(object):
 class Harness(object):
     """A fake Spoolman, a recording gcode channel and a controllable clock."""
 
-    def __init__(self, auto_create=True, material_temps=None):
+    def __init__(self, auto_create=True, material_temps=None, tag_vendor=None):
         self.api = A.FakeSpoolman()
         self.sent = []
         self.clock = Clock()
         self.auto_create = auto_create
+        kwargs = {} if tag_vendor is None else {"tag_vendor": tag_vendor}
         self.linker = L.Linker(self.api, self._gcode, clock=self.clock,
-                               material_temps=material_temps)
+                               material_temps=material_temps, **kwargs)
 
     async def _gcode(self, script):
         self.sent.append(script)
@@ -634,6 +635,196 @@ class StatusSchemaTest(unittest.TestCase):
         self.assertEqual(set(h.linker.status()["bays"]),
                          {"oams1-0", "oams1-1"})
         self.validate(h.linker)
+
+
+class TagVendorTest(unittest.TestCase):
+    """The vendor a Bambu tag's new spools are filed under (C4 §5.3)."""
+
+    def vendor_names(self, h):
+        return sorted(v["name"] for v in h.api.vendors)
+
+    def test_the_default_is_bambu_lab(self):
+        h = Harness().start()
+        h.send([bay(tag=bambu_tag())])
+        self.assertEqual(self.vendor_names(h), ["Bambu Lab"])
+        self.assertEqual(h.bay()["spool"]["vendor"], "Bambu Lab")
+
+    def test_a_new_spool_is_filed_under_the_option(self):
+        h = Harness(tag_vendor="My Filaments").start()
+        h.send([bay(tag=bambu_tag())])
+        self.assertEqual(self.vendor_names(h), ["My Filaments"])
+        self.assertEqual(h.bay()["spool"]["vendor"], "My Filaments")
+        self.assertEqual(h.api.spools[0]["filament"]["vendor"]["name"],
+                         "My Filaments")
+
+    def test_the_filament_lookup_uses_the_same_vendor(self):
+        h = Harness(tag_vendor="My Filaments").start()
+        h.send([bay(tag=bambu_tag())])
+        h.send([bay(tag=bambu_tag()),
+                bay(tag=bambu_tag(uid="cafebabe", bambu={"tray_uid": "1" * 32}))])
+        # The second spool shares the first one's filament, and no filament
+        # was filed under Bambu Lab.
+        self.assertEqual(len(h.spools()), 2)
+        self.assertEqual(len(h.api.filaments), 1)
+        queries = [call[2] for call in h.api.calls
+                   if call[0] == "GET" and call[1] == "/v1/filament"]
+        self.assertTrue(queries)
+        for query in queries:
+            self.assertEqual(query.get("vendor.name"), "My Filaments")
+
+    def test_a_filament_of_the_default_vendor_is_not_reused(self):
+        h = Harness(tag_vendor="My Filaments").start()
+        run(h.api.request("POST", "/v1/vendor", body={"name": "Bambu Lab"}))
+        run(h.api.request("POST", "/v1/filament", body={
+            "name": "PETG HF", "vendor_id": 1, "material": "PETG",
+            "color_hex": "000000"}))
+        h.send([bay(tag=bambu_tag())])
+        self.assertEqual(h.bay()["spool"]["vendor"], "My Filaments")
+        self.assertEqual(len(h.api.filaments), 2)
+
+    def test_a_queued_creation_replays_under_the_option(self):
+        h = Harness(tag_vendor="My Filaments").start()
+        h.api.online = False
+        h.send([bay(tag=bambu_tag())])
+        h.api.online = True
+        h.clock.advance(L.REPLAY_SECONDS + 1)
+        h.send([bay(tag=bambu_tag())])
+        self.assertEqual(self.vendor_names(h), ["My Filaments"])
+        self.assertEqual(h.bay()["spool"]["vendor"], "My Filaments")
+
+
+class CardUidWinsTest(unittest.TestCase):
+    """A UID a user put on a spool beats the tag's shared tray UID (C4 §4)."""
+
+    def test_a_card_uid_beats_the_tray_uid_of_an_earlier_spool(self):
+        h = Harness().start()
+        h.send([bay(tag=bambu_tag())])           # auto-created, tray UID T
+        auto = h.bay()["spool_id"]
+        h.clock.advance(6)
+        h.send([bay()])                          # removed
+        mine = h.make_spool({"card_uids": ops.encode_extra("DEADBEEF")})
+        h.send([bay(tag=bambu_tag(uid="deadbeef", read_at=3.0))])
+        self.assertEqual(h.bay()["spool_id"], mine["id"])
+        self.assertNotEqual(mine["id"], auto)
+        self.assertEqual(h.bay()["spool"]["vendor"], "Test")
+        self.assertEqual(len(h.spools()), 2)
+
+    def test_a_card_uid_beats_a_tray_uid_spool_listed_first(self):
+        tag = bambu_tag(uid="deadbeef")
+        first = {"id": 1, "extra": {"tray_uid": ops.encode_extra(
+            tag["bambu"]["tray_uid"])}}
+        second = {"id": 2, "extra": {"card_uids": ops.encode_extra("DEADBEEF")}}
+        found = run(ops.find_spool_by_tag(None, tag, [first, second]))
+        self.assertEqual(found["id"], 2)
+        # Without the UID on any spool the tray UID still finds the spool.
+        other = bambu_tag(uid="0badf00d")
+        self.assertEqual(
+            run(ops.find_spool_by_tag(None, other, [first, second]))["id"], 1)
+
+    def test_both_tags_of_one_genuine_spool_find_the_same_spool(self):
+        h = Harness().start()
+        h.send([bay(tag=bambu_tag())])
+        spool_id = h.bay()["spool_id"]
+        h.send([bay(), bay(tag=bambu_tag(uid="11223344", read_at=2.0))])
+        self.assertEqual(h.bay("oams1-1")["spool_id"], spool_id)
+        self.assertEqual(ops.decode_extra(
+            h.get_spool(spool_id)["extra"]["card_uids"]), "04A1B2C3,11223344")
+
+
+def change_vendor(h, spool_id, name="Polymaker"):
+    """What Spoolman's web UI does: the spool's filament gets another vendor."""
+    api = h.api
+    vendor = {"id": api._next_id("vendor"), "name": name, "extra": {}}
+    api.vendors.append(vendor)
+    spool = [s for s in api.spools if s["id"] == spool_id][0]
+    spool["filament"]["vendor"] = vendor
+
+
+class SpoolmanWinsTest(unittest.TestCase):
+    """A vendor changed in Spoolman survives every way a tag is read again
+    (C4 §4, §6), and a web edit shows without one."""
+
+    def setUp(self):
+        self.h = Harness().start()
+        self.h.send([bay(tag=bambu_tag())])
+        self.spool_id = self.h.bay()["spool_id"]
+        self.linked = dict(spool_id=self.spool_id, link_source="tag")
+        change_vendor(self.h, self.spool_id)
+
+    def vendor(self, key="oams1-0"):
+        return (self.h.bay(key)["spool"] or {}).get("vendor")
+
+    def test_a_web_edit_shows_once_the_linked_spools_are_re_read(self):
+        self.assertEqual(self.vendor(), "Bambu Lab")      # stale until then
+        self.assertTrue(run(self.h.linker.refresh_linked()))
+        self.assertEqual(self.vendor(), "Polymaker")
+        self.assertFalse(run(self.h.linker.refresh_linked()))   # unchanged
+
+    def test_a_web_edit_of_the_filament_shows_too(self):
+        spool = [s for s in self.h.api.spools if s["id"] == self.spool_id][0]
+        spool["filament"]["material"] = "ASA"
+        spool["filament"]["color_hex"] = "00ff00"
+        run(self.h.linker.refresh_linked())
+        shown = self.h.bay()["spool"]
+        self.assertEqual((shown["material"], shown["color_hex"]),
+                         ("ASA", "00FF00"))
+
+    def test_a_re_read_of_the_same_tag_keeps_it(self):
+        self.h.send([bay(tag=bambu_tag(read_at=2.0), **self.linked)])
+        run(self.h.linker.refresh_linked())
+        self.assertEqual(self.vendor(), "Polymaker")
+        self.assertEqual(len(self.h.spools()), 1)
+
+    def test_removal_and_insertion_keep_it(self):
+        self.h.send([bay(ready=False, **self.linked)])
+        self.h.send([bay(tag=bambu_tag(read_at=3.0))])
+        self.assertEqual(self.h.bay()["spool_id"], self.spool_id)
+        self.assertEqual(self.vendor(), "Polymaker")
+        self.assertEqual(len(self.h.spools()), 1)
+
+    def test_the_second_tag_of_the_spool_keeps_it(self):
+        self.h.send([bay(tag=bambu_tag(uid="11223344", read_at=2.0),
+                         **self.linked)])
+        self.h.send([bay(ready=False, **self.linked)])
+        self.h.send([bay(tag=bambu_tag(uid="11223344", read_at=3.0))])
+        self.assertEqual(self.h.bay()["spool_id"], self.spool_id)
+        self.assertEqual(self.vendor(), "Polymaker")
+        self.assertEqual(len(self.h.spools()), 1)
+
+    def test_refresh_pushes_what_depends_on_the_summary(self):
+        self.h.send([bay(tag=bambu_tag(), **self.linked)])
+        spool = [s for s in self.h.api.spools if s["id"] == self.spool_id][0]
+        spool["filament"]["material"] = "ASA"
+        self.h.sent.clear()
+        self.assertTrue(run(self.h.linker.refresh_linked()))
+        self.h.send([bay(tag=bambu_tag(), **self.linked)])
+        self.assertEqual(len(self.h.filaments()), 1)
+        self.assertIn('MATERIAL="ASA"', self.h.filaments()[0])
+
+    def test_refresh_reports_spoolman_going_away_and_coming_back(self):
+        self.h.api.online = False
+        self.assertTrue(run(self.h.linker.refresh_linked()))
+        self.assertFalse(self.h.linker.status()["spoolman_online"])
+        self.assertFalse(run(self.h.linker.refresh_linked()))   # still away
+        self.h.api.online = True
+        self.assertTrue(run(self.h.linker.refresh_linked()))
+        self.assertTrue(self.h.linker.status()["spoolman_online"])
+
+    def test_refresh_costs_nothing_while_nothing_is_linked(self):
+        h = Harness().start()
+        h.send([bay()])
+        h.api.calls.clear()
+        self.assertFalse(run(h.linker.refresh_linked()))
+        self.assertEqual(h.api.calls, [])
+
+    def test_refresh_is_one_request_for_every_bay(self):
+        self.h.send([bay(tag=bambu_tag(), **self.linked),
+                     bay(tag=bambu_tag(uid="cafebabe",
+                                       bambu={"tray_uid": "1" * 32}))])
+        self.h.api.calls.clear()
+        run(self.h.linker.refresh_linked())
+        self.assertEqual([c[:2] for c in self.h.api.calls],
+                         [("GET", "/v1/spool")])
 
 
 if __name__ == "__main__":

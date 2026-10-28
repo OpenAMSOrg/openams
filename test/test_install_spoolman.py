@@ -32,6 +32,7 @@ class SpoolmanInstallTests(unittest.TestCase):
     _build_moonraker = _base.InstallShTests._build_moonraker
     _build_config = _base.InstallShTests._build_config
     _build_gco_remote = _base.InstallShTests._build_gco_remote
+    _build_taglib_remote = _base.InstallShTests._build_taglib_remote
     run_cmd = _base.InstallShTests.run_cmd
 
     def install(self, *extra, answer="n", uninstall=False):

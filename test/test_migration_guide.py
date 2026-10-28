@@ -107,6 +107,8 @@ class MigrationGuideTests(unittest.TestCase):
         return dict(
             os.environ,
             OPENAMS_NO_SERVICE="1",
+            NO_TAGLIB_DOWNLOAD="1",
+            OPENAMS_TAGLIB_PATH="/nonexistent/taglib",
             OPENAMS_SPOOLMAN_INFO_URL="file:///nonexistent/openams-spoolman",
             MOONRAKER_PATH=str(self.moonraker),
             GIT_CONFIG_GLOBAL=str(gitconfig),

@@ -43,6 +43,7 @@ DEFAULT_BED_TEMP = 60
 # its filament's own weight, else this, and waits for the user to confirm.
 DEFAULT_SPOOL_WEIGHT = 1000
 BAMBU_VENDOR = "Bambu Lab"
+MAX_VENDOR_NAME = 64
 GENERIC_VENDOR = "Generic"
 
 # The extra fields the component requires, C4 §5.2: (key, display name, type).
@@ -155,6 +156,25 @@ def parse_material_temps(text):
             continue
         overrides[name] = temp
     return overrides
+
+
+def parse_tag_vendor(text):
+    """The ``tag_vendor`` option as a vendor name (C4 §5.3).
+
+    The vendor a Bambu tag's new vendor, filament and spool are created
+    under. Empty or unset is "Bambu Lab"; a name over 64 characters (what the
+    edit endpoint takes, C4 §9) is logged and replaced by it: one typo must
+    not stop the component.
+    """
+    name = str(text or "").strip()
+    if not name:
+        return BAMBU_VENDOR
+    if len(name) > MAX_VENDOR_NAME:
+        logging.warning(
+            "openams_spoolman: tag_vendor is longer than %d characters; "
+            "using '%s'", MAX_VENDOR_NAME, BAMBU_VENDOR)
+        return BAMBU_VENDOR
+    return name
 
 
 def material_extruder_temp(material, table=None):
@@ -375,19 +395,24 @@ async def create_spool(api, filament_id, tag, location):
 
 
 async def find_spool_by_tag(api, tag, spools=None):
-    """The spool a Bambu tag belongs to (C4 §4): ``tray_uid`` first, then UID."""
+    """The spool a Bambu tag belongs to (C4 §4): a spool that lists the tag's
+    UID in ``card_uids`` first, then the one with its ``tray_uid``.
+
+    A UID somebody put on a spool is a deliberate choice; a tray UID is shared
+    by every clone of one tag dump and by both tags of one genuine spool.
+    """
     if spools is None:
         spools = await api.request("GET", "/v1/spool") or []
-    tray_uid = (tag.get("bambu") or {}).get("tray_uid")
-    if tray_uid:
-        for spool in spools:
-            if decode_extra((spool.get("extra") or {}).get("tray_uid")) == tray_uid:
-                return spool
     uid = str(tag.get("uid") or "").strip().upper()
     if uid:
         for spool in spools:
             extra = spool.get("extra") or {}
             if uid in _split_uids(decode_extra(extra.get("card_uids"))):
+                return spool
+    tray_uid = (tag.get("bambu") or {}).get("tray_uid")
+    if tray_uid:
+        for spool in spools:
+            if decode_extra((spool.get("extra") or {}).get("tray_uid")) == tray_uid:
                 return spool
     return None
 
@@ -498,18 +523,21 @@ def summary_fingerprint(summary):
                          str(summary.get("color_hex") or "").upper())
 
 
-def _vendor_matches(manufacturer, vendor):
+def _vendor_matches(manufacturer, vendor, bambu_vendor=BAMBU_VENDOR):
     """A known manufacturer must be the spool's vendor; an unknown one (None)
-    constrains nothing. Only Bambu is known from a filament code."""
+    constrains nothing. Only Bambu is known from a filament code, and its
+    spools are filed under ``bambu_vendor`` (the ``tag_vendor`` option) or
+    "Bambu Lab"."""
     if not manufacturer:
         return True
     wanted = str(manufacturer).strip().lower()
     have = str(vendor or "").strip().lower()
-    return have in (wanted, BAMBU_VENDOR.lower()) if wanted == "bambu" \
-        else have == wanted
+    if wanted == "bambu":
+        return have in (wanted, BAMBU_VENDOR.lower(), bambu_vendor.lower())
+    return have == wanted
 
 
-def summary_matches(spool_summary, summary):
+def summary_matches(spool_summary, summary, bambu_vendor=BAMBU_VENDOR):
     """Whether a spool's filament (a C4 §8 ``spool`` summary) is the one a
     unit-decoded summary describes: material, colour when the unit reported
     one, and vendor when the manufacturer is known. The filament code is not
@@ -521,10 +549,10 @@ def summary_matches(spool_summary, summary):
     if wanted and str(spool_summary.get("color_hex") or "").upper() != wanted:
         return False
     return _vendor_matches(summary.get("manufacturer"),
-                           spool_summary.get("vendor"))
+                           spool_summary.get("vendor"), bambu_vendor)
 
 
-def matching_spools(spools, summary, excluded=()):
+def matching_spools(spools, summary, excluded=(), bambu_vendor=BAMBU_VENDOR):
     """The spools a summary may belong to: not archived, not in ``excluded``
     (linked to another bay), and whose filament matches (C4 §4.1)."""
     found = []
@@ -533,7 +561,7 @@ def matching_spools(spools, summary, excluded=()):
             continue
         if spool.get("id") in excluded:
             continue
-        if summary_matches(spool_summary(spool), summary):
+        if summary_matches(spool_summary(spool), summary, bambu_vendor):
             found.append(spool)
     return found
 
@@ -548,15 +576,17 @@ def suggestion_of(spool):
     return entry
 
 
-async def create_summary_spool(api, summary, location):
+async def create_summary_spool(api, summary, location,
+                               bambu_vendor=BAMBU_VENDOR):
     """Vendor, filament and spool for a summary no spool matches (C4 §4.1).
 
-    The vendor is "Bambu Lab" for a Bambu filament code, else "Generic". The
+    The vendor is ``bambu_vendor`` (the ``tag_vendor`` option, "Bambu Lab" by
+    default) for a Bambu filament code, else "Generic". The
     filament is found or created by vendor, material and colour; the spool is
     full by its filament's weight (1000 g when it has none) and carries no
     tag UID or tray UID, since the summary has neither.
     """
-    vendor_name = BAMBU_VENDOR if summary.get("manufacturer") == "Bambu" \
+    vendor_name = bambu_vendor if summary.get("manufacturer") == "Bambu" \
         else GENERIC_VENDOR
     vendor = await get_or_create_vendor(api, vendor_name)
     current = {"material": summary["material"], "name": summary["material"]}

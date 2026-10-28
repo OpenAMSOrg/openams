@@ -379,6 +379,8 @@ class InstallShKlipperPatchTests(HelperTestCase):
         self.env = dict(
             os.environ,
             OPENAMS_NO_SERVICE="1",
+            NO_TAGLIB_DOWNLOAD="1",
+            OPENAMS_TAGLIB_PATH="/nonexistent/taglib",
             OPENAMS_SPOOLMAN_INFO_URL="file:///nonexistent/openams-spoolman",
             OPENAMS_KLIPPER_PATCHES_DIR=str(self.series),
             MOONRAKER_PATH=str(self.moonraker),

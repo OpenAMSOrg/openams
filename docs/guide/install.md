@@ -50,6 +50,7 @@ cd ~/openams
 | `--no-spoolman` | Skip Spoolman entirely | off |
 | `--cortex-bridge` | Install the Cortex Bridge relay even with no bridge connected | when a bridge is connected |
 | `--no-cortex-bridge` | Do not install the Cortex Bridge relay | — |
+| `--no-taglib-download` | Do not download the tag library (about 200 MB) | off |
 
 Three pairs cannot be combined: `--skip-gco-routines` with
 `--require-gco-routines`, `--spoolman-url` with `--no-spoolman`, and
@@ -79,7 +80,9 @@ bridge in, and `OPENAMS_BRIDGE_PYTHON` is the Python its relay runs with.
 | `~/moonraker/moonraker/components/openams_spoolman` | Symlink to `moonraker/openams_spoolman` |
 | Config directory | `oams.cfg` (from [`oams_sample.cfg`](../../oams_sample.cfg)) — **only if absent**; `oams_macros.cfg` and `oams_macros_ordered.cfg` — **symlinks** to the checkout |
 | `printer.cfg` | `[include oams.cfg]` above `[printer]` — only if absent |
-| `moonraker.conf` | `[update_manager openams]`, `[spoolman]`, `[openams_spoolman]` — each only if absent |
+| `~/moonraker/moonraker/components/openams_taglib` | Symlink to `moonraker/openams_taglib` |
+| `moonraker.conf` | `[update_manager openams]`, `[spoolman]`, `[openams_spoolman]`, `[openams_taglib]`, and `[update_manager Bambu-Lab-RFID-Library]` once the library is downloaded — each only if absent |
+| `~/Bambu-Lab-RFID-Library` | The tag library, cloned if absent (about 200 MB; `--no-taglib-download` skips it) |
 | Cortex Bridge only | See [Cortex Bridge](#cortex-bridge) below |
 
 Running the installer twice changes nothing.
@@ -151,6 +154,58 @@ colors.
 Run `./install.sh` again with either flag to change your mind later. Uninstall
 (`-u`) removes only the `[openams_spoolman]` section. Spoolman, its data and
 `[spoolman]` hold your spool database and may serve other tools.
+
+### Tag library
+
+The `openams_taglib` Moonraker component serves the genuine Bambu Lab RFID tag
+library to the touchscreen's spool tag writer. The display is too small to hold
+the 7,000 tag dumps, so it asks the printer host for one tag at a time. The
+installer links the component, adds an empty `[openams_taglib]` section to
+`moonraker.conf`, and downloads the library (below) unless you pass
+`--no-taglib-download`. Once the checkout exists it also adds
+`[update_manager Bambu-Lab-RFID-Library]` (`type: git_repo`, `primary_branch:
+main`, `is_system_service: False`), so Mainsail and Fluidd offer the library's
+updates; the component re-indexes by itself within about 10 seconds of the
+update manager pulling it. A download that fails (no internet) is only a
+warning; run the installer again once the printer is online.
+
+If the installer did not download the library, the host does it the first time
+the display (or any request below) needs it, and runs `git clone --depth 1` of
+[queengooborg/Bambu-Lab-RFID-Library](https://github.com/queengooborg/Bambu-Lab-RFID-Library):
+**about 200 MB**, so the printer needs internet access and the disk space. Until
+it finishes the endpoints answer `updating` and an empty list. Nothing is
+downloaded before that. A library downloaded that way is **not** in the update
+manager until you run `./install.sh` again (`status` says so in `message`).
+Later updates keep serving the old library until the
+new one is indexed, and a failed update keeps it too (the error shows in
+`status`).
+
+```ini
+[openams_taglib]
+# path: ~/Bambu-Lab-RFID-Library
+# url: https://github.com/queengooborg/Bambu-Lab-RFID-Library.git
+# auto_clone: True
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `~/Bambu-Lab-RFID-Library` | The library checkout; point it at an existing one to skip the download |
+| `url` | the GitHub repository above | Where `update` clones from |
+| `auto_clone` | `True` | Download the library on first use when `path` does not exist; with `False`, use `update` |
+
+| Endpoint | Answers |
+|---|---|
+| `GET /server/openams/taglib/status` | State (`ready`, `missing`, `updating`, `error`), counts, git revision, last message |
+| `GET /server/openams/taglib/materials` | The material names and the tag count |
+| `GET /server/openams/taglib/colors?material=<m>` | `[color, count, fresh]` for the material; `fresh` counts tags not yet cloned |
+| `GET /server/openams/taglib/pick?material=<m>&color=<c>` | One tag (`uid`, `fresh`, `image`), a never-cloned one first; 404 if none |
+| `POST /server/openams/taglib/cloned` `uid=<8 hex>` | Remember that a tag was cloned |
+| `POST /server/openams/taglib/add` `material=`, `color=`, `image=<2048 hex>` | Add a tag the display read from a genuine spool |
+| `POST /server/openams/taglib/update` | Clone or pull the library, then re-index (409 while one runs) |
+
+The cloned tags and the tags the display added are kept in Moonraker's database.
+Uninstall (`-u`) removes the link, the `[openams_taglib]` section and the
+library's `[update_manager ...]` entry, but leaves the downloaded library.
 
 ### gco-routines
 
@@ -339,8 +394,9 @@ cd ~/openams && ./install.sh -u
 
 It removes the OpenAMS links (including the Moonraker component link), the
 `klipper_mmu` host symlink, the MCU add-on hooks when present, the
-`[include oams.cfg]` line, `[update_manager openams]` and `[openams_spoolman]`.
-On a Cortex Bridge printer it also stops and removes the relay service and its
+`[include oams.cfg]` line, `[update_manager openams]`, `[openams_spoolman]`,
+`[openams_taglib]` and `[update_manager Bambu-Lab-RFID-Library]` (the downloaded library
+stays). On a Cortex Bridge printer it also stops and removes the relay service and its
 `/etc` files, the `openams_bridge` component and section, and its
 `moonraker.asvc` line. It reverses the Klipper patch series if applied, and
 asks whether to remove your `oams*.cfg` files; answering `n` keeps them.

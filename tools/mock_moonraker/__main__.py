@@ -33,6 +33,11 @@ def build_parser():
                              "or simulate (a load or unload "
                              "plays on the unit's openams_ui lane) "
                              "(default ok)")
+    parser.add_argument("--taglib", default=None, metavar="PATH",
+                        help="serve the openams_taglib HTTP routes "
+                             "(/server/openams/taglib/...) from this "
+                             "Bambu-Lab-RFID-Library checkout; nothing is "
+                             "cloned")
     parser.add_argument("--record", default=None, metavar="PATH",
                         help="append every request to this JSON-lines file")
     return parser
@@ -49,7 +54,8 @@ def main(argv=None):
     server = MockMoonraker(fixture, host=args.host, port=args.port,
                            speed=args.speed, loop=args.loop,
                            record_path=args.record,
-                           gcode_mode=args.gcode_mode)
+                           gcode_mode=args.gcode_mode,
+                           taglib=args.taglib)
 
     async def run():
         await server.start()

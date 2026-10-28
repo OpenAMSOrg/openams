@@ -56,6 +56,24 @@ An error is a JSON-RPC error with the component's message and status: an empty
 bay is 409 `no spool in oams1 Spool 1`, an unknown unit or bay 404, a bad value
 400 (`flow_k must be between 0 and 2`).
 
+## `--taglib <path>`
+
+Serves the `openams_taglib` component's routes over plain HTTP, from a local
+checkout of the Bambu Lab RFID library, so the display's tag writer can be
+developed without a printer. The routes are the component's own
+(`/server/openams/taglib/` `status`, `materials`, `colors`, `pick`, `cloned`,
+`add`, `update`), answered by the component's `library.py`; the database is in
+memory, and nothing is cloned (a missing `<path>` reports state `missing`;
+`update` re-reads the checkout). Results come wrapped as Moonraker does, `200`
+with `{"result": ...}`, and an error as its HTTP status with
+`{"error": {"code": 404, "message": "..."}}`:
+
+```sh
+cd tools && python3 -m mock_moonraker --fixture mock_moonraker/fixtures/idle.json \
+    --host 0.0.0.0 --port 7130 --taglib ~/Bambu-Lab-RFID-Library
+curl 'http://localhost:7130/server/openams/taglib/colors?material=ABS'
+```
+
 ## `--gcode-mode`
 
 | Mode | `printer.gcode.script` |

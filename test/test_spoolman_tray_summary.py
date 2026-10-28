@@ -120,14 +120,20 @@ class KeepTests(Base):
         self.assertEqual(self.bay0()["state"], "pending_confirmation")
         self.assertEqual(self.spool_count(), 1)
 
-    def test_vendor_is_compared_only_when_the_manufacturer_is_known(self):
+    def test_a_linked_spool_of_another_vendor_is_kept(self):
+        # Spoolman is the authority on the brand: a Bambu filament code does
+        # not turn a spool filed under another vendor into a stale link.
         spool = add_spool(self.h, vendor="Acme")
         self.h.send([bay(spool_id=spool, link_source="manual")])
-        # A Bambu filament code names Bambu: an Acme spool does not match.
-        self.h.send([bay(tag=summary_tag(), spool_id=spool,
-                         link_source="manual")])
-        self.assertNotEqual(self.bay0()["spool_id"], spool)
-        # An unknown manufacturer matches any vendor.
+        before = list(self.h.sent)
+        for read_at in (2.0, 3.0):
+            self.h.send([bay(tag=summary_tag(read_at=read_at), spool_id=spool,
+                             link_source="manual")])
+            self.assertEqual(self.bay0()["spool_id"], spool)
+            self.assertEqual(self.bay0()["spool"]["vendor"], "Acme")
+        self.assertEqual(self.h.sent, before)
+        self.assertEqual(self.spool_count(), 1)
+        # An unknown manufacturer matches any vendor, as ever.
         self.setUp()
         spool = add_spool(self.h, vendor="Acme")
         self.h.send([bay(spool_id=spool, link_source="manual")])
@@ -135,6 +141,19 @@ class KeepTests(Base):
                          spool_id=spool, link_source="manual")])
         self.assertEqual(self.bay0()["spool_id"], spool)
         self.assertEqual(self.h.sets(), [])
+
+    def test_a_vendor_changed_in_spoolman_survives_a_new_read(self):
+        self.h.send([bay(tag=summary_tag())])
+        spool = self.bay0()["spool_id"]
+        self.assertEqual(self.bay0()["spool"]["vendor"], "Bambu Lab")
+        self.h.api.spools[0]["filament"]["vendor"] = {
+            "id": 9, "name": "Polymaker", "extra": {}}
+        run(self.h.linker.refresh_linked())
+        self.h.send([bay(tag=summary_tag(read_at=2.0), spool_id=spool,
+                         link_source="tag")])
+        self.assertEqual(self.bay0()["spool_id"], spool)
+        self.assertEqual(self.bay0()["spool"]["vendor"], "Polymaker")
+        self.assertEqual(self.spool_count(), 1)
 
     def test_a_link_that_no_longer_fits_is_re_matched(self):
         old = add_spool(self.h, material="PLA", color_hex="FF0000")
@@ -220,6 +239,66 @@ class MatchTests(Base):
         wanted = add_spool(self.h, color_hex="ABCDEF")
         self.h.send([bay(tag=summary_tag(color_argb=None))])
         self.assertEqual(self.bay0()["spool_id"], wanted)
+
+
+class SpoolmanWinsTests(Base):
+    """What the unit's code says of the maker never overrides Spoolman's own
+    vendor (C4 §4.1)."""
+
+    def test_a_removed_and_reinserted_spool_is_found_again(self):
+        spool = add_spool(self.h, vendor="Polymaker")
+        other = add_spool(self.h, vendor="Bambu Lab")
+        self.h.send([bay(spool_id=spool, link_source="manual")])
+        self.h.send([bay(tag=summary_tag(read_at=2.0), spool_id=spool,
+                         link_source="manual")])
+        self.h.send([bay(ready=False)])
+        self.assertEqual(self.bay0()["state"], "unlinked")
+        self.h.send([bay(tag=summary_tag(read_at=3.0))])
+        # The Bambu Lab spool is the only vendor match; the bay's own earlier
+        # resolution wins over it, and nothing is created.
+        self.assertEqual(self.bay0()["spool_id"], spool)
+        self.assertNotEqual(self.bay0()["spool_id"], other)
+        self.assertEqual(self.spool_count(), 2)
+
+    def test_a_spool_located_at_the_bay_wins_whatever_its_vendor(self):
+        mine = add_spool(self.h, vendor="Polymaker", location="oams1-0")
+        add_spool(self.h, vendor="Bambu Lab")
+        self.h.send([bay(tag=summary_tag())])
+        self.assertEqual(self.bay0()["spool_id"], mine)
+        self.assertEqual(self.spool_count(), 2)
+
+    def test_no_new_bambu_spool_when_the_vendor_was_changed_in_a_unit_bay(self):
+        self.h.send([bay(tag=summary_tag())])
+        spool = self.bay0()["spool_id"]
+        self.h.api.spools[0]["filament"]["vendor"] = {
+            "id": 9, "name": "Polymaker", "extra": {}}
+        self.h.send([bay(ready=False, spool_id=spool, link_source="tag")])
+        self.h.clock.advance(6)
+        self.h.send([bay(ready=False)])
+        self.h.send([bay(tag=summary_tag(read_at=4.0))])
+        self.assertEqual(self.bay0()["spool_id"], spool)
+        self.assertEqual(self.spool_count(), 1)
+
+
+class TagVendorSummaryTests(Base):
+    def setUp(self):
+        self.h = Harness(tag_vendor="My Filaments").start()
+
+    def test_a_created_spool_for_a_bambu_code_uses_the_option(self):
+        self.h.send([bay(tag=summary_tag())])
+        self.assertEqual(self.bay0()["spool"]["vendor"], "My Filaments")
+        self.assertEqual([v["name"] for v in self.h.api.vendors],
+                         ["My Filaments"])
+
+    def test_a_non_bambu_summary_is_still_generic(self):
+        self.h.send([bay(tag=summary_tag(manufacturer=None, code="X1"))])
+        self.assertEqual(self.bay0()["spool"]["vendor"], "Generic")
+
+    def test_a_spool_of_the_option_vendor_matches_a_bambu_code(self):
+        mine = add_spool(self.h, vendor="My Filaments")
+        self.h.send([bay(tag=summary_tag())])
+        self.assertEqual(self.bay0()["spool_id"], mine)
+        self.assertEqual(self.spool_count(), 1)
 
 
 class AmbiguousTests(Base):

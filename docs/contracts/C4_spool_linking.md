@@ -62,7 +62,7 @@ bay's state (§8).
 | any | component start or manager `ready` | the host holds a link for the bay | `linked` (host's source) | nothing; the host's persisted link is authoritative |
 | `unlinked` | tag read, `format: spoolman_link` | the id resolves in Spoolman, or Spoolman is offline | `linked` (tag) | `OAMSM_SET_BAY_SPOOL … SPOOL=<id> SOURCE=tag`; mirror `location` (§5.6) |
 | `unlinked` | tag read, `format: bambu` | — | `resolving` | look up (§4) |
-| `resolving` | a spool matches `tray_uid` or a tag UID | — | `linked` (tag) | `OAMSM_SET_BAY_SPOOL`; mirror `location`; add the UID if new (§5.7) |
+| `resolving` | a spool lists the tag's UID, or has its `tray_uid` (§4) | — | `linked` (tag) | `OAMSM_SET_BAY_SPOOL`; mirror `location`; add the UID if new (§5.7) |
 | `resolving` | no match | `auto_create_spoolman_spools`, online | `pending_confirmation` | create vendor, filament, spool (§5.3-5.5); `OAMSM_SET_BAY_SPOOL … SOURCE=tag` |
 | `resolving` | no match | creation off | `unlinked` | `error`: no Spoolman spool for this tag; UIs offer Assign spool |
 | any | tag read, `format: unit_summary` | — | by §4.1: unchanged (Keep), `linked` (tag), `unlinked` with suggestions, or `pending_confirmation` (Create) | the Keep / Match / Create policy of §4.1; never a guess |
@@ -94,9 +94,14 @@ From the linking policy and ARCHITECTURE §6.4:
 
 1. **Spoolman-link tag** (`tag.format == "spoolman_link"`, NDEF `web+spoolman:s-<id>`):
    link `tag.spoolman_id`.
-2. **Bambu tag** (`tag.format == "bambu"`): find the spool whose `tray_uid` extra
-   equals `tag.bambu.tray_uid` (both tags of one Bambu spool share it, so either
-   side finds it), else whose `card_uids` extra contains the UID. Spoolman offers no
+2. **Bambu tag** (`tag.format == "bambu"`): find the spool whose `card_uids` extra
+   contains the tag's UID, else the spool whose `tray_uid` extra equals
+   `tag.bambu.tray_uid` (both tags of one Bambu spool share it, so either side
+   finds it). **A UID in Spoolman wins:** a UID somebody put on a spool is a
+   deliberate choice, while a tray UID is shared by every clone of one tag dump
+   and by an earlier auto-created spool, so the tray UID is only the fallback.
+   Both tags of one genuine spool still find the same spool through the tray
+   UID, and the second UID is then added (§5.7). Spoolman offers no
    query on extra fields; like AFC_RFID, the component matches over
    `GET /v1/spool` results and its cache (`afc:AFC_RFID.py:122-128`, `:1242-1292`).
    Found: link. Not found: create (§5.3-5.5) when `auto_create_spoolman_spools`.
@@ -108,12 +113,18 @@ From the linking policy and ARCHITECTURE §6.4:
    re-applies the tag.
 
 The Bambu decoder reports `manufacturer: "Bambu"` (`src/bambu_lab_tag_processor.py:69`);
-the Spoolman vendor is **"Bambu Lab"**.
+the Spoolman vendor of a spool the component creates is **"Bambu Lab"**, or the
+`tag_vendor` option (§5.3). It is only the vendor a *new* spool starts with: the
+tag never changes a spool Spoolman already holds, so what the user sets there
+(vendor, filament, colour) wins and sticks (§6 for how an edit made in Spoolman
+itself reaches the status).
 
 **RESOLVED (review, C4 8):** a queued creation that meets a spool
 created meanwhile (another tool, the web UI) must de-duplicate by `card_uids`
 when the write queue replays (H4), rather than creating a second spool for the
-same physical tag.
+same physical tag. The replay finds that spool in the same order as step 2
+(`card_uids` first, then `tray_uid`), and the offline cache (§6) uses the same
+order.
 
 ### 4.1 Unit-decoded summaries (`format: "unit_summary"`)
 
@@ -131,20 +142,27 @@ with `read_at` alone):
 1. **Keep.** If the bay already has a link, of any source, and the summary
    matches that spool's filament, nothing changes: no command, no write, and
    `pending_confirmation` stays. A filament matches when its **material**
-   equals the summary's (case and spaces ignored), its **colour** equals the
+   equals the summary's (case and spaces ignored) and its **colour** equals the
    summary's `color_argb & 0xFFFFFF` when the summary has one (none matches
-   any colour), and its **vendor** is "Bambu Lab" when the summary's
-   `manufacturer` is `"Bambu"` (an unknown manufacturer constrains nothing).
-   The filament code is not stored in Spoolman and is not compared. With
+   any colour). **The vendor is not compared** for a link the bay already
+   holds: a code that names Bambu says nothing of the brand of the spool in
+   the bay (a clone tag on another brand's spool, a setting written by §7.5),
+   and Spoolman's vendor wins. The filament code is not stored in Spoolman and is not compared. With
    Spoolman offline and the linked spool never read, the link is kept. A link
    that does **not** match is stale (the spool in the bay was changed): the
    read goes on to Match, and if that links no spool the stale link is cleared
    (`OAMSM_CLEAR_BAY_SPOOL`, `location` cleared).
 2. **Match.** Otherwise the candidates are the non-archived Spoolman spools
    whose filament matches the summary and that **no other bay holds** (neither
-   the host's links nor another bay's machine). A candidate whose `location`
-   equals this bay's key (`"<unit>-<bay>"`) is preferred: when any exist, only
-   those remain. If **exactly one** candidate remains, link it
+   the host's links nor another bay's machine). Here a known manufacturer
+   constrains the vendor: "Bambu" means a spool filed under "Bambu Lab" or the
+   `tag_vendor` option (§5.3). Spoolman's own data is preferred over that
+   guess: a non-archived spool (not held by another bay) whose material and
+   colour match and whose `location` equals this bay's key (`"<unit>-<bay>"`),
+   **whatever its vendor**, is the only candidate when one exists; failing
+   that, the spool this bay and this summary resolved to before (the cache key
+   of step 4) is, while it still matches by material and colour. If **exactly
+   one** candidate remains, link it
    (`SOURCE=tag`, §5.6 mirror). If **several** remain, the bay goes to
    `unlinked`, `error` says how many spools match, and the bay's
    **`suggestions`** (§8) lists them (at most ten) for a UI to offer; the user's
@@ -152,8 +170,8 @@ with `read_at` alone):
    SOURCE=manual`), which ends the suggestions. Nothing is created and nothing
    is guessed.
 3. **Create.** With no candidate: when `auto_create_spoolman_spools` is on and
-   Spoolman is online, create the vendor ("Bambu Lab" for `manufacturer:
-   "Bambu"`, else "Generic"), the filament (found by vendor, material and
+   Spoolman is online, create the vendor (`tag_vendor`, "Bambu Lab" by default,
+   for `manufacturer: "Bambu"`, else "Generic"), the filament (found by vendor, material and
    colour, else created, with `settings_extruder_temp` the mean of the nozzle
    range when it has one) and the spool (§5.5, but without `tray_uid` and
    without `card_uids`), link it, and enter **`pending_confirmation`**: the
@@ -221,7 +239,7 @@ actual keys achieve.
 | `drying_time` (extra) | filament | integer | hours, `tag.bambu.drying_time_h` | on create | none (new) |
 | `filament_code` (extra) | filament | text | the manufacturer's filament code, for example a Bambu filament code such as `GFB60`: what a unit that stores a per-bay setting is given as `code` (§7.5). Up to 6 printable ASCII characters are used; anything else is ignored | never written by the component; set by the user | none (new) |
 | `variant` (extra) | filament | text | **AFC_RFID's behavior (RESOLVED, C4 7):** the tag's sub-type text, unmodified. Bambu tags carry `type` (e.g. "PLA") and `detailed` (e.g. "PLA Basic") but no separate sub-type field; the component writes `detailed` verbatim, the same source AFC_RFID uses when it has one | on create | `afc:AFC_RFID.py:238-239`, `:286-305` |
-| vendor `name` | vendor | — | `"Bambu Lab"` for Bambu tags | get-or-create | AFC_RFID takes the vendor from the tag (`afc:AFC_U1_rfid.py:949-951`); OpenAMS's Bambu decoder does not carry a vendor field, so the component hard-codes "Bambu Lab" for `tag.format == "bambu"` |
+| vendor `name` | vendor | — | the `tag_vendor` option, `"Bambu Lab"` by default, for Bambu tags (§5.3) | get-or-create | AFC_RFID takes the vendor from the tag (`afc:AFC_U1_rfid.py:949-951`); OpenAMS's Bambu decoder does not carry a vendor field, so the component names it for `tag.format == "bambu"` |
 
 The integer field type is not exercised by AFC_RFID, which uses only `text` and
 `float`.
@@ -250,9 +268,22 @@ POST /v1/vendor {"name": "Bambu Lab"}
 ```
 (`afc:AFC_RFID.py:139-147`)
 
+The name is the **`tag_vendor`** option of `[openams_spoolman]`, default
+`Bambu Lab`, so nothing changes for a user who does not set it. It is the vendor
+of every vendor, filament and spool the component creates from a Bambu tag
+(§5.4 and §5.5 use it too), of a queued creation when it replays (§6), and of a
+unit-decoded summary whose manufacturer is `"Bambu"` (§4.1 Create, which would
+otherwise file the same Bambu filament under another vendor than a tag of it);
+a summary of another manufacturer stays "Generic". A spool Spoolman already
+holds is never moved to it. The option is trimmed; empty or unset is the default,
+and a name over 64 characters (the edit endpoint's limit, §9) is **logged and
+replaced by the default**: one typo never stops the component. It is read once,
+in the component's constructor.
+
 ### 5.4 Filament
 
-Find: `GET /v1/filament?vendor.name=Bambu%20Lab&material=<type>`, then match
+Find: `GET /v1/filament?vendor.name=<tag_vendor>&material=<type>` (the vendor of
+§5.3), then match
 `name == tag.bambu.detailed` and `color_hex == RRGGBB` client-side
 (`afc:AFC_RFID.py:104-114`). Create when none matches (`afc:AFC_RFID.py:176-196`):
 
@@ -322,8 +353,9 @@ blocks printing.
 
 | Part | Behavior | Prior art |
 |---|---|---|
-| **Read cache** | tag key → `{spool_id, filament summary}`, keys `uid:<UID>` and `tray:<tray_uid>`; pre-warmed by one full `GET /v1/spool` scan on the first contact with Spoolman; refreshed on every successful resolution | `afc:AFC_RFID.py:1083-1292` (keys `uid:`/`sku:`, one-shot pre-warm, write-back on every hit) |
+| **Read cache** | tag key → `{spool_id, filament summary}`, keys `uid:<UID>` and `tray:<tray_uid>`; pre-warmed by one full `GET /v1/spool` scan on the first contact with Spoolman; refreshed on every successful resolution. A lookup tries the UID first, then the tray UID, the order of §4. A `tray:` key is cached only for a spool that carries that tray UID, and each scan (the pre-warm and the refresh below) rebuilds the tag keys from what Spoolman holds now: a UID or tray UID belongs to the first spool that lists it, and a key whose spool no longer carries the tag is dropped (a UID write still waiting in the queue keeps its key) | `afc:AFC_RFID.py:1083-1292` (keys `uid:`/`sku:`, one-shot pre-warm, write-back on every hit) |
 | **Write queue** | creations, `location` mirrors, and UID additions are queued in order and replayed when Spoolman returns; the depth is `queued_writes`; a replayed creation de-duplicates by `card_uids` against what Spoolman now holds (RESOLVED, C4 8) | **new**: AFC_RFID has no replay queue and skips writes while offline (`afc:AFC_RFID.py:1358-1364`) |
+| **Refresh of the linked spools** | Spoolman tells nobody about an edit made in its web UI (a spool's filament, the filament's vendor, colour or material, a UID moved to another spool), so the cached summaries of the linked spools would stay as the component last read them. While any bay is linked the component re-reads them every **`refresh_interval`** seconds (an `[openams_spoolman]` option, default **60**; **0** turns it off; a smaller positive value is raised to **10**; a value that is not a number is logged and replaced by 60). One refresh is **one `GET /v1/spool`** whatever the number of bays, and none while nothing is linked. It rewrites a cached summary only when it differs and then asks for a status pass, the same pass that follows any host status: that pushes the bay's material and temperature (§7.4), the `lane_data` lanes (§7.4.1) and a unit's stored setting (§7.5) when they changed, and sends `notify_openams_spoolman_status` when the status object differs, so a web edit reaches the display and the slicer within one interval, without reading the tag again. Spoolman failing to answer sets `spoolman_online: false` (notified), and answering again clears it and lets the queue replay. Nothing is queued by a refresh | Moonraker's own `[spoolman]` component offers no such hook for a component to use |
 | **Reachability** | Moonraker's `spoolman_connected`, with `notify_spoolman_status_changed` (`moonraker:89-91`, `:396-411`), or a `GET /v1/info` probe | `afc:AFC_RFID.py:84-94` |
 | **Active spool** | works offline: Moonraker's active spool is local and its usage reports queue in Moonraker | `moonraker:282-294` |
 | **Storage** | persisted by the component (a Moonraker database namespace or a file; not a contract surface) | `afc:AFC_RFID.py:1106-1192` (a JSON file, atomic replace) |
@@ -446,7 +478,9 @@ and the next pass pushes every bay again.
 **Spoolman offline** the cached summary is used (§6); with no cached summary
 nothing new is sent and the bay stays unknown. A G-code Klipper refuses is
 logged and not recorded, so it neither breaks the pass nor silences the
-retry.
+retry. The refresh of the linked spools (§6) feeds the same comparison: an edit
+made in Spoolman's web UI changes the cached summary, and the pass it asks for
+pushes the new `(material, temp_c, source)`.
 
 ### 7.4.1 Slicer filament list (`lane_data`)
 
@@ -468,8 +502,9 @@ nothing and registers no namespace).
   `settings_bed_temp`, else `MATERIAL_BED_TEMP`, else 0.
 - No bay or no linked spool: the lane is published with `material: ""`.
 - A lane is written only when its content differs from what the namespace
-  holds (read once after the component starts); lanes of groups that no
-  longer exist are deleted. A database error is logged once and never fails
+  holds (read once after the component starts), so a spool changed in
+  Spoolman's web UI reaches the slicer through the refresh of §6 and the pass
+  it asks for; lanes of groups that no longer exist are deleted. A database error is logged once and never fails
   the status pass.
 
 ### 7.5 A unit's stored filament setting
@@ -525,7 +560,9 @@ one, and a default never causes a write by itself.
 - **On a Spoolman-side change only:** a new link, a re-link, or a change of
   the spool's material, colour, `filament_code` or `settings_extruder_temp`
   (an edit through §9 at once; an edit made in Spoolman itself when the
-  component re-reads the linked spool, every 60 s). A link that the unit's own
+  component re-reads the linked spool: the refresh of §6 for every linked
+  spool, within `refresh_interval`, and for a bay of this kind also on its own
+  every 60 s). A link that the unit's own
   report made (`link_source: tag`, §4.1) is taken as already in step: the unit
   holds the filament that decided it, so it is written only after the spool
   changes.
@@ -582,7 +619,7 @@ remaining), per bay, since Spoolman — not the host — owns those facts:
 | `.error` | human text for the last failure, else null |
 | `.tray_sync` | **additive, optional (§7.5).** Present only on a bay §7.5 keeps in step: `{state, error}`, `state` one of `in_sync` (the unit holds the spool's filament), `pending` (a write waits, or was sent and its report is awaited), `kept` (the unit holds another setting that is left alone: it decided the link, or it changed after the bay was in step, and the spool has not changed since), `failed` (the writes for the spool's latest change did not take); `error` the last write's failure, else null |
 | `.suggestions` | **additive, optional (§4.1).** Present only on an `unlinked` bay whose unit-decoded tag matches several spools: up to ten `{spool_id, material, color_hex, vendor, remaining_g, location}` entries a UI may offer. Absent otherwise |
-| `.spool` | the linked spool's summary (material, color_hex, vendor, remaining_g, remaining_pct), or null when unlinked/resolving/not yet known — the display merges this with `openams_ui <unit>` (C2 §6) |
+| `.spool` | the linked spool's summary (material, color_hex, vendor, remaining_g, remaining_pct), or null when unlinked/resolving/not yet known — the display merges this with `openams_ui <unit>` (C2 §6). It is Spoolman's data as last read (a tag read, an edit through §9, or the refresh of §6), never the tag's |
 | `.spool.initial_g` | the spool's `initial_weight`, else the filament's nominal `weight`, else null; a UI prefills the edit form's initial weight from it (§9). Additive |
 | `.spool.flow_k` | the spool's `extra.flow_k` pressure advance, decoded exactly as §7.2 applies it, so a value that is not a number is null; a UI prefills the edit form's pressure advance from it (§9). Additive |
 

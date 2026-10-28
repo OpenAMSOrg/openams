@@ -17,7 +17,7 @@ things work or fail on a real machine, so that a fix goes to the actual cause.
 | Path | What is in it |
 |---|---|
 | `src/` | The Klipper host plugin (extras): `oams.py` (one unit), `oams_manager.py` (lanes, groups, commands), `oams_runtime.py` (load/unload/runout monitors), `fps.py`, `filament_group.py` |
-| `moonraker/` | The `openams_spoolman` Moonraker component |
+| `moonraker/` | The `openams_spoolman`, `openams_bridge` and `openams_taglib` Moonraker components |
 | `oams_macros.cfg`, `oams_sample.cfg` | The shipped toolchange macros (linked into the user's config, replaced on update) and the template for the user's own `oams.cfg` |
 | `tools/agent/` | Read-only checks: `bringup_check.py`, `config_audit.py`, `preflight.sh` |
 | `cortex_bridge/`, `tools/cortex-bridge.py` | Stock AMS units behind a Cortex Bridge |

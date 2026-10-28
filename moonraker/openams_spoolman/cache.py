@@ -86,10 +86,17 @@ class SpoolCache(object):
         return None
 
     def remember(self, tag, spool):
-        """Cache a resolved spool under the tag's UID and Bambu tray keys."""
+        """Cache a resolved spool under the tag's UID, and under its Bambu
+        tray key when the spool carries that tray UID: online, a tray UID
+        finds only a spool that has it (C4 §4), and a UID found a spool
+        first."""
         tag = tag or {}
         uid = str(tag.get("uid") or "").strip().upper()
         tray = (tag.get("bambu") or {}).get("tray_uid")
+        own = ops.decode_extra(
+            ((spool or {}).get("extra") or {}).get("tray_uid"))
+        if str(own or "").strip().lower() != str(tray or "").strip().lower():
+            tray = None
         self._remember(spool, [uid] if uid else [], tray)
 
     def lookup_summary(self, bay_key, summary):
@@ -139,6 +146,54 @@ class SpoolCache(object):
                 self.persist()
                 return
 
+    def scan(self, spools, only=None):
+        """Learn from a full ``GET /v1/spool`` (C4 §6): the tag keys of every
+        spool, and the summaries of all of them or, with ``only``, of those
+        ids. Returns the ids whose summary changed.
+
+        A tag key follows what Spoolman holds, in the order §4 resolves: a
+        UID listed in ``card_uids`` and a ``tray_uid`` each belong to the
+        first spool that carries them, and a key whose spool no longer
+        carries the tag is dropped, unless a queued UID write still has to
+        put it there."""
+        uids, trays, ids = {}, {}, set()
+        for spool in spools:
+            if not isinstance(spool, dict) or spool.get("id") is None:
+                continue
+            ids.add(spool["id"])
+            extra = spool.get("extra") or {}
+            for uid in _uids(ops.decode_extra(extra.get("card_uids"))):
+                uids.setdefault("uid:" + uid, spool["id"])
+            tray = ops.decode_extra(extra.get("tray_uid"))
+            if tray:
+                trays.setdefault("tray:" + str(tray).strip().lower(),
+                                 spool["id"])
+        queued = set("uid:" + str(entry.get("uid") or "").strip().upper()
+                     for entry in self.queue if entry.get("op") == "card_uid")
+        keys = dict(self._keys)
+        for key, spool_id in self._keys.items():
+            if key.startswith(("uid:", "tray:")) and spool_id in ids \
+                    and key not in queued:
+                del keys[key]
+        keys.update(trays)
+        keys.update(uids)
+        changed = set()
+        summaries = dict(self._summaries)
+        for spool in spools:
+            if not isinstance(spool, dict) or spool.get("id") is None:
+                continue
+            if only is not None and spool["id"] not in only:
+                continue
+            summary = ops.spool_summary(spool)
+            if summaries.get(str(spool["id"])) != summary:
+                summaries[str(spool["id"])] = summary
+                changed.add(spool["id"])
+        if keys != self._keys or summaries != self._summaries:
+            self._keys = keys
+            self._summaries = summaries
+            self.persist()   # once for the whole scan, not once per spool
+        return changed
+
     async def prewarm(self, api):
         """Remember every spool Spoolman holds, once per component start."""
         if self._prewarmed:
@@ -149,10 +204,4 @@ class SpoolCache(object):
         except SpoolmanUnavailable:
             self._prewarmed = False
             return
-        for spool in spools:
-            if not isinstance(spool, dict):
-                continue
-            extra = spool.get("extra") or {}
-            self._remember(spool, _uids(ops.decode_extra(extra.get("card_uids"))),
-                           ops.decode_extra(extra.get("tray_uid")), persist=False)
-        self.persist()   # once for the whole scan, not once per spool
+        self.scan(spools)
