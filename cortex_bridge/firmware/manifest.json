@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 7,
+   "file": "bridge-7.oac2",
+   "sha256": "b302056e0491f35fdad0aeebfb83e14c0def8e4631f3b9d810c1781e72cefb94",
+   "released": "2026-11-03",
+   "notes": "Stock AMS 1: loads at full speed to the toolhead (about 12 s instead of 17 s) and reads Bambu spool tags."
+  },
+  {
    "version": 4,
    "file": "bridge-4.oac2",
    "sha256": "f2190ea6d68f9d59febc9d8de22153e54235f0238c2b6774e5264160e9b2f580",
