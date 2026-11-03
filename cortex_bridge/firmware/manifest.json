@@ -1,4 +1,12 @@
 {
  "schema": 1,
- "packages": []
+ "packages": [
+  {
+   "version": 4,
+   "file": "bridge-4.oac2",
+   "sha256": "f2190ea6d68f9d59febc9d8de22153e54235f0238c2b6774e5264160e9b2f580",
+   "released": "2026-11-02",
+   "notes": "Stock AMS 1 support: it connects, reports its bay sensors and relays the buffer, so it loads and unloads."
+  }
+ ]
 }
