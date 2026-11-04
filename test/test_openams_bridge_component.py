@@ -102,9 +102,14 @@ class ComponentTests(unittest.TestCase):
         self.component = bridge_component.OpenAmsBridge(
             FakeConfig(self.server, self.run_dir))
 
-    def write_status(self, online):
+    def write_status(self, online, version=None, state="known",
+                     reason=""):
+        firmware = None
+        if version is not None or state != "known":
+            firmware = {"state": state, "reason": reason, "version": version}
         (self.run_dir / "status.json").write_text(json.dumps({
             "state": "running",
+            "firmware": firmware,
             "units": [{"uid": "0a1b2c3d4e5f", "online": online,
                        "path": "/dev/oams/0a1b2c3d4e5f"}]}))
 
@@ -118,6 +123,29 @@ class ComponentTests(unittest.TestCase):
         self.assertEqual(result["relay"]["state"], "running")
         self.assertEqual(result["latest"]["version"], 7)
         self.assertFalse(result["update_running"])
+
+    def test_status_says_whether_the_bridge_is_up_to_date(self):
+        self.write_status(True, version=7)
+        result = self.call("/server/openams/bridge/status")
+        self.assertEqual(result["installed"], 7)
+        self.assertEqual(result["verdict"], "up-to-date")
+        self.assertFalse(result["update_available"])
+        self.write_status(True, version=4)
+        result = self.call("/server/openams/bridge/status")
+        self.assertEqual(result["verdict"], "update-available")
+        self.assertTrue(result["update_available"])
+        self.write_status(True, state="unavailable", reason="lab-firmware")
+        result = self.call("/server/openams/bridge/status")
+        self.assertIsNone(result["installed"])
+        self.assertIsNone(result["update_available"])
+        self.assertIn("lab", result["installed_unknown_reason"])
+
+    def test_update_is_refused_when_the_bridge_already_runs_it(self):
+        self.write_status(True, version=7)
+        with self.assertRaises(ServerError) as caught:
+            self.call("/server/openams/bridge/update")
+        self.assertEqual(caught.exception.status, 409)
+        self.assertIn("already runs version 7", str(caught.exception))
 
     def test_update_is_refused_while_printing(self):
         self.klippy.state = "printing"
@@ -142,7 +170,7 @@ class ComponentTests(unittest.TestCase):
                 writer.write((json.dumps(line) + "\n").encode())
             await writer.drain()
             writer.close()
-            self.write_status(True)
+            self.write_status(True, version=7)
 
         async def scenario():
             server = await asyncio.start_unix_server(
@@ -162,6 +190,7 @@ class ComponentTests(unittest.TestCase):
         self.assertEqual(events, ["accepted", "progress", "result"])
         self.assertEqual(self.klippy.restarts, ["FIRMWARE_RESTART"])
         self.assertTrue(self.component.last_result["ok"])
+        self.assertEqual(self.component.last_result["installed_version"], 7)
 
 
 if __name__ == "__main__":

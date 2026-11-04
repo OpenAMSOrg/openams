@@ -54,6 +54,8 @@ which fixes not to suggest, read [AGENTS.md](AGENTS.md).
    `flashtool.py`, `dfu-util` or `stm32flash`. Never change a bitrate or an
    interface. On a Cortex Bridge printer, never run `cortex-bridge.py update`
    unless the human explicitly asks for a bridge firmware update.
+   `cortex-bridge.py status` and `cortex-bridge.py version` only read, and
+   are always allowed; `version` says whether the bridge firmware is current.
 5. **NEVER invent a value.**
    - A `canbus_uuid` comes from the bus query (section 6.2).
    - A serial path comes from `/dev/serial/by-id/`.

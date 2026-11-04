@@ -5,12 +5,18 @@ Endpoints (each is also a JSON-RPC method, e.g. ``server.openams.bridge.status``
 
 GET  /server/openams/bridge/status
     The relay's status file, the firmware bundled with this OpenAMS checkout,
-    and whether an update is running.
+    whether an update is running, and the firmware version the bridge runs:
+    ``installed`` (a number, or null when unknown), ``verdict`` ("up-to-date",
+    "update-available", "newer-than-bundled", "nothing-bundled" or
+    "unknown"), ``update_available`` (true, false or null) and
+    ``installed_unknown_reason`` (plain words when ``installed`` is null).
 POST /server/openams/bridge/update   [version=<n>]
     Install a bundled package (the newest when no version is given). Refused
-    while Klipper is printing or paused. Progress is broadcast as the
+    while Klipper is printing or paused, and when the bridge already runs that
+    version or a newer one. Progress is broadcast as the
     ``notify_openams_bridge_update`` notification, one message per step,
-    ending with ``{"event": "result", "ok": ...}``.
+    ending with ``{"event": "result", "ok": ...}``; a failed result carries
+    ``summary``, ``outcome`` and ``action`` sentences for the UI to show.
 
 The relay service does the USB work; this component only reads its status
 file and talks to its control socket. It registers endpoints with plain
@@ -30,6 +36,7 @@ RUN_DIR = "/run/cortex-bridge"
 EVENT_NAME = "openams_bridge:update"
 NOTIFY_NAME = "openams_bridge_update"
 UNITS_BACK_SECONDS = 90.0
+VERSION_BACK_SECONDS = 30.0
 
 
 def _openams_root() -> Path:
@@ -38,12 +45,30 @@ def _openams_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _firmware():
+def _on_path():
     root = str(_openams_root())
     if root not in sys.path:
         sys.path.insert(0, root)
+
+
+def _firmware():
+    _on_path()
     from cortex_bridge import firmware
     return firmware
+
+
+def _bridge_info():
+    _on_path()
+    from cortex_bridge import bridge_info
+    return bridge_info
+
+
+def _running_firmware(relay):
+    """The relay's firmware object while a bridge session is up."""
+    relay = relay or {}
+    if relay.get("state") not in ("running", "connecting"):
+        return None
+    return relay.get("firmware")
 
 
 class OpenAmsBridge:
@@ -82,10 +107,20 @@ class OpenAmsBridge:
     async def _handle_status(self, web_request):
         bundled = self.bundled()
         latest = next((p for p in bundled if p["ok"]), None)
+        relay = self.read_relay_status()
+        firmware = _running_firmware(relay)
+        info = _bridge_info()
+        comparison = info.compare(firmware, bundled)
         return {
-            "relay": self.read_relay_status(),
+            "relay": relay,
             "bundled": bundled,
             "latest": latest,
+            "installed": comparison["installed"],
+            "verdict": comparison["verdict"],
+            "update_available": None if comparison["installed"] is None or
+            latest is None else comparison["verdict"] == "update-available",
+            "installed_unknown_reason": "" if comparison["installed"]
+            is not None else info.unknown_reason(firmware),
             "update_running": self.update_task is not None and
             not self.update_task.done(),
             "last_result": self.last_result,
@@ -121,6 +156,16 @@ class OpenAmsBridge:
                 "No matching bridge firmware is bundled with this OpenAMS",
                 404)
         package = packages[0]
+        firmware = _running_firmware(self.read_relay_status()) or {}
+        if firmware.get("state") == "known" and \
+                int(package.get("version") or 0) <= int(firmware["version"]):
+            raise self.server.error(
+                "The bridge already runs version %s; there is nothing to "
+                "install" % firmware["version"]
+                if int(package.get("version") or 0) == firmware["version"]
+                else "The bridge runs version %s, newer than version %s; "
+                "there is nothing to install"
+                % (firmware["version"], package.get("version")), 409)
         if not (self.run_dir / "control.sock").exists():
             raise self.server.error("The Cortex Bridge relay is not running",
                                     503)
@@ -150,8 +195,11 @@ class OpenAmsBridge:
                 if message.get("event") == "result":
                     final = message
             writer.close()
-            if final.get("ok"):
+            if final.get("ok") and final.get("changed", True):
                 await self._wait_for_units()
+                firmware = await self._wait_for_version()
+                if firmware and firmware.get("state") == "known":
+                    final = dict(final, installed_version=firmware["version"])
                 if self.restart_klipper:
                     await self._firmware_restart()
         except Exception as error:
@@ -169,6 +217,18 @@ class OpenAmsBridge:
                 return True
             await asyncio.sleep(1.0)
         return False
+
+    async def _wait_for_version(self):
+        """The version the restarted bridge reports, as the relay's
+        firmware object; None if it did not answer in time."""
+        deadline = time.monotonic() + VERSION_BACK_SECONDS
+        while True:
+            firmware = _running_firmware(self.read_relay_status())
+            if firmware and firmware.get("state") != "querying":
+                return firmware
+            if time.monotonic() >= deadline:
+                return firmware
+            await asyncio.sleep(1.0)
 
     async def _firmware_restart(self):
         klippy_apis = self.server.lookup_component("klippy_apis", None)

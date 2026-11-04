@@ -5,6 +5,11 @@ The bridge multiplexes one Klipper serial session per AMS unit over its USB
 serial port (the "runtime mux"). This module passes that Klipper traffic
 through unchanged and limits itself to strict framing, the unit roster, flow
 control, and routing each unit to its own PTY, linked as <device_dir>/<uid>.
+
+The same stream carries one more exchange: the host may ask the bridge's
+production firmware who it is (IDENTITY_REQUEST) and gets an IDENTITY_REPORT
+back. This module only frames those messages and hands each report to
+``CortexCore.identity_handler``; ``cortex_bridge.bridge_info`` reads it.
 """
 
 from __future__ import annotations
@@ -30,7 +35,15 @@ MAX_SERIAL = 64
 ROSTER_ENTRY_SIZE = UID_SIZE + 1
 ROSTER_PAYLOAD_SIZE = 5 + MAX_NODES * ROSTER_ENTRY_SIZE
 NODE_DATA_PAYLOAD_SIZE = UID_SIZE + 1 + MAX_SERIAL
-MAX_PAYLOAD = max(ROSTER_PAYLOAD_SIZE, NODE_DATA_PAYLOAD_SIZE)
+IDENTITY_TOKEN_SIZE = 4
+IDENTITY_REQUEST_PAYLOAD_SIZE = IDENTITY_TOKEN_SIZE
+IDENTITY_FAILURE_PAYLOAD_SIZE = IDENTITY_TOKEN_SIZE + 1
+# A report is 196 bytes today. The framing accepts up to this bound so that a
+# longer report from a later firmware can never break the AMS traffic; the
+# reader decides whether it understands the contents.
+IDENTITY_REPORT_MAX_PAYLOAD = 512
+MAX_PAYLOAD = max(ROSTER_PAYLOAD_SIZE, NODE_DATA_PAYLOAD_SIZE,
+                  IDENTITY_REPORT_MAX_PAYLOAD)
 MAX_MESSAGE = HEADER_SIZE + MAX_PAYLOAD
 NODE_FLAG_ONLINE = 0x01
 PTY_READ_SIZE = 512
@@ -60,6 +73,13 @@ class MessageType(IntEnum):
     ROSTER = 1
     HOST_DATA = 2
     NODE_DATA = 3
+    IDENTITY_REQUEST = 4
+    IDENTITY_REPORT = 5
+
+
+HOST_MESSAGES = (MessageType.HOST_DATA, MessageType.IDENTITY_REQUEST)
+BRIDGE_MESSAGES = (MessageType.ROSTER, MessageType.NODE_DATA,
+                   MessageType.IDENTITY_REPORT)
 
 
 class Direction(IntEnum):
@@ -129,9 +149,9 @@ class Message:
 
 def _validate_message(message: Message, direction: Direction) -> None:
     if direction == Direction.HOST_TO_BRIDGE:
-        if message.kind != MessageType.HOST_DATA:
+        if message.kind not in HOST_MESSAGES:
             raise ProtocolError("bridge-only runtime mux message from host")
-    elif message.kind not in (MessageType.ROSTER, MessageType.NODE_DATA):
+    elif message.kind not in BRIDGE_MESSAGES:
         raise ProtocolError("host-only runtime mux message from bridge")
     if len(message.payload) > MAX_PAYLOAD:
         raise ProtocolError("runtime mux payload is too large")
@@ -139,6 +159,12 @@ def _validate_message(message: Message, direction: Direction) -> None:
     payload = message.payload
     if message.kind == MessageType.ROSTER:
         parse_roster(message)
+    elif message.kind == MessageType.IDENTITY_REQUEST:
+        if len(payload) != IDENTITY_REQUEST_PAYLOAD_SIZE:
+            raise ProtocolError("invalid identity request")
+    elif message.kind == MessageType.IDENTITY_REPORT:
+        if len(payload) < IDENTITY_FAILURE_PAYLOAD_SIZE:
+            raise ProtocolError("invalid identity report")
     elif message.kind == MessageType.HOST_DATA:
         if len(payload) <= UID_SIZE or not _valid_uid(payload[:UID_SIZE]):
             raise ProtocolError("invalid host-data UID or payload")
@@ -463,6 +489,10 @@ class CortexCore:
         self.connection_epoch: int | None = None
         self.roster_generation: int | None = None
         self.report_event = report_event
+        # Called with each IDENTITY_REPORT payload; reports are ignored when
+        # it is None (nobody asked).
+        self.identity_handler: Callable[[bytes], None] | None = None
+        self.identity_handler_errors = 0
         self.bridge_to_host_messages = 0
         self.bridge_to_host_bytes = 0
         self.host_to_bridge_messages = 0
@@ -547,6 +577,15 @@ class CortexCore:
         message = Message.decode(encoded, Direction.BRIDGE_TO_HOST)
         self.bridge_to_host_messages += 1
         self.bridge_to_host_bytes += len(encoded)
+        if message.kind == MessageType.IDENTITY_REPORT:
+            # Never routed to a unit and never fatal: the identity is
+            # informational and must not disturb the AMS traffic.
+            if self.identity_handler is not None:
+                try:
+                    self.identity_handler(message.payload)
+                except Exception:  # noqa: BLE001 - see above
+                    self.identity_handler_errors += 1
+            return
         if message.kind == MessageType.ROSTER:
             generation, statuses = parse_roster(message)
             present = {status.uid for status in statuses}
@@ -809,6 +848,16 @@ class CortexDaemon:
         for message in self.core.collect_outbound():
             self.transport.send_message(message)
 
+    def send_request(self, message: Message) -> None:
+        """Send one host request that is not unit traffic (an identity
+        request); unit traffic flows through the PTYs."""
+        if message.kind == MessageType.HOST_DATA:
+            raise ProtocolError("unit traffic must come from a PTY")
+        encoded = message.encode(Direction.HOST_TO_BRIDGE)
+        self.transport.send_message(encoded)
+        self.core.host_to_bridge_messages += 1
+        self.core.host_to_bridge_bytes += len(encoded)
+
     def step(self, timeout: float | None = None) -> None:
         self.transport.service()
         self._sync_ptys()
@@ -848,6 +897,8 @@ class CortexDaemon:
 
 
 __all__ = [
+    "BRIDGE_MESSAGES", "HOST_MESSAGES", "IDENTITY_FAILURE_PAYLOAD_SIZE",
+    "IDENTITY_REQUEST_PAYLOAD_SIZE", "IDENTITY_TOKEN_SIZE",
     "CleartextMuxTransport", "RuntimeTransport", "CortexCore",
     "CortexDaemon", "Direction",
     "KlipperFrameDecoder", "Message", "MessageType", "NodeEndpoint",

@@ -160,16 +160,28 @@ RECEIVER_HOST_WAIT_S = 30.0    # an unclaimed receiver resets to the firmware
 
 class UpdateError(RuntimeError):
     """Base class of every error this module raises. ``report`` holds what
-    is known about the attempt (a dict, possibly empty)."""
+    is known about the attempt (a dict, possibly empty). ``reason_code``
+    tells variants of one class apart (for example "busy" and "no-receiver"
+    for ``UpdateModeRefused``); ``cortex_bridge.update_messages`` turns the
+    class and the code into the words a customer reads."""
 
-    def __init__(self, message: str, report: dict | None = None):
+    reason_code = ""
+    post_state = ""
+
+    def __init__(self, message: str, report: dict | None = None,
+                 reason_code: str = ""):
         super().__init__(message)
         self.report = report if report is not None else {}
+        if reason_code:
+            self.reason_code = reason_code
 
 
 class PackageRefused(UpdateError):
     """The file is not a valid OAC2 package for the bridge (or not for the
-    boot this bridge has). Nothing was sent."""
+    boot this bridge has). Nothing was sent. ``detail`` is the reason alone,
+    without the "refused: ... Nothing was sent" frame of the message."""
+
+    detail = ""
 
 
 class BridgeNotFound(UpdateError):
@@ -190,8 +202,8 @@ class TransferInterrupted(UpdateError):
     what the bridge became: application, receiver, fault or unknown."""
 
     def __init__(self, message: str, report: dict | None = None,
-                 post_state: str = "unknown"):
-        super().__init__(message, report)
+                 post_state: str = "unknown", reason_code: str = "cut"):
+        super().__init__(message, report, reason_code)
         self.post_state = post_state
 
 
@@ -202,8 +214,9 @@ class ReceiverRejected(UpdateError):
     over USB; ``stopped_at`` says where it stopped, from what it asked for."""
 
     def __init__(self, message: str, report: dict | None = None,
-                 post_state: str = "unknown", stopped_at: str = ""):
-        super().__init__(message, report)
+                 post_state: str = "unknown", stopped_at: str = "",
+                 reason_code: str = "refused"):
+        super().__init__(message, report, reason_code)
         self.post_state = post_state
         self.stopped_at = stopped_at
 
@@ -220,6 +233,7 @@ class BridgeFault(UpdateError):
             "the bridge's boot reports fault %s: %s. It will not run or "
             "install firmware in this state; contact support with this code"
             % (self.code, self.description)), report)
+        self.post_state = STATE_FAULT
 
 
 # ---- what is attached -------------------------------------------------------
@@ -428,9 +442,11 @@ def _try_find(module, sysfs_root):
 
 # ---- the package ------------------------------------------------------------
 
-def _refuse(message: str):
-    raise PackageRefused("refused: %s. Nothing was sent to the bridge"
-                         % message)
+def _refuse(message: str, reason_code: str = "package"):
+    error = PackageRefused("refused: %s. Nothing was sent to the bridge"
+                           % message, reason_code=reason_code)
+    error.detail = message
+    raise error
 
 
 def inspect_package(data: bytes, public_key: bytes | None = None) -> dict:
@@ -876,7 +892,7 @@ def _touch(module, device: str, sleep, errors: tuple) -> None:
         raise UpdateError(
             "could not open %s to ask the bridge to enter update mode (%s). "
             "Close every program that uses the port and try again"
-            % (device, error)) from error
+            % (device, error), reason_code="port-in-use") from error
     try:
         port.dtr = True
         sleep(TOUCH_DTR_HOLD_S)
@@ -968,12 +984,13 @@ def _wait_for_receiver(module, target: Bridge, known: set, sysfs_root,
                     "the bridge did not enter update mode within %g s: it is "
                     "busy (moving, loading or unloading, following, or "
                     "running a dryer command). Wait until the AMS is idle and "
-                    "try again" % entry_timeout)
+                    "try again" % entry_timeout, reason_code="busy")
         if elapsed >= limit:
             raise UpdateModeRefused(
                 "the bridge left its firmware but no update receiver "
                 "appeared within %g s. Try again in a minute; if this "
-                "repeats, reconnect the bridge's USB cable" % limit)
+                "repeats, reconnect the bridge's USB cable" % limit,
+                reason_code="no-receiver")
         sleep(POLL_S)
 
 
@@ -1039,12 +1056,13 @@ def _check_receiver_boot(receiver: Bridge, info: dict) -> None:
             "the bridge's boot is not a production boot and does not install "
             "these packages. Nothing was sent; it returns to its firmware within "
             "%d s" % RECEIVER_HOST_WAIT_S, post_state=STATE_RECEIVER,
-            stopped_at="before the file was opened")
+            stopped_at="before the file was opened", reason_code="lab-boot")
     abi = RECEIVER_BCD_BOOT_ABI.get(receiver.bcd_device or "")
     if abi is not None and abi != info["required_boot_abi"]:
         _refuse("the package needs boot ABI %d and this bridge's boot is ABI "
                 "%d; it returns to its firmware within %d s"
-                % (info["required_boot_abi"], abi, RECEIVER_HOST_WAIT_S))
+                % (info["required_boot_abi"], abi, RECEIVER_HOST_WAIT_S),
+                reason_code="boot-abi")
 
 
 # ---- the update -------------------------------------------------------------
@@ -1172,7 +1190,8 @@ def update_bridge(data: bytes, *, serial_number: str | None = None,
         raise UpdateError(
             "the bridge accepted the package but did not read it twice (%d "
             "pass(es), %d bytes); treat the bridge as unverified and run the "
-            "update again" % (counters.passes, counters.bytes_served), report)
+            "update again" % (counters.passes, counters.bytes_served), report,
+            reason_code="unverified")
 
     notify("restarting", 0, 1)
     final = _observe(module, receiver, identities, known, sysfs_root, clock,
@@ -1199,12 +1218,12 @@ def update_bridge(data: bytes, *, serial_number: str | None = None,
         raise BridgeNotFound(
             "the bridge accepted the package but did not reappear on USB "
             "within %g s; reconnect its USB cable and check it"
-            % enumeration_timeout, report)
+            % enumeration_timeout, report, reason_code="did-not-return")
     if final.state == STATE_RECEIVER:
         raise TransferInterrupted(
             "the bridge accepted the package but came back in its update "
             "receiver, so the install did not finish. Run the update again",
-            report, STATE_RECEIVER)
+            report, STATE_RECEIVER, reason_code="not-finished")
     notify("restarting", 1, 1)
     notify("done", 1, 1)
     report.update({

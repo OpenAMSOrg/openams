@@ -7,10 +7,14 @@ linked as /dev/oams/<uid>, so Klipper sees an ordinary `[mcu]` serial device
 per AMS. The bridge itself never appears in printer.cfg.
 
 It also:
-- writes a small status file (state, bridge serial, units) that the
-  `cortex_bridge` command and the Moonraker component read;
+- asks a bridge running production firmware which firmware version it runs,
+  once per USB connection (``cortex_bridge.bridge_info``);
+- writes a small status file (state, bridge serial, firmware version, units)
+  that the `cortex_bridge` command and the Moonraker component read;
 - accepts firmware-update requests on a local socket and runs them itself,
-  because it is the only process allowed to hold the bridge's port;
+  because it is the only process allowed to hold the bridge's port. It
+  refuses up front a package that is not newer than the running version, and
+  every result carries plain-language text (``cortex_bridge.update_messages``);
 - logs to a bounded JSONL support log that never contains serial data.
 
 Run it from the OpenAMS checkout:  python3 -m cortex_bridge.relay --help
@@ -41,6 +45,7 @@ from cortex_bridge.cortexd import (  # noqa: E402
     ROSTER_PAYLOAD_SIZE,
     VERSION as RUNTIME_MUX_VERSION,
 )
+from cortex_bridge import bridge_info, update_messages  # noqa: E402
 from cortex_bridge.support_log import GatewaySupportLog  # noqa: E402
 
 DAEMON_VERSION = 2
@@ -234,6 +239,9 @@ class StatusFile:
             "detail": "",
             "reason": "",
             "bridge": None,
+            # bridge_info.firmware_status(): what the connected bridge said
+            # about its firmware; None while no bridge is connected.
+            "firmware": None,
             "units": [],
             "update": None,
         }
@@ -342,10 +350,13 @@ def send_line(connection, payload: dict) -> None:
 # ---------------------------------------------------------------------------
 
 class UpdateRequested(Exception):
-    def __init__(self, connection, request):
+    """A checked package is ready to install: leave the session first."""
+
+    def __init__(self, connection, request, prepared=None):
         super().__init__("update requested")
         self.connection = connection
         self.request = request
+        self.prepared = prepared
 
 
 class Relay:
@@ -383,7 +394,7 @@ class Relay:
             print("cortex-bridge: %s" % error, file=sys.stderr, flush=True)
             self.last_reason = error.reason
         self.status.set(state="waiting", reason=error.reason,
-                        detail=str(error), bridge=None)
+                        detail=str(error), bridge=None, firmware=None)
         # A printer without a reachable bridge must not hold Klipper back.
         if error.reason != "no-roster" or \
                 time.monotonic() - self.started >= READY_WAIT:
@@ -412,7 +423,7 @@ class Relay:
                     self.session()
                     continue
                 except UpdateRequested as request:
-                    self.update(request.connection, request.request)
+                    self.update(request.connection, request.prepared)
                     continue
                 except RelayError as exc:
                     self.waiting(exc)
@@ -433,7 +444,7 @@ class Relay:
                 try:
                     self.idle(RETRY_INTERVAL)
                 except UpdateRequested as request:
-                    self.update(request.connection, request.request)
+                    self.update(request.connection, request.prepared)
         finally:
             self.status.set(state="stopped", detail="relay stopped",
                             units=[])
@@ -463,7 +474,12 @@ class Relay:
                                        units=self.units()))
             connection.close()
         elif method == "update":
-            raise UpdateRequested(connection, request)
+            # Check the request while the session still serves the AMS: a
+            # request that needs nothing from the bridge must not cost
+            # Klipper its connection to the units.
+            prepared = self.prepare_update(connection, request)
+            if prepared is not None:
+                raise UpdateRequested(connection, request, prepared)
         else:
             send_line(connection, {"event": "result", "ok": False,
                                    "error": "unknown-method",
@@ -472,17 +488,38 @@ class Relay:
 
     # -- one USB session --------------------------------------------------
 
+    def _configured_port(self) -> dict:
+        """The --port device, with its USB strings when they can be read."""
+        bridge = {"device": self.args.port, "serial": "", "pid": None,
+                  "manufacturer": "", "product": ""}
+        try:
+            wanted = os.path.realpath(self.args.port)
+            for port in describe_ports(self.list_ports):
+                if os.path.realpath(port["device"]) == wanted:
+                    bridge.update(port, device=self.args.port)
+                    break
+        except Exception:  # noqa: BLE001 - the strings are optional here
+            pass
+        return bridge
+
     def session(self) -> None:
         if self.args.port == "auto":
             bridge = find_bridge(self.list_ports, serial_pattern=self.args.serial)
         else:
-            bridge = {"device": self.args.port, "serial": "", "pid": None,
-                      "manufacturer": "", "product": ""}
+            bridge = self._configured_port()
         bridge["image"] = IMAGE_BY_MANUFACTURER.get(bridge["manufacturer"],
                                                     "unknown")
         self.bridge = bridge
+        # Only production firmware knows the identity request; lab firmware
+        # treats it as a stream error, so it is never sent one.
+        if bridge["image"] == "production":
+            firmware = bridge_info.firmware_status("querying", "querying")
+        else:
+            firmware = bridge_info.firmware_status(
+                "unavailable", "lab-firmware" if bridge["image"] == "lab"
+                else "unknown-image")
         self.status.set(state="connecting", reason="", bridge=bridge,
-                        detail="connecting to the bridge")
+                        firmware=firmware, detail="connecting to the bridge")
         self.log.record("usb_connect", device=bridge["device"])
         port = open_bridge_port(self.serial, bridge["device"])
         try:
@@ -500,12 +537,27 @@ class Relay:
         self.last_reason = None
         daemon = CortexDaemon(transport, self.pty_dir.resolve(),
                               core=self.core)
+        query = None
+        if bridge["image"] == "production":
+            query = bridge_info.IdentityQuery(time.monotonic())
+            self.core.identity_handler = \
+                lambda payload: query.accept(payload, time.monotonic())
+        reported = query.firmware if query is not None else None
         summary_at = time.monotonic() + SUMMARY_INTERVAL
         status_at = 0.0
         try:
             while True:
                 daemon.step(0.1)
                 now = time.monotonic()
+                if query is not None:
+                    request = query.due(now)
+                    if request is not None:
+                        daemon.send_request(request)
+                    if query.firmware is not reported:
+                        reported = query.firmware
+                        self.status.set(firmware=reported)
+                        if query.finished:
+                            self.log_identity(reported)
                 units = self.units()
                 online = sum(1 for unit in units if unit["online"])
                 if online or now - self.started >= READY_WAIT:
@@ -522,14 +574,37 @@ class Relay:
                     summary_at = now + SUMMARY_INTERVAL
                 self.serve_control(running=True)
         finally:
+            self.core.identity_handler = None
             self.log.record("traffic_summary", **self.core.support_snapshot())
             daemon.detach()
             self.status.set(units=self.units())
 
+    def log_identity(self, firmware: dict) -> None:
+        known = firmware["state"] == "known"
+        self.log.record(
+            "bridge_identity",
+            result="known" if known else (firmware["reason"] or "unavailable"),
+            firmware_version=int(firmware["version"] or 0) if known else 0,
+            boot_abi=int(firmware["boot_abi"] or 0) if known else 0,
+            genuine_status=int(firmware["genuine_code"] or 0) if known else 0,
+            reset_flags=int(firmware["reset_flags"] or 0) if known else 0,
+            uptime_ms=int(firmware["uptime_ms"] or 0) if known else 0)
+
     # -- firmware update --------------------------------------------------
 
-    def update(self, connection, request) -> None:
-        """Install one firmware package while no session holds the port."""
+    def running_version(self):
+        """The version the connected bridge said it runs, or None."""
+        firmware = self.status.state.get("firmware") or {}
+        if firmware.get("state") != "known":
+            return None
+        return firmware.get("version")
+
+    def prepare_update(self, connection, request):
+        """Check an update request while the session still runs.
+
+        Returns what ``update`` needs, or None after answering the client
+        itself: a file that is not bridge firmware, or a version that is not
+        newer than the running one, never takes the AMS offline."""
         try:
             from cortex_bridge import updater
         except ImportError as exc:  # pragma: no cover - packaging error
@@ -537,26 +612,48 @@ class Relay:
                                    "error": "no-updater",
                                    "message": str(exc)})
             connection.close()
-            return
+            return None
+        running = self.running_version()
         version = 0
-        source = request.get("source", "file")
         try:
             path = Path(str(request.get("file", ""))).expanduser()
             if not path.is_file():
-                raise updater.PackageRefused("no such file: %s" % path)
+                raise _refused(updater, "there is no file %s" % path)
             if path.stat().st_size > MAX_PACKAGE_SIZE:
-                raise updater.PackageRefused("file is too large: %s" % path)
+                raise _refused(updater, "%s is too large to be bridge "
+                               "firmware" % path)
             data = path.read_bytes()
             info = updater.inspect_package(data)
             version = int(info.get("version") or 0)
+        except Exception as exc:  # report every failure to the client
+            self.update_failed(connection, exc, running, version,
+                               touched=False)
+            connection.close()
+            return None
+        if running is not None and version <= running:
+            self.not_newer(connection, version, running)
+            connection.close()
+            return None
+        source = request.get("source", "file")
+        return {"updater": updater, "data": data, "version": version,
+                "running": running,
+                "source": source if source in ("bundled", "file") else "file"}
+
+    def update(self, connection, prepared) -> None:
+        """Install one checked package while no session holds the port."""
+        updater = prepared["updater"]
+        version = prepared["version"]
+        running = prepared["running"]
+        try:
             self.log.record("update_start", firmware_version=version,
-                            source=source if source in ("bundled", "file")
-                            else "file")
+                            source=prepared["source"])
             self.status.set(state="updating", detail="installing firmware",
                             update={"version": version, "phase": "starting",
                                     "done": 0, "total": 0, "result": None,
-                                    "message": "", "started": _now_iso()})
-            send_line(connection, {"event": "accepted", "version": version})
+                                    "message": "", "started": _now_iso(),
+                                    "previous_version": running})
+            send_line(connection, {"event": "accepted", "version": version,
+                                   "running_version": running})
 
             last_phase = [None]
 
@@ -573,32 +670,76 @@ class Relay:
 
             serial_number = (self.bridge or {}).get("serial") or None
             report = updater.update_bridge(
-                data, serial_number=serial_number, serial_module=self.serial,
-                progress=progress)
+                prepared["data"], serial_number=serial_number,
+                serial_module=self.serial, progress=progress)
             update = dict(self.status.state.get("update") or {})
             update.update(result="installed", finished=_now_iso(),
                           message="installed version %d" % version)
+            # The new firmware is asked for its version when it reconnects.
             self.status.set(state="waiting", detail="firmware installed",
-                            update=update)
+                            update=update, firmware=None)
             self.log.record("update_result", firmware_version=version,
                             result="installed", reason="none")
             send_line(connection, {"event": "result", "ok": True,
-                                   "version": version, "report": report})
+                                   "changed": True, "version": version,
+                                   "previous_version": running,
+                                   "report": report})
         except Exception as exc:  # report every failure to the client
-            reason = getattr(exc, "reason", None) or \
-                _reason_code(exc.__class__.__name__)
-            update = dict(self.status.state.get("update") or {})
-            update.update(result="failed", finished=_now_iso(),
-                          message=str(exc), version=version)
-            self.status.set(state="waiting", detail="firmware update failed",
-                            update=update)
-            self.log.record("update_result", firmware_version=version,
-                            result="failed", reason=reason)
-            send_line(connection, {"event": "result", "ok": False,
-                                   "error": exc.__class__.__name__,
-                                   "message": str(exc)})
+            self.update_failed(connection, exc, running, version, touched=True)
         finally:
             connection.close()
+
+    def update_failed(self, connection, exc, running, version: int, *,
+                      touched: bool) -> None:
+        reason = getattr(exc, "reason", None) or \
+            _reason_code(exc.__class__.__name__)
+        explanation = update_messages.explain_exception(
+            exc, running=running, package=version or None)
+        update = dict(self.status.state.get("update") or {})
+        update.update(result="failed", finished=_now_iso(),
+                      message=str(exc), version=version, **explanation)
+        if touched:
+            self.status.set(state="waiting", detail="firmware update failed",
+                            update=update)
+        else:
+            self.status.set(update=update)
+        self.log.record("update_result", firmware_version=version,
+                        result="failed", reason=reason)
+        line = {"event": "result", "ok": False,
+                "error": exc.__class__.__name__, "message": str(exc),
+                "reason_code": getattr(exc, "reason_code", "") or "",
+                "post_state": getattr(exc, "post_state", "") or "",
+                "running_version": running,
+                "package_version": version or None}
+        line.update(explanation)
+        send_line(connection, line)
+
+    def not_newer(self, connection, version: int, running: int) -> None:
+        """Answer an update to a version that is not newer than the running
+        one without touching the bridge: its boot would refuse it."""
+        same = version == running
+        error = "AlreadyInstalled" if same else "OlderThanInstalled"
+        explanation = update_messages.explain(error, running=running,
+                                              package=version)
+        self.log.record("update_result", firmware_version=version,
+                        result="not-needed" if same else "refused",
+                        reason="already-installed" if same
+                        else "older-than-installed")
+        line = {"event": "result", "ok": same, "changed": False,
+                "version": version, "running_version": running,
+                "package_version": version}
+        if not same:
+            line.update(error=error, message="the bridge runs version %d, "
+                        "newer than version %d" % (running, version))
+        line.update(explanation)
+        send_line(connection, line)
+
+
+def _refused(updater, detail: str):
+    error = updater.PackageRefused("refused: %s. Nothing was sent to the "
+                                   "bridge" % detail)
+    error.detail = detail
+    return error
 
 
 def _reason_code(name: str) -> str:

@@ -46,6 +46,10 @@ _EVENT_FIELDS = {
     )),
     "session_retry": frozenset(("phase", "reason")),
     "bridge_waiting": frozenset(("reason",)),
+    "bridge_identity": frozenset((
+        "result", "firmware_version", "boot_abi", "genuine_status",
+        "reset_flags", "uptime_ms",
+    )),
     "update_start": frozenset(("firmware_version", "source")),
     "update_phase": frozenset(("phase",)),
     "update_result": frozenset(("firmware_version", "result", "reason")),

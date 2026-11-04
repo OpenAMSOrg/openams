@@ -237,7 +237,7 @@ Cortex Bridge
   Relay:       active (1 AMS online)
   AMS units:
     0a1b2c3d4e5f  online   /dev/oams/0a1b2c3d4e5f  configured
-  Firmware:    bundled none yet
+  Firmware:    version 7, up to date
   Klipper:     active
 
 Everything is connected.
@@ -245,6 +245,11 @@ Everything is connected.
 
 **Check:** the last line says `Everything is connected.` Anything else names
 the problem and its fix; [troubleshooting](#troubleshooting) has the full list.
+
+The `Firmware:` line is the bridge's own firmware: the version it runs, and
+whether a newer one came with OpenAMS. `version 4; version 7 is available`
+means an update is waiting; [update the bridge firmware](cortex-bridge-update.md)
+when it suits you.
 
 ## 7. Finish the config
 
@@ -395,8 +400,10 @@ the value the message names; see
   **Machine → Update Manager**, entry `openams`. It restarts the relay and
   Klipper for you.
 - **The bridge's own firmware** comes as signed packages with OpenAMS
-  updates. [Update the Cortex Bridge firmware](cortex-bridge-update.md)
-  explains when and how to install one.
+  updates. After updating OpenAMS, `python3 ~/openams/tools/cortex-bridge.py
+  version` says whether the bridge is up to date.
+  [Update the Cortex Bridge firmware](cortex-bridge-update.md) explains when
+  and how to install a new version.
 
 ## Troubleshooting
 
@@ -414,6 +421,7 @@ names the first thing to fix.
 | `No AMS answers` | The bridge is running but sees no AMS | Check the red LED, the 4-pin BUFFER cable, and the 6-pin AMS cable. Power the AMS off and on. |
 | `... AMS online but not in your config` | A new AMS was connected | `cortex-bridge.py config --write` |
 | `The bridge is waiting for firmware` | A firmware update was interrupted | `cortex-bridge.py update`; see [the update guide](cortex-bridge-update.md). |
+| `Firmware: installed version unknown: ...` | The bridge has not said which version it runs; the rest of the line says why | See [the update guide](cortex-bridge-update.md#when-the-version-is-unknown). |
 | `The bridge reports a fault` | The bridge's own self-test failed | Unplug USB for 10 s; if it stays, write a support report (below). |
 | Klipper: `Unable to open serial port '/dev/oams/...'` | Klipper started before the AMS was up | Power the AMS, wait for `status` to show it online, then **FIRMWARE RESTART**. |
 | Klipper: `Can not update MCU '...' config as it is shutdown` | Klipper was stopped for more than a few seconds. The bridge stops an AMS whenever Klipper goes quiet, so nothing keeps running unattended | **FIRMWARE RESTART**. |

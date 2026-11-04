@@ -2,12 +2,15 @@
 """`cortex-bridge.py`: set up, check and update a Cortex Bridge.
 
     python3 ~/openams/tools/cortex-bridge.py status
+    python3 ~/openams/tools/cortex-bridge.py version
     python3 ~/openams/tools/cortex-bridge.py config --write
     python3 ~/openams/tools/cortex-bridge.py ptfe 2050
     python3 ~/openams/tools/cortex-bridge.py update
 
 Runs with any python3; it needs no extra packages. The relay service does all
-USB work, so this command only reads its status and sends it requests.
+USB work, so this command only reads its status and sends it requests. When
+the relay is not running, `version` and `update` open the bridge's port
+themselves (that needs pyserial, which the relay's install provides).
 """
 
 from __future__ import annotations
@@ -28,8 +31,10 @@ import urllib.request
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from cortex_bridge import bridge_info  # noqa: E402
 from cortex_bridge import config as bridge_config  # noqa: E402
 from cortex_bridge import firmware as bridge_firmware  # noqa: E402
+from cortex_bridge import update_messages  # noqa: E402
 
 OPENAMS_DIR = Path(__file__).resolve().parents[1]
 SAMPLE = OPENAMS_DIR / "oams_cortex_bridge_sample.cfg"
@@ -183,19 +188,27 @@ def configured_uids(config_dir: Path) -> set:
 # status
 # ---------------------------------------------------------------------------
 
+def bundled_list() -> list:
+    return [
+        {key: package.get(key) for key in
+         ("version", "file", "released", "notes", "ok", "problem")}
+        for package in bridge_firmware.bundled_packages()
+    ]
+
+
 def gather(args) -> dict:
     status = read_status(Path(args.run_dir))
+    bundled = bundled_list()
+    firmware = (status or {}).get("firmware") \
+        if (status or {}).get("state") in ("running", "connecting") else None
     return {
         "usb": usb_devices(),
         "relay_service": service_state(SERVICE),
         "klipper_service": service_state(args.klipper_service),
         "relay": status,
         "configured": sorted(configured_uids(Path(args.config_dir))),
-        "bundled_firmware": [
-            {key: package.get(key) for key in
-             ("version", "file", "released", "notes", "ok", "problem")}
-            for package in bridge_firmware.bundled_packages()
-        ],
+        "bundled_firmware": bundled,
+        "installed_firmware": bridge_info.compare(firmware, bundled),
     }
 
 
@@ -231,6 +244,29 @@ def next_step(facts: dict) -> str:
     return "Everything is connected."
 
 
+def firmware_line(comparison: dict, firmware) -> str:
+    """One line: the installed version against the newest bundled one."""
+    latest = comparison["latest"]
+    newest = "version %s" % latest["version"] if latest else "none"
+    verdict = comparison["verdict"]
+    installed = comparison["installed"]
+    if verdict == "up-to-date":
+        return "version %d, up to date" % installed
+    if verdict == "update-available":
+        return ("version %d; version %s is available "
+                "(`cortex-bridge.py update`)" % (installed, latest["version"]))
+    if verdict == "newer-than-bundled":
+        return ("version %d, newer than this OpenAMS bundles (%s): update "
+                "OpenAMS" % (installed, newest))
+    if verdict == "nothing-bundled":
+        return "version %d (no firmware bundled with this OpenAMS)" % installed
+    if firmware is None:
+        return ("installed version unknown (`cortex-bridge.py version` asks "
+                "the bridge); newest bundled: %s" % newest)
+    return "installed version unknown: %s; newest bundled: %s" % (
+        bridge_info.unknown_reason(firmware), newest)
+
+
 def cmd_status(args) -> int:
     facts = gather(args)
     if args.json:
@@ -263,9 +299,10 @@ def cmd_status(args) -> int:
                 else "NOT in config"))
     else:
         print("  AMS units:   none")
-    latest = next((p for p in facts["bundled_firmware"] if p["ok"]), None)
-    print("  Firmware:    bundled %s" % (
-        "version %s" % latest["version"] if latest else "none yet"))
+    firmware = relay.get("firmware") if facts["relay_service"] == "active" \
+        else None
+    print("  Firmware:    %s" % firmware_line(facts["installed_firmware"],
+                                              firmware))
     update = relay.get("update")
     if update:
         print("  Last update: %s %s" % (
@@ -390,8 +427,157 @@ def cmd_ptfe(args) -> int:
 
 
 # ---------------------------------------------------------------------------
-# firmware and update
+# installed firmware, version, firmware and update
 # ---------------------------------------------------------------------------
+
+RELAY_ANSWER_WAIT = 20.0        # how long `version` waits for the relay's query
+
+
+def relay_running(run_dir: Path) -> bool:
+    try:
+        control_request({"method": "status"}, run_dir=run_dir, timeout=10)
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def installed_firmware(run_dir: Path, *, wait: float = RELAY_ANSWER_WAIT,
+                       direct: bool = True, sleep=time.sleep,
+                       clock=time.monotonic) -> dict:
+    """What the bridge says it runs.
+
+    Returns ``usb`` (the bridge's USB state: application, receiver, fault or
+    None), ``serial``, ``image``, ``fault`` (a code or ""), ``source``
+    ("relay", "direct" or "") and ``firmware`` (a ``bridge_info`` firmware
+    status object, or None when no running bridge was asked). With the relay
+    running its answer is used, waiting up to ``wait`` seconds while it is
+    still asking; without it the bridge is asked directly when ``direct``."""
+    devices = usb_devices()
+    result = {"usb": None, "serial": "", "image": "", "fault": "",
+              "source": "", "firmware": None}
+    for state in ("fault", "receiver", "application"):
+        found = [d for d in devices if d["state"] == state]
+        if found:
+            device = found[0]
+            result.update(usb=state, serial=device["serial"],
+                          image={"SiForge": "production",
+                                 "OpenAMS": "lab"}.get(
+                                     device["manufacturer"], "unknown"),
+                          fault=device["serial"] if state == "fault" else "")
+            break
+    if result["usb"] != "application":
+        return result
+    if relay_running(run_dir):
+        result["source"] = "relay"
+        deadline = clock() + wait
+        while True:
+            status = read_status(run_dir) or {}
+            firmware = status.get("firmware")
+            if firmware and firmware.get("state") != "querying":
+                result["firmware"] = firmware
+                return result
+            if clock() >= deadline:
+                result["firmware"] = firmware
+                return result
+            sleep(0.5)
+    if not direct:
+        return result
+    if result["image"] != "production":
+        result["firmware"] = bridge_info.firmware_status(
+            "unavailable", "lab-firmware" if result["image"] == "lab"
+            else "unknown-image")
+        return result
+    device = next(d for d in devices if d["state"] == "application")
+    result["source"] = "direct"
+    try:
+        result["firmware"] = bridge_info.query_direct(device["device"])
+    except ImportError:
+        result["firmware"] = bridge_info.firmware_status(
+            "unavailable", "no-pyserial")
+    except Exception as exc:  # noqa: BLE001 - any failure is "unknown"
+        result["firmware"] = bridge_info.firmware_status(
+            "unavailable", "no-answer")
+        result["error"] = str(exc)
+    return result
+
+
+def version_report(found: dict, bundled: list) -> dict:
+    comparison = bridge_info.compare(found["firmware"], bundled)
+    firmware = found["firmware"] or {}
+    latest = comparison["latest"]
+    return {
+        "serial": found["serial"],
+        "usb_state": found["usb"],
+        "fault": found["fault"],
+        "image": found["image"],
+        "source": found["source"],
+        "installed": comparison["installed"],
+        "installed_state": firmware.get("state"),
+        "reason": firmware.get("reason") or "",
+        "reason_text": "" if comparison["installed"] is not None else
+        bridge_info.unknown_reason(found["firmware"]),
+        "boot_abi": firmware.get("boot_abi"),
+        "genuine": firmware.get("genuine"),
+        "latest": latest["version"] if latest else None,
+        "latest_released": latest.get("released") if latest else None,
+        "latest_notes": latest.get("notes") if latest else None,
+        "verdict": comparison["verdict"],
+        "update_available": None if comparison["installed"] is None or
+        latest is None else comparison["verdict"] == "update-available",
+    }
+
+
+def cmd_version(args) -> int:
+    found = installed_firmware(Path(args.run_dir), wait=args.wait)
+    report = version_report(found, bundled_list())
+    if args.json:
+        print(json.dumps(report, indent=1, sort_keys=True))
+        return 0 if report["installed"] is not None else 1
+    if found["usb"] is None:
+        print("No Cortex Bridge is connected over USB.")
+        print("Check the USB-C cable (a data cable, not charge-only) and that "
+              "the bridge's white LED is on.")
+        return 1
+    if found["usb"] == "fault":
+        print("Cortex Bridge: the bridge reports fault %s." % found["fault"])
+        print("It does not run firmware in this state. Unplug USB and 24 V for "
+              "10 seconds and reconnect them; if the fault comes back, run "
+              "`cortex-bridge.py support` and send support the report.")
+        return 1
+    print("Cortex Bridge %s" % (found["serial"] or ""))
+    newest = "none bundled with this OpenAMS"
+    if report["latest"] is not None:
+        newest = "version %s%s, bundled with this OpenAMS" % (
+            report["latest"], " (released %s)" % report["latest_released"]
+            if report["latest_released"] else "")
+    if found["usb"] == "receiver":
+        print("  Installed:  none: the bridge is waiting for firmware (an "
+              "update did not finish)")
+        print("  Newest:     %s" % newest)
+        print("Run `cortex-bridge.py update` to install it.")
+        return 1
+    if report["installed"] is None:
+        print("  Installed:  unknown: %s" % report["reason_text"])
+        print("  Newest:     %s" % newest)
+        return 1
+    print("  Installed:  version %d" % report["installed"])
+    print("  Newest:     %s" % newest)
+    if report["genuine"] == "failed":
+        print("  The bridge failed its authenticity check. Run "
+              "`cortex-bridge.py support` and send support the report.")
+    verdict = report["verdict"]
+    if verdict == "up-to-date":
+        print("Up to date.")
+    elif verdict == "update-available":
+        print("Version %s is available: %s" % (report["latest"],
+                                                report["latest_notes"] or ""))
+        print("Install it with `cortex-bridge.py update` while the printer and "
+              "the AMS are idle.")
+    elif verdict == "newer-than-bundled":
+        print("The bridge runs newer firmware than this OpenAMS bundles. Update "
+              "OpenAMS (Mainsail: Machine > Update Manager).")
+    return 0
+
 
 def cmd_firmware(args) -> int:
     packages = bridge_firmware.bundled_packages()
@@ -400,11 +586,20 @@ def cmd_firmware(args) -> int:
         print("New firmware arrives with OpenAMS updates (Mainsail: Machine "
               "> Update Manager).")
         return 0
+    found = installed_firmware(Path(args.run_dir), wait=5.0, direct=False)
+    comparison = bridge_info.compare(found["firmware"], bundled_list())
+    installed = comparison["installed"]
+    if installed is not None:
+        print("The bridge runs version %d." % installed)
     for package in packages:
-        print("version %-4s %-10s %s%s" % (
-            package.get("version"), package.get("released", ""),
-            package.get("notes", ""),
-            "" if package["ok"] else "  [%s]" % package["problem"]))
+        version = package.get("version")
+        mark = ""
+        if installed is not None and isinstance(version, int):
+            mark = "  (installed)" if version == installed else \
+                "  (newer than installed)" if version > installed else ""
+        print("version %-4s %-10s %s%s%s" % (
+            version, package.get("released", ""), package.get("notes", ""),
+            "" if package["ok"] else "  [%s]" % package["problem"], mark))
     return 0
 
 
@@ -417,24 +612,36 @@ PHASE_TEXT = {
     "done": "Done",
 }
 
-ERROR_ADVICE = {
-    "UpdateModeRefused": "The bridge said it is busy (loading, unloading or "
-                         "drying). Wait until the AMS is idle and run the "
-                         "update again.",
-    "PackageRefused": "That file is not Cortex Bridge firmware.",
-    "ReceiverRejected": "The bridge refused this package, usually because "
-                        "it already runs this version or a newer one.",
-    "BridgeAmbiguous": "Several bridges are attached. Leave only the one to "
-                       "update on USB and run the update again.",
-    "BridgeFault": "The bridge reports a fault. Run `cortex-bridge.py "
-                   "support` and contact support.",
-    "TransferInterrupted": "The transfer stopped part-way. The bridge keeps "
-                           "waiting for firmware; run the update again.",
-    "BridgeNotFound": "The bridge is not on USB. Check the USB cable.",
-}
+
+def print_failure(explanation: dict, detail: str = "") -> None:
+    lines = update_messages.lines(explanation, detail)
+    print("Update failed: %s" % lines[0], file=sys.stderr)
+    for line in lines[1:]:
+        print(line, file=sys.stderr)
 
 
-def update_direct(package_path: Path) -> int:
+def print_explanation(explanation: dict) -> None:
+    for line in update_messages.lines(explanation):
+        print(line)
+
+
+def confirm_installed(version: int, firmware) -> int:
+    """Report what the bridge says after an install; 1 on a mismatch."""
+    if firmware and firmware.get("state") == "known":
+        if firmware.get("version") == version:
+            print("The bridge now runs version %d." % version)
+            return 0
+        print("The bridge restarted but reports version %s, not %d. Run "
+              "`cortex-bridge.py support` and send support the report."
+              % (firmware.get("version"), version), file=sys.stderr)
+        return 1
+    print("The bridge restarted; its version could not be read yet (%s). "
+          "Check it with `cortex-bridge.py version`."
+          % bridge_info.unknown_reason(firmware))
+    return 0
+
+
+def update_direct(package_path: Path, version: int, running) -> int:
     """Install a package with no relay running: this process opens the
     bridge's port itself (python3 and pyserial are all it needs)."""
     from . import updater
@@ -455,25 +662,45 @@ def update_direct(package_path: Path) -> int:
         report = updater.update_bridge(package_path.read_bytes(),
                                        progress=progress)
     except OSError as exc:
-        print("Update failed: %s" % exc, file=sys.stderr)
+        print_failure(update_messages.explain("OSError", detail=str(exc),
+                                              running=running,
+                                              package=version))
         return 1
     except updater.UpdateError as exc:
-        print("Update failed: %s" % exc, file=sys.stderr)
-        advice = ERROR_ADVICE.get(type(exc).__name__)
-        if advice:
-            print(advice, file=sys.stderr)
+        print_failure(update_messages.explain_exception(
+            exc, running=running, package=version),
+            update_messages.technical_detail(type(exc).__name__, str(exc)))
         return 1
     print("Installed firmware version %s on bridge %s."
           % (report["version"], report.get("serial_number", "")))
-    return 0
+    device = report.get("device")
+    if not device:
+        return 0
+    try:
+        firmware = bridge_info.query_direct(device)
+    except Exception:  # noqa: BLE001 - the install itself succeeded
+        firmware = None
+    return confirm_installed(int(report["version"]), firmware)
+
+
+def wait_for_firmware(run_dir: Path, seconds: float):
+    """The relay's firmware answer after a restart, or None."""
+    deadline = time.monotonic() + seconds
+    while True:
+        firmware = (read_status(run_dir) or {}).get("firmware")
+        if firmware and firmware.get("state") != "querying":
+            return firmware
+        if time.monotonic() >= deadline:
+            return firmware
+        time.sleep(1.0)
 
 
 def cmd_update(args) -> int:
+    from . import updater
     run_dir = Path(args.run_dir)
     if args.file:
         package_path = Path(args.file).expanduser().resolve()
         source = "file"
-        label = package_path.name
     else:
         package = bridge_firmware.latest_bundled()
         if package is None:
@@ -483,20 +710,57 @@ def cmd_update(args) -> int:
             return 0
         package_path = Path(package["path"])
         source = "bundled"
-        label = "version %s" % package.get("version")
-    # With the relay running it owns the bridge's port and installs the
-    # package; without it this command talks to the bridge itself.
     try:
-        control_request({"method": "status"}, run_dir=run_dir, timeout=10)
-        relayed = True
-    except OSError:
-        relayed = False
+        info = updater.inspect_package(package_path.read_bytes())
+    except OSError as exc:
+        print_failure(update_messages.explain(
+            "PackageRefused", detail="it cannot be read (%s)" % exc.strerror))
+        return 1
+    except updater.UpdateError as exc:
+        print_failure(update_messages.explain_exception(exc),
+                      update_messages.technical_detail(type(exc).__name__,
+                                                       str(exc)))
+        return 1
+    version = int(info["version"])
+
     state = printer_state(args.moonraker)
     if state in ("printing", "paused"):
-        print("The printer is %s. Update the bridge when it is idle." % state,
-              file=sys.stderr)
+        print_failure(update_messages.explain("PrinterBusy", detail=state))
         return 1
-    print("This installs Cortex Bridge firmware %s." % label)
+
+    # With the relay running it owns the bridge's port and installs the
+    # package; without it this command talks to the bridge itself.
+    relayed = relay_running(run_dir)
+    found = installed_firmware(run_dir)
+    if found["usb"] is None:
+        print_failure(update_messages.explain("BridgeNotFound"))
+        return 1
+    if found["usb"] == "fault":
+        print_failure(update_messages.explain(
+            "BridgeFault", fault_code=found["fault"]))
+        return 1
+    firmware = found["firmware"] or {}
+    running = firmware.get("version") if firmware.get("state") == "known" \
+        else None
+    if running is not None and version <= running:
+        if version == running:
+            print_explanation(update_messages.explain(
+                "AlreadyInstalled", running=running, package=version))
+            return 0
+        print_explanation(update_messages.explain(
+            "OlderThanInstalled", running=running, package=version))
+        return 0 if source == "bundled" else 1
+
+    if found["usb"] == "receiver":
+        print("The bridge is waiting for firmware. This installs Cortex Bridge "
+              "firmware version %d." % version)
+    elif running is not None:
+        print("This installs Cortex Bridge firmware version %d (the bridge "
+              "runs version %d)." % (version, running))
+    else:
+        print("This installs Cortex Bridge firmware version %d (the version "
+              "the bridge runs is unknown: %s)."
+              % (version, bridge_info.unknown_reason(found["firmware"])))
     if relayed:
         print("Klipper loses the AMS for about a minute and is restarted "
               "afterwards. Keep the bridge powered until it finishes.")
@@ -507,7 +771,7 @@ def cmd_update(args) -> int:
         print("Cancelled.")
         return 1
     if not relayed:
-        return update_direct(package_path)
+        return update_direct(package_path, version, running)
 
     def show(line):
         event = line.get("event")
@@ -522,24 +786,30 @@ def cmd_update(args) -> int:
     result = control_request({"method": "update", "file": str(package_path),
                               "source": source}, run_dir=run_dir,
                              on_line=show)
+    explanation = {key: result[key] for key in ("summary", "outcome", "action")
+                   if key in result}
     if not result.get("ok"):
-        error = result.get("error", "error")
-        print("Update failed: %s" % result.get("message", error),
-              file=sys.stderr)
-        advice = ERROR_ADVICE.get(error)
-        if advice:
-            print(advice, file=sys.stderr)
+        if len(explanation) != 3:
+            explanation = update_messages.explain(
+                result.get("error", "error"), detail=result.get("message", ""),
+                running=running, package=version)
+        print_failure(explanation, update_messages.technical_detail(
+            result.get("error", ""), result.get("message", "")))
         return 1
+    if not result.get("changed", True):
+        print_explanation(explanation)
+        return 0
     print("Installed. Waiting for the AMS to come back...")
     units = wait_for_units(run_dir, 90)
     print("  %d AMS online" % len(units))
+    code = confirm_installed(version, wait_for_firmware(run_dir, 30))
     if not args.no_restart:
         try:
             moonraker(args.moonraker, "/printer/firmware_restart", post=True)
             print("Klipper restarted (FIRMWARE_RESTART).")
         except (OSError, ValueError, urllib.error.URLError):
             print("Restart Klipper from Mainsail (FIRMWARE RESTART).")
-    return 0
+    return code
 
 
 # ---------------------------------------------------------------------------
@@ -627,6 +897,17 @@ def parser() -> argparse.ArgumentParser:
                                "to ptfe_length")
     ptfe.add_argument("millimetres", type=float)
     ptfe.set_defaults(func=cmd_ptfe)
+
+    version = commands.add_parser(
+        "version", help="the firmware version the bridge runs, and whether "
+        "it is the newest")
+    version.add_argument("--json", action="store_true",
+                         help="machine-readable output; exit status 0 when "
+                         "the installed version is known, else 1")
+    version.add_argument("--wait", type=float, default=RELAY_ANSWER_WAIT,
+                         help="seconds to wait for the bridge's answer "
+                         "(default %(default)s)")
+    version.set_defaults(func=cmd_version)
 
     firmware = commands.add_parser("firmware", help="list the bundled bridge "
                                    "firmware")

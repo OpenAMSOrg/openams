@@ -21,6 +21,23 @@ AMS2 = {"uid": "0a1b2c3d4e5f", "family": "ams2", "bays": 4,
         "name": "AMS 2 Pro"}
 HT = {"uid": "5f4e3d2c1b0a", "family": "ams_ht", "bays": 1,
       "name": "AMS HT"}
+BRIDGE_ON_USB = {"state": "application", "pid": "fe11",
+                 "manufacturer": "SiForge", "product": "Cortex Bridge",
+                 "serial": "CB0123456789AB", "device": "/dev/ttyACM9"}
+
+
+def known(version):
+    """The relay's firmware object for a bridge that reported ``version``."""
+    from cortex_bridge import bridge_info
+    return dict(bridge_info.firmware_status("known"), version=version,
+                boot_abi=6, genuine="passed")
+
+
+def found_with(version):
+    """`cli.installed_firmware`'s answer for a running production bridge."""
+    return {"usb": "application", "serial": "CB0123456789AB",
+            "image": "production", "fault": "", "source": "relay",
+            "firmware": known(version) if version is not None else None}
 
 
 class ConfigWriterTests(unittest.TestCase):
@@ -233,14 +250,16 @@ class CommandLineTests(unittest.TestCase):
         import contextlib
         import io
         from unittest import mock
-        from cortex_bridge import updater
+        from cortex_bridge import bridge_info, updater
         seen = {}
 
         def install(data, progress=None):
             seen["data"] = data
             progress("writing", 50, 100)
-            return {"version": 9, "serial_number": "CB0123456789AB"}
+            return {"version": 9, "serial_number": "CB0123456789AB",
+                    "device": "/dev/ttyACM9"}
 
+        asked = [known(7), known(9)]
         output = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp:
             package = Path(tmp) / "bridge-9.oac2"
@@ -248,6 +267,12 @@ class CommandLineTests(unittest.TestCase):
             with mock.patch.object(cli, "control_request",
                                    side_effect=OSError("no relay")), \
                     mock.patch.object(cli, "printer_state", return_value=None), \
+                    mock.patch.object(cli, "usb_devices",
+                                      return_value=[BRIDGE_ON_USB]), \
+                    mock.patch.object(bridge_info, "query_direct",
+                                      side_effect=lambda device: asked.pop(0)), \
+                    mock.patch.object(updater, "inspect_package",
+                                      return_value={"version": 9}), \
                     mock.patch.object(updater, "update_bridge",
                                       side_effect=install), \
                     contextlib.redirect_stdout(output):
@@ -255,9 +280,185 @@ class CommandLineTests(unittest.TestCase):
                                  str(package), "--yes"])
         self.assertEqual(code, 0)
         self.assertEqual(seen["data"], b"OAC2 package")
-        self.assertIn("Writing the firmware (50%)", output.getvalue())
+        text = output.getvalue()
+        self.assertIn("version 9 (the bridge runs version 7)", text)
+        self.assertIn("Writing the firmware (50%)", text)
         self.assertIn("Installed firmware version 9 on bridge CB0123456789AB",
-                      output.getvalue())
+                      text)
+        self.assertIn("The bridge now runs version 9.", text)
+        self.assertEqual(asked, [], "asked before and after the install")
+
+    def run_cli(self, argv, found=None, relay=None, inspect=None):
+        """Run the CLI with USB, the relay and Moonraker faked."""
+        import contextlib
+        import io
+        from unittest import mock
+        from cortex_bridge import updater
+        out, err = io.StringIO(), io.StringIO()
+        calls = []
+
+        def control(request, **kwargs):
+            calls.append(request)
+            if relay is None:
+                raise OSError("no relay")
+            return relay(request, **kwargs)
+
+        patches = [
+            mock.patch.object(cli, "control_request", side_effect=control),
+            mock.patch.object(cli, "printer_state", return_value=None),
+            mock.patch.object(cli, "usb_devices",
+                              return_value=[BRIDGE_ON_USB]),
+        ]
+        if found is not None:
+            patches.append(mock.patch.object(cli, "installed_firmware",
+                                             return_value=found))
+        if inspect is not None:
+            patches.append(mock.patch.object(updater, "inspect_package",
+                                             return_value=inspect))
+        with tempfile.TemporaryDirectory() as tmp, \
+                contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(err):
+            package = Path(tmp) / "bridge.oac2"
+            package.write_bytes(b"OAC2 package")
+            argv = [arg.replace("PACKAGE", str(package)) for arg in argv]
+            with contextlib.ExitStack() as stack:
+                for patch in patches:
+                    stack.enter_context(patch)
+                code = cli.main(["--run-dir", tmp] + argv)
+        return code, out.getvalue(), err.getvalue(), calls
+
+    def test_version_says_up_to_date_or_what_is_available(self):
+        latest = firmware.latest_bundled()["version"]
+        code, out, _, _ = self.run_cli(["version"], found=found_with(latest))
+        self.assertEqual(code, 0)
+        self.assertIn("Installed:  version %d" % latest, out)
+        self.assertIn("Up to date.", out)
+        code, out, _, _ = self.run_cli(["version"], found=found_with(1))
+        self.assertEqual(code, 0)
+        self.assertIn("Installed:  version 1", out)
+        self.assertIn("Version %d is available" % latest, out)
+        self.assertIn("cortex-bridge.py update", out)
+        code, out, _, _ = self.run_cli(["version"],
+                                       found=found_with(latest + 1))
+        self.assertIn("newer firmware than this OpenAMS bundles", out)
+
+    def test_version_explains_why_it_is_unknown(self):
+        from cortex_bridge import bridge_info
+        lab = dict(found_with(None), image="lab",
+                   firmware=bridge_info.firmware_status("unavailable",
+                                                        "lab-firmware"))
+        code, out, _, _ = self.run_cli(["version"], found=lab)
+        self.assertEqual(code, 1)
+        self.assertIn("Installed:  unknown: this bridge runs lab", out)
+        waiting = dict(found_with(None), usb="receiver", firmware=None)
+        code, out, _, _ = self.run_cli(["version"], found=waiting)
+        self.assertEqual(code, 1)
+        self.assertIn("waiting for firmware", out)
+        missing = dict(found_with(None), usb=None, firmware=None)
+        code, out, _, _ = self.run_cli(["version"], found=missing)
+        self.assertEqual(code, 1)
+        self.assertIn("No Cortex Bridge is connected", out)
+
+    def test_version_json_is_for_tools(self):
+        latest = firmware.latest_bundled()["version"]
+        code, out, _, _ = self.run_cli(["version", "--json"],
+                                       found=found_with(1))
+        self.assertEqual(code, 0)
+        report = json.loads(out)
+        self.assertEqual(report["installed"], 1)
+        self.assertEqual(report["latest"], latest)
+        self.assertEqual(report["verdict"], "update-available")
+        self.assertTrue(report["update_available"])
+        self.assertEqual(report["serial"], "CB0123456789AB")
+        code, out, _, _ = self.run_cli(["version", "--json"],
+                                       found=dict(found_with(None),
+                                                  firmware=None))
+        self.assertEqual(code, 1)
+        self.assertIsNone(json.loads(out)["installed"])
+
+    def test_version_waits_for_the_relay_and_never_opens_the_port(self):
+        from unittest import mock
+        from cortex_bridge import bridge_info
+        with tempfile.TemporaryDirectory() as tmp:
+            status = Path(tmp) / "status.json"
+            states = [bridge_info.firmware_status("querying", "busy"),
+                      known(7)]
+
+            def sleep(_seconds):
+                status.write_text(json.dumps({"state": "running",
+                                              "firmware": states.pop(0)}))
+
+            sleep(0)
+            with mock.patch.object(cli, "usb_devices",
+                                   return_value=[BRIDGE_ON_USB]), \
+                    mock.patch.object(cli, "relay_running",
+                                      return_value=True), \
+                    mock.patch.object(bridge_info, "query_direct",
+                                      side_effect=AssertionError("opened")):
+                found = cli.installed_firmware(Path(tmp), sleep=sleep)
+        self.assertEqual(found["source"], "relay")
+        self.assertEqual(found["firmware"]["version"], 7)
+
+    def test_update_to_the_running_version_does_not_touch_the_bridge(self):
+        code, out, _, calls = self.run_cli(
+            ["update", "--file", "PACKAGE", "--yes"], found=found_with(7),
+            inspect={"version": 7})
+        self.assertEqual(code, 0)
+        self.assertIn("The bridge already runs version 7.", out)
+        self.assertIn("Nothing was changed.", out)
+        self.assertNotIn("update", [c.get("method") for c in calls])
+
+    def test_update_to_an_older_file_says_why_nothing_happens(self):
+        code, out, _, _ = self.run_cli(
+            ["update", "--file", "PACKAGE", "--yes"], found=found_with(7),
+            inspect={"version": 4})
+        self.assertEqual(code, 1)
+        self.assertIn("runs version 7, which is newer than version 4", out)
+        self.assertIn("only installs a version newer", out)
+
+    def test_a_file_that_is_not_firmware_is_explained(self):
+        code, _, err, _ = self.run_cli(["update", "--file", "PACKAGE",
+                                        "--yes"], found=found_with(4))
+        self.assertEqual(code, 1)
+        self.assertIn("Update failed: This file cannot be installed: the file "
+                      "is truncated", err)
+        self.assertIn("Nothing was sent to the bridge.", err)
+        self.assertIn("without --file", err)
+        self.assertNotIn("Details:", err, "the reason is said once")
+
+    def test_a_relayed_failure_prints_what_to_do(self):
+        def relay(request, on_line=None, **kwargs):
+            if request["method"] == "status":
+                return {"event": "status"}
+            return {"event": "result", "ok": False,
+                    "error": "UpdateModeRefused", "message": "no receiver",
+                    "summary": "The bridge did not switch to update mode.",
+                    "outcome": "Nothing was changed; the bridge still runs "
+                               "version 4.",
+                    "action": "Wait until they are idle."}
+
+        code, _, err, _ = self.run_cli(
+            ["update", "--file", "PACKAGE", "--yes"], found=found_with(4),
+            relay=relay, inspect={"version": 7})
+        self.assertEqual(code, 1)
+        self.assertIn("Update failed: The bridge did not switch to update "
+                      "mode.", err)
+        self.assertIn("still runs version 4", err)
+        self.assertIn("Details: no receiver", err)
+
+    def test_status_shows_the_installed_version(self):
+        from cortex_bridge import bridge_info
+        bundled = [{"version": 7, "ok": True}]
+        line = cli.firmware_line(bridge_info.compare(known(7), bundled),
+                                 known(7))
+        self.assertEqual(line, "version 7, up to date")
+        line = cli.firmware_line(bridge_info.compare(known(4), bundled),
+                                 known(4))
+        self.assertIn("version 4; version 7 is available", line)
+        busy = bridge_info.firmware_status("querying", "busy")
+        line = cli.firmware_line(bridge_info.compare(busy, bundled), busy)
+        self.assertIn("unknown: the bridge is busy", line)
+        self.assertIn("newest bundled: version 7", line)
 
     def test_ptfe_prints_the_click_count(self):
         import contextlib
