@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 8,
+   "file": "bridge-8.oac2",
+   "sha256": "baad5fcbb47faca3e9ebf7f19625c421acadb2acd4583215f27037d4d1077511",
+   "released": "2026-11-07",
+   "notes": "The AMS measures its filament path (OAMS_CALIBRATE_PTFE_LENGTH), every load reports the path it measured, and a load that stops says why."
+  },
+  {
    "version": 7,
    "file": "bridge-7.oac2",
    "sha256": "b302056e0491f35fdad0aeebfb83e14c0def8e4631f3b9d810c1781e72cefb94",
