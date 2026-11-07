@@ -357,9 +357,12 @@ Either way, the length matters:
   200 mm) without the toolhead buffer reaching arrival_threshold: ...)`; older
   firmware says `the AMS stopped feeding before the toolhead buffer reached
   arrival_threshold`, and the AMS reports `motion_timeout`. Clear the fault
-  with `OAMS_CLEAR_FAULT OAMS=<n>` and `OAMSM_CLEAR_ERRORS`, then calibrate the
-  bay, or measure how far the filament tip stopped from the extruder gears:
-  the path is about your old length, plus 200 mm, plus that gap.
+  with `OAMS_CLEAR_FAULT OAMS=<n>`, then rewind the bay with
+  `OAMSM_UNLOAD_FILAMENT` (the filament stopped short of the extruder, so no
+  cut is needed), then calibrate the bay. A calibration refuses to start while
+  that filament is still out. On older firmware, measure how far the tip
+  stopped from the extruder gears instead: the path is about your old length,
+  plus 200 mm, plus that gap.
 - **Too long** is no fix either. When a spool runs out during a print, the
   reload of the next spool starts from this length, so a length longer than
   the path starts it late.
