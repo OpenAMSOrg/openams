@@ -2554,10 +2554,27 @@ class OAMSManager(oams_ext.ManagerHooks):
                               " stopped); specify FPS=<name> to target a lane")
             return
         lane = self.runtime.get_state().lanes[fps]
-        if lane.op != S.OP_LOADED:
+        fed = None
+        if lane.op == S.OP_UNLOADED:
+            # A load or calibration that stopped short left a bay's filament
+            # out past its hub; a unit that rewinds such a bay takes the
+            # unload (the reducer's Unload picks the bay).
+            fed = S._fed_unit(self.build_world(self.reactor.monotonic())
+                              .lane(fps))
+        if lane.op != S.OP_LOADED and fed is None:
             self._stop_followers([fps])
             gcmd.respond_info("No spool is loaded on lane %s (follower stopped)"
                               % fps)
+            return
+        if fed is not None:
+            self._wait_for_positioning(fps, gcmd)
+            result = self.runtime.request(fps, S.Unload(fps)).wait()
+            if not result.ok:
+                raise gcmd.error(result.message)
+            gcmd.respond_info("Rewound %s: %s" % (
+                S.spool_name(self.unit_name_by_idx.get(fed[0], "OAMS %d"
+                                                       % fed[0]), fed[1]),
+                result.message))
             return
         # H15b: the loaded unit must not move either, so refuse the unload up
         # front with its own reason instead of dispatching it and failing

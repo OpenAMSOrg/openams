@@ -170,7 +170,7 @@ class CalibrationGuardTests(unittest.TestCase):
         _, effects = self._try(S.LaneState(), loaded={(1, 1): True})
         settle = [e for e in effects if isinstance(e, S.Settle)][0]
         self.assertFalse(settle.result.ok)
-        self.assertIn("unload it first", settle.result.message)
+        self.assertIn("rewind it first", settle.result.message)
 
     def test_a_loaded_lane_refuses_it(self):
         lane = S.LaneState(op=S.OP_LOADED, unit=(1, 1), group="T1")
@@ -178,15 +178,18 @@ class CalibrationGuardTests(unittest.TestCase):
         self.assertFalse([e for e in effects if isinstance(e, S.Settle)][0]
                          .result.ok)
 
-    def test_the_bay_itself_partway_out_may_be_calibrated_again(self):
-        # A stopped calibration leaves the bay's own filament past its hub;
-        # the unit measures from park, so a second attempt is allowed.
+    def test_the_bay_itself_partway_out_is_rewound_first(self):
+        # A stopped calibration leaves the bay's own filament past its hub.
+        # An AMS 1 rewinds such a bay before it feeds, which bridge firmware
+        # 8 takes for a stall (hardware, 2026-11-07): rewind it first.
         lw = S.LaneWorld(unit_names={1: "ams1"}, loaded={(1, 0): True})
         state, effects = S.reduce(
             S.SystemState(lanes={"fps1": S.LaneState()}),
             S.Calibrate("fps1", 1, 0, "ptfe"), S.World(lanes={"fps1": lw}),
             now=1.0)
-        self.assertEqual(state.lanes["fps1"].op, S.OP_CALIBRATING)
+        self.assertEqual(state.lanes["fps1"].op, S.OP_UNLOADED)
+        message = [e for e in effects if isinstance(e, S.Settle)][0].result.message
+        self.assertIn("rewind it first with OAMSM_UNLOAD_FILAMENT", message)
 
     def test_a_clear_lane_starts_it(self):
         state, effects = self._try(S.LaneState())

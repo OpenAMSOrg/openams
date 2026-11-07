@@ -1030,13 +1030,19 @@ def _reduce_lane(lane, action, lw, now, fps, deadline):
         # A PTFE calibration feeds the bay to the toolhead: the shared path
         # must be clear, as for a load (a unit that measures by odometer
         # may not know, after a restart, that another bay is still out).
-        others_out = any(on for out, on in lw.loaded.items()
-                         if on and out != unit)
-        if action.kind == "ptfe" and (op != OP_UNLOADED or others_out):
+        # Not from a bay already partway out either: an AMS 1 rewinds such a
+        # bay to park before it feeds, which bridge firmware 8 does not
+        # follow (it stops as a stall); the rewind comes first.
+        if action.kind == "ptfe" and op != OP_UNLOADED:
             return _stage_refused(lane, now), [
                 Settle(fps, OpResult(False, None,
-                        "filament is loaded or still in a hub on this lane;"
-                        " unload it first"))]
+                        "a spool is loaded on this lane; unload it first"
+                        " (with the cut, as a toolchange does)"))]
+        if action.kind == "ptfe" and _hub_occupied(lw):
+            return _stage_refused(lane, now), [
+                Settle(fps, OpResult(False, None,
+                        "filament is still out past a hub on this lane;"
+                        " rewind it first with OAMSM_UNLOAD_FILAMENT"))]
         return _begin_op(
             lane, now, fps, deadline,
             lambda gen: StartCalibrate(unit, action.kind, fps, gen),
