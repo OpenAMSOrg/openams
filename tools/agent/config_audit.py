@@ -789,6 +789,47 @@ def check_macro_calls(tree, commands):
                         "registers nor defines it" % (command, MACROS_FILE))
 
 
+# [oams_manager]'s extruder callbacks and Klipper's defaults for them. They run
+# only in OAMSM_LOAD_TO_TOOLHEAD and OAMSM_UNLOAD_FROM_TOOLHEAD; a toolchange
+# (T<n>, _TX) does its own extruder moves.
+TOOLHEAD_MACROS = (
+    ("toolhead_load_macro", "LOAD_FILAMENT",
+     "OAMSM_LOAD_TO_TOOLHEAD loads the AMS and then fails, with the filament"
+     " left at the toolhead; add an extruder-only %s macro or name one here"),
+    ("toolhead_unload_macro", "UNLOAD_FILAMENT",
+     "OAMSM_UNLOAD_FROM_TOOLHEAD fails before the AMS rewinds; use the shipped"
+     " _OAMS_TOOLHEAD_EJECT, which ejects the filament past the extruder"
+     " gears"),
+)
+
+
+def check_toolhead_macros(tree, commands):
+    """The macros [oams_manager] calls around a standalone load or unload must
+    exist. Only checked against the running Klipper's commands: a static run
+    cannot tell a macro from a command an extension registers."""
+    if commands is None:
+        return
+    defined = macro_names(tree)
+    for section in tree.sections:
+        if section.kind != "oams_manager":
+            continue
+        for option_name, default, effect in TOOLHEAD_MACROS:
+            option = section.get(option_name)
+            name = option.value.strip() if option is not None else default
+            if not name or name.lower() in defined or \
+                    name.upper() in commands or name in commands:
+                continue
+            where = (option.file, option.line) if option is not None else \
+                (section.file, section.line)
+            tree.report(WARN, "W_TOOLHEAD_MACRO", where[0], where[1],
+                        "%s is %s%s, which the running Klipper neither "
+                        "registers nor defines: %s. Toolchanges (T<n>) do not "
+                        "use it."
+                        % (option_name, name,
+                           "" if option is not None else " (the default)",
+                           effect % name if "%s" in effect else effect))
+
+
 def check_summary(tree, units, lanes):
     def info(message):
         tree.report(INFO, "I_SUMMARY", tree.main_file, 1, message)
@@ -842,6 +883,7 @@ def audit(tree, commands):
     check_tool_macros(tree)
     check_macro_collisions(tree)
     check_macro_calls(tree, commands)
+    check_toolhead_macros(tree, commands)
     check_summary(tree, units, lanes)
     return sort_findings(tree.findings)
 

@@ -332,6 +332,22 @@ class MacroTest(ConfigAuditTest):
         self.assertEqual(codes_with(text, "E_MACRO_MISSING"), [])
         self.assertEqual(codes_with(text, "M_MACRO_UNVERIFIED"), [])
 
+    def test_missing_toolhead_macros_are_named(self):
+        # The sample leaves both callbacks at their defaults, and the idle
+        # printer registers neither LOAD_FILAMENT nor UNLOAD_FILAMENT.
+        status, text = run("fresh_sample", "--commands", IDLE_HELP)
+        found = [line for line in text.splitlines()
+                 if line.startswith("WARN W_TOOLHEAD_MACRO")]
+        self.assertEqual(len(found), 2, text)
+        self.assertIn("toolhead_load_macro is LOAD_FILAMENT (the default)",
+                      found[0])
+        self.assertIn("OAMSM_LOAD_TO_TOOLHEAD", found[0])
+        self.assertIn("_OAMS_TOOLHEAD_EJECT", found[1])
+
+    def test_toolhead_macros_are_not_checked_without_commands(self):
+        status, text = run("fresh_sample")
+        self.assertNotIn("W_TOOLHEAD_MACRO", text)
+
 
 class ForeignSystemTest(ConfigAuditTest):
     def test_warning_locations(self):
