@@ -63,7 +63,7 @@ appears in two other places:
 | The reason says | What it means | What to do |
 |---|---|---|
 | `the bridge has not answered the version request yet` | The relay has just connected | Run `version` again in a few seconds. |
-| `the bridge is busy (an AMS is working) ...` | It answers when no AMS is loading, unloading or drying | Run `version` again when the AMS are idle. |
+| `the bridge is busy (an AMS is working) ...` | It answers when no AMS is loading, unloading or drying, and no spool is loaded to the toolhead | Unload the loaded spool, or wait until the AMS are idle, and run `version` again. |
 | `the bridge did not answer the version request` | The bridge stayed silent | Unplug its USB cable for 10 seconds, plug it back in and try again. If it stays, write a support report (below). |
 | `this bridge runs lab (development) firmware ...` | Development firmware has no release number | If you did not expect that, contact support. |
 | `the bridge could not read its own identity ...` or `the bridge failed its authenticity check` | The bridge's security check did not pass | Write a support report (below) and contact support. |
@@ -101,8 +101,10 @@ above. Moonraker answers the same at `GET /server/openams/bridge/status`
 - OpenAMS installed with the bridge relay, as in
   [Set up a Cortex Bridge printer](cortex-bridge-setup.md).
 - The printer idle: not printing and not paused.
-- The AMS idle: not loading, unloading or drying. The bridge does not switch
-  to update mode while an AMS is busy.
+- The AMS idle: not loading, unloading or drying, and **no filament loaded
+  to the toolhead**. A loaded spool keeps the AMS following the extruder,
+  which counts as busy: unload it first (a toolchange's unload, with the cut).
+  The bridge does not switch to update mode while an AMS is busy.
 - USB and 24 V connected for the whole update, which takes about a minute.
 
 ## Install it
