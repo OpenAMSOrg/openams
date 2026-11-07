@@ -658,9 +658,30 @@ def update_direct(package_path: Path, version: int, running) -> int:
             text += " (%d%%)" % (100 * done // total)
         print("  " + text, flush=True)
 
+    def repeating(attempt, attempts, error):
+        print("  The bridge did not accept the update this time; repeating it "
+              "(attempt %d of %d)." % (attempt + 1, attempts), flush=True)
+
+    def running_version():
+        # Asked only when a repeated update ends in a refusal: the version the
+        # one attached bridge reports now, or None.
+        try:
+            running = [b for b in updater.find_bridges()
+                       if b.state == updater.STATE_APPLICATION]
+            if len(running) != 1:
+                return None
+            firmware = bridge_info.query_direct(running[0].device)
+        except Exception:  # noqa: BLE001 - then the refusal stands
+            return None
+        if firmware and firmware.get("state") == "known":
+            return firmware.get("version")
+        return None
+
     try:
-        report = updater.update_bridge(package_path.read_bytes(),
-                                       progress=progress)
+        report = updater.update_bridge_with_retry(package_path.read_bytes(),
+                                                  progress=progress,
+                                                  on_retry=repeating,
+                                                  confirm_version=running_version)
     except OSError as exc:
         print_failure(update_messages.explain("OSError", detail=str(exc),
                                               running=running,

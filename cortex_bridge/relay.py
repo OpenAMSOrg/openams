@@ -669,9 +669,20 @@ class Relay:
                                        "done": done, "total": total})
 
             serial_number = (self.bridge or {}).get("serial") or None
-            report = updater.update_bridge(
+
+            def repeating(attempt, attempts, error):
+                self.log.record("update_retry", attempt=attempt,
+                                attempts=attempts, reason=str(error)[:200])
+                self.status.set(detail="the bridge did not accept the update "
+                                "this time; repeating it (attempt %d of %d)"
+                                % (attempt + 1, attempts))
+                send_line(connection, {"event": "retry", "attempt": attempt + 1,
+                                       "attempts": attempts})
+
+            report = updater.update_bridge_with_retry(
                 prepared["data"], serial_number=serial_number,
-                serial_module=self.serial, progress=progress)
+                serial_module=self.serial, progress=progress,
+                on_retry=repeating)
             update = dict(self.status.state.get("update") or {})
             update.update(result="installed", finished=_now_iso(),
                           message="installed version %d" % version)

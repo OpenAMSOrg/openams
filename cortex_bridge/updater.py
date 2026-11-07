@@ -1232,3 +1232,80 @@ def update_bridge(data: bytes, *, serial_number: str | None = None,
         "serial_number": final.serial_number,
     })
     return report
+
+
+# A bridge can turn an update down while it is writing it, and take the same
+# package on a later attempt. It keeps its update receiver (or its previous
+# application) in between, so the update is simply repeated.
+UPDATE_ATTEMPTS = 100   # a turned-down attempt takes about 11 s
+
+
+def _turned_down_while_writing(error) -> bool:
+    report = error.report or {}
+    return ((report.get("passes") or 0) >= 2
+            and error.post_state in (STATE_RECEIVER, STATE_APPLICATION))
+
+
+def _refused_as_not_newer(error) -> bool:
+    report = error.report or {}
+    return (report.get("passes") == 1
+            and (report.get("bytes_served") or 0) <= HEADER_SIZE
+            and error.post_state == STATE_APPLICATION)
+
+
+def update_bridge_with_retry(data: bytes, *, attempts: int = UPDATE_ATTEMPTS,
+                             on_retry=None, confirm_version=None,
+                             **options) -> dict:
+    """``update_bridge``, repeated when the bridge turned the update down
+    while writing it, up to ``attempts`` times. A refusal before anything was
+    written (a package that is not newer, for another product, or not genuine)
+    is never repeated, and neither is a bridge fault. ``on_retry(attempt,
+    attempts, error)`` is told before each repeat.
+
+    If an earlier attempt was turned down while writing and a later one is
+    refused before writing, the earlier attempt may have finished (the bridge
+    then refuses the same version as not newer), but the refusal alone does
+    not prove it. ``confirm_version()``, when given, returns the version the
+    bridge runs now (or None): the report says "installed" only if that is
+    the package's version. Otherwise the refusal is raised, with that hint."""
+    attempts = max(1, attempts)
+    package_version = inspect_package(data).get("version")
+    wrote = False
+    for attempt in range(1, attempts + 1):
+        try:
+            report = update_bridge(data, **options)
+        except ReceiverRejected as error:
+            if _turned_down_while_writing(error):
+                wrote = True
+                if attempt < attempts:
+                    if on_retry is not None:
+                        on_retry(attempt, attempts, error)
+                    continue
+                raise ReceiverRejected(
+                    "the bridge did not accept the update on any of %d "
+                    "attempts. It keeps its update receiver and can take the "
+                    "same package again. Last attempt: %s" % (attempts, error),
+                    error.report, error.post_state, error.stopped_at,
+                    reason_code=error.reason_code) from error
+            if wrote and _refused_as_not_newer(error):
+                running = confirm_version() if confirm_version else None
+                if running is not None and running == package_version:
+                    report = dict(error.report or {})
+                    report.update(result="installed", attempts=attempt,
+                                  running_version=running)
+                    report.setdefault("notes", []).append(
+                        "an earlier attempt finished writing the update: the "
+                        "bridge reports version %s" % running)
+                    return report
+                raise ReceiverRejected(
+                    "%s. An earlier attempt may have finished writing the "
+                    "update: check the bridge's version" % error,
+                    error.report, error.post_state, error.stopped_at,
+                    reason_code=error.reason_code) from error
+            raise
+        report["attempts"] = attempt
+        if attempt > 1:
+            report.setdefault("notes", []).append(
+                "installed on attempt %d" % attempt)
+        return report
+    raise AssertionError("unreachable")

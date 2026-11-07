@@ -616,6 +616,88 @@ class UpdateBridgeTest(unittest.TestCase):
         self.assertEqual(by_state["fault"].code, "F-USB-01")
 
 
+class UpdateRetryTest(unittest.TestCase):
+    """update_bridge_with_retry: an update the bridge turned down while
+    writing it is repeated; a refusal before writing never is."""
+
+    def rejected(self, passes, post_state="receiver", served=None):
+        report = {"passes": passes, "bytes_served": served if served is not None
+                  else passes * 1000, "final_state": post_state}
+        return updater.ReceiverRejected("turned down", report, post_state,
+                                        "during pass %d" % passes)
+
+    def run_script(self, outcomes, **kwargs):
+        calls = []
+        real = updater.update_bridge
+
+        def fake(data, **options):
+            calls.append(options)
+            outcome = outcomes[len(calls) - 1]
+            if isinstance(outcome, Exception):
+                raise outcome
+            return dict(outcome)
+        real_inspect = updater.inspect_package
+        updater.update_bridge = fake
+        updater.inspect_package = lambda data, *a, **k: {"version": 7}
+        try:
+            return updater.update_bridge_with_retry(b"pkg", **kwargs), calls
+        finally:
+            updater.update_bridge = real
+            updater.inspect_package = real_inspect
+
+    def test_turned_down_while_writing_is_repeated(self):
+        retries = []
+        report, calls = self.run_script(
+            [self.rejected(2), self.rejected(2, "application"),
+             {"result": "installed", "version": 7}],
+            on_retry=lambda a, n, e: retries.append(a))
+        self.assertEqual(report["result"], "installed")
+        self.assertEqual(report["attempts"], 3)
+        self.assertEqual(retries, [1, 2])
+        self.assertEqual(len(calls), 3)
+
+    def test_refusal_before_writing_is_not_repeated(self):
+        with self.assertRaises(updater.ReceiverRejected):
+            self.run_script([self.rejected(1, "application", served=576)])
+
+    def test_gives_up_after_the_attempts(self):
+        with self.assertRaises(updater.ReceiverRejected) as caught:
+            self.run_script([self.rejected(2)] * 3, attempts=3)
+        self.assertIn("any of 3 attempts", str(caught.exception))
+
+    def test_refused_after_turned_down_is_installed_only_when_confirmed(self):
+        report, _ = self.run_script(
+            [self.rejected(2, "application"),
+             self.rejected(1, "application", served=576)],
+            confirm_version=lambda: 7)
+        self.assertEqual(report["result"], "installed")
+        self.assertEqual(report["running_version"], 7)
+
+    def test_refused_after_turned_down_without_confirmation_is_raised(self):
+        with self.assertRaises(updater.ReceiverRejected) as caught:
+            self.run_script([self.rejected(2, "application"),
+                             self.rejected(1, "application", served=576)])
+        self.assertIn("check the bridge's version", str(caught.exception))
+
+    def test_refused_after_turned_down_with_the_old_version_is_raised(self):
+        # A refusal before writing that is not "not newer" (the bridge still
+        # runs the old version): never reported as installed.
+        with self.assertRaises(updater.ReceiverRejected):
+            self.run_script([self.rejected(2, "application"),
+                             self.rejected(1, "application", served=576)],
+                            confirm_version=lambda: 4)
+
+    def test_unknown_state_after_turned_down_is_not_repeated(self):
+        with self.assertRaises(updater.ReceiverRejected):
+            self.run_script([self.rejected(2, "unknown"),
+                             {"result": "installed"}])
+
+    def test_a_fault_is_not_repeated(self):
+        fault = updater.BridgeFault("F-STATE-01")
+        with self.assertRaises(updater.BridgeFault):
+            self.run_script([fault, {"result": "installed"}])
+
+
 class InspectPackageTest(unittest.TestCase):
     def test_valid_synthetic_header(self):
         package = build_package(version=9, minimum_version=3, blocks=5,

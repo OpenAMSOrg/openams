@@ -368,7 +368,9 @@ class SessionTests(unittest.TestCase):
         fake = types.SimpleNamespace(
             PackageRefused=PackageRefused,
             inspect_package=lambda data: {"version": 7},
-            update_bridge=update_bridge)
+            update_bridge=update_bridge,
+            update_bridge_with_retry=lambda data, on_retry=None, **kw:
+                update_bridge(data, **kw))
         package = Path(self.tmp.name) / "bridge-7.oac2"
         package.write_bytes(b"OAC2-test")
         self.start_session()
@@ -426,7 +428,9 @@ class SessionTests(unittest.TestCase):
         return types.SimpleNamespace(
             PackageRefused=PackageRefused,
             inspect_package=lambda data: {"version": version},
-            update_bridge=update_bridge)
+            update_bridge=update_bridge,
+            update_bridge_with_retry=lambda data, on_retry=None, **kw:
+                update_bridge(data, **kw))
 
     def run_update(self, fake, path):
         with mock.patch.dict(sys.modules, {"cortex_bridge.updater": fake}), \
