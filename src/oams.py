@@ -2663,10 +2663,16 @@ class OAMS(oams_ext.UnitHooks):
     # ------------------------------------------------- calibration (async/store)
 
     def _calibrate(self, kind, bay):
+        self._calibration_refusal = None
         if self.runtime is not None:
             result = self.runtime.request(
                 self.fps_name, S.Calibrate(self.fps_name, self.oams_idx, bay, kind)
             ).wait()
+            if not result.ok and result.code is None:
+                # Refused before any command reached the unit (busy lane,
+                # filament out): its reason is the answer, not the unit's
+                # status, which still holds the previous operation's.
+                self._calibration_refusal = result.message
             return result.ok, result.value
         # Standalone fallback (no manager): bounded blocking.
         self.start_calibrate(kind, bay)
@@ -2696,7 +2702,9 @@ class OAMS(oams_ext.UnitHooks):
 
         ok, value = self._calibrate("hub_hes", bay)
         if not ok:
-            raise gcmd.error("Calibration of HES %d failed" % bay)
+            refusal = getattr(self, "_calibration_refusal", None)
+            raise gcmd.error("Calibration of HES %d failed%s"
+                             % (bay, ": %s" % refusal if refusal else ""))
         threshold = self.u32_to_float(value)
         self.hub_hes_on[bay] = threshold
         how = self._persist_option(
@@ -2709,6 +2717,10 @@ class OAMS(oams_ext.UnitHooks):
         self.action_status_code/self.action_status_value are the firmware's
         reply to this calibration, set by _apply_action_status just before the
         request this method is called from returns."""
+        refusal = getattr(self, "_calibration_refusal", None)
+        if refusal:
+            return ("Cannot calibrate %s: %s." % (self.spool_label(spool),
+                                                  refusal))
         code = self.action_status_code
         reason = self._failure_reason(code, self.action_status_value,
                                       calibrating=True)

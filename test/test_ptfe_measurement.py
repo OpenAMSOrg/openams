@@ -223,6 +223,23 @@ class FedBayUnloadTests(unittest.TestCase):
             self.assertEqual(state.lanes["fps1"].op, S.OP_UNLOADED)
 
 
+class CalibrationRefusalTests(unittest.TestCase):
+    def test_a_refusal_before_the_unit_is_shown_not_the_old_status(self):
+        unit = make_unit()
+        unit.runtime = types.SimpleNamespace(request=lambda fps, action:
+            types.SimpleNamespace(wait=lambda: S.OpResult(
+                False, None, "busy, cannot calibrate now")))
+        unit.fps_name = "fps1"
+        # The previous calibration's failure is still in the driver.
+        unit.action_status_code = S.OAMS_OP_CODE_TIMEOUT
+        unit.action_status_value = 26
+        ok, _ = unit._calibrate("ptfe", 1)
+        self.assertFalse(ok)
+        self.assertEqual(unit._ptfe_calibration_error_message(1),
+                         "Cannot calibrate ams1 Spool 2: busy, cannot"
+                         " calibrate now.")
+
+
 class MeasuredPathTests(unittest.TestCase):
     def test_the_first_measurement_of_a_bay_is_reported(self):
         unit = make_unit(ptfe_length=2337)  # 2050 mm
