@@ -6,7 +6,9 @@ on:
 
 jobs:
   unittest:
-    runs-on: ubuntu-latest
+    # ubuntu-latest is Ubuntu 26.04 since 2026-10-19, and setup-python has no
+    # Python 3.8 build for it; 24.04 still has one.
+    runs-on: ${{ matrix.python-version == '3.8' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
