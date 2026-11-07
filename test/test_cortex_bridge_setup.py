@@ -572,6 +572,51 @@ class CommandLineTests(unittest.TestCase):
         self.assertIn("unknown: the bridge is busy", line)
         self.assertIn("newest bundled: version 7", line)
 
+    def started(self, answers):
+        """Run klipper-started against scripted Moonraker answers."""
+        import contextlib
+        import io
+        sent = []
+        replies = iter(answers)
+
+        def fake(url, path, post=False, timeout=5.0):
+            sent.append((path, post))
+            if post:
+                return {"result": "ok"}
+            return {"result": next(replies)}
+        original = cli.moonraker
+        cli.moonraker = fake
+        output = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(output):
+                code = cli.cmd_klipper_started(
+                    types.SimpleNamespace(moonraker="http://x", wait=60.0),
+                    sleep=lambda s: None, clock=lambda: 0.0)
+        finally:
+            cli.moonraker = original
+        return code, sent, output.getvalue()
+
+    def test_klipper_started_ready_sends_nothing(self):
+        code, sent, text = self.started([{"state": "ready"}])
+        self.assertEqual(code, 0)
+        self.assertNotIn(("/printer/firmware_restart", True), sent)
+
+    def test_klipper_started_restarts_an_ams_the_bridge_stopped(self):
+        shutdown = {"state": "error", "state_message":
+                    "Can not update MCU 'ams1' config as it is shutdown\n"}
+        code, sent, text = self.started(
+            [{"state": "startup"}, shutdown, {"state": "ready"}])
+        self.assertEqual(code, 0)
+        self.assertEqual(sent.count(("/printer/firmware_restart", True)), 1)
+        self.assertIn("FIRMWARE_RESTART", text)
+
+    def test_klipper_started_leaves_other_errors_alone(self):
+        code, sent, text = self.started(
+            [{"state": "error", "state_message": "Option 'x' must be set"}])
+        self.assertEqual(code, 1)
+        self.assertNotIn(("/printer/firmware_restart", True), sent)
+        self.assertIn("Option 'x' must be set", text)
+
     def test_ptfe_prints_the_click_count(self):
         import contextlib
         import io

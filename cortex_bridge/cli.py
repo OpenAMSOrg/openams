@@ -859,6 +859,66 @@ def cmd_update(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# klipper-started
+# ---------------------------------------------------------------------------
+
+SHUTDOWN_AT_START = "config as it is shutdown"
+
+
+def klipper_info(url: str):
+    """(state, state_message) from Moonraker, or (None, "") while Klipper or
+    Moonraker does not answer yet."""
+    try:
+        result = moonraker(url, "/printer/info").get("result", {})
+    except (OSError, ValueError, urllib.error.URLError):
+        return None, ""
+    return result.get("state"), result.get("state_message", "")
+
+
+def wait_klipper_settled(url: str, seconds: float, *, sleep=time.sleep,
+                         clock=time.monotonic):
+    """Wait until Klipper is ready, in error or shut down (or `seconds` pass);
+    returns its last (state, state_message)."""
+    deadline = clock() + seconds
+    while True:
+        state, message = klipper_info(url)
+        if state in ("ready", "error", "shutdown") or clock() >= deadline:
+            return state, message
+        sleep(2.0)
+
+
+def cmd_klipper_started(args, *, sleep=time.sleep, clock=time.monotonic) -> int:
+    """After a Klipper start (the installer's): the bridge stops an AMS while
+    Klipper is stopped, so Klipper can come up in error with "Can not update
+    MCU '...' config as it is shutdown". That needs FIRMWARE_RESTART and
+    nothing else; send it once, and say what happened."""
+    state, message = wait_klipper_settled(args.moonraker, args.wait,
+                                          sleep=sleep, clock=clock)
+    if state == "ready":
+        print("Klipper is ready.")
+        return 0
+    if state == "error" and SHUTDOWN_AT_START in message:
+        print("Klipper started with an AMS still stopped by the bridge; "
+              "sending FIRMWARE_RESTART.")
+        try:
+            moonraker(args.moonraker, "/printer/firmware_restart", post=True)
+        except (OSError, ValueError, urllib.error.URLError) as exc:
+            print("Could not send it (%s). Run FIRMWARE RESTART in Mainsail."
+                  % exc)
+            return 1
+        sleep(5.0)
+        state, message = wait_klipper_settled(args.moonraker, args.wait,
+                                              sleep=sleep, clock=clock)
+        if state == "ready":
+            print("Klipper is ready.")
+            return 0
+    print("Klipper is %s: %s" % (state or "not answering",
+                                 (message or "").strip().splitlines()[0]
+                                 if (message or "").strip() else "no message"))
+    return 1
+
+
+# ---------------------------------------------------------------------------
 # support
 # ---------------------------------------------------------------------------
 
@@ -942,6 +1002,13 @@ def parser() -> argparse.ArgumentParser:
     configure.add_argument("--yes", action="store_true",
                            help="do not ask before stopping Klipper")
     configure.set_defaults(func=cmd_config)
+
+    started = commands.add_parser(
+        "klipper-started", help="after a Klipper start, wait for it and "
+        "FIRMWARE_RESTART once if an AMS was left stopped by the bridge")
+    started.add_argument("--wait", type=float, default=60.0,
+                         help="seconds to wait for Klipper (default 60)")
+    started.set_defaults(func=cmd_klipper_started)
 
     ptfe = commands.add_parser("ptfe", help="convert a measured path length "
                                "to ptfe_length")

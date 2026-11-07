@@ -1329,3 +1329,6 @@ else
 fi
 KLIPPER_STOPPED=0
 start_klipper
+if [[ -z "${UNINSTALL:-}" ]]; then
+    cortex_bridge_after_klipper_start
+fi

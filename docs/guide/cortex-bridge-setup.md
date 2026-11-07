@@ -212,7 +212,13 @@ Added ams2 to /home/pi/printer_data/config/oams.cfg.
 Next: measure each AMS's filament path and set ptfe_length (`cortex-bridge.py ptfe <millimetres>`).
 ...
 Starting Klipper... [OK]
+Waiting for Klipper (up to 60 s)...
+Klipper is ready.
 ```
+
+On a second run, Klipper can come up with an AMS the bridge stopped while
+Klipper was stopped; the installer then sends **FIRMWARE RESTART** by itself
+and says so.
 
 **Check:** you see `Cortex Bridge relay installed [OK]` and one line per AMS.
 

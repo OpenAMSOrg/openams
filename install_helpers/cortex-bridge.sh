@@ -324,6 +324,21 @@ configure_cortex_bridge_units()
     fi
 }
 
+cortex_bridge_after_klipper_start()
+{
+    # The bridge stops an AMS while Klipper is stopped, so a Klipper the
+    # installer stopped and started can come up in error ("Can not update MCU
+    # '...' config as it is shutdown"); FIRMWARE_RESTART is the cure.
+    [ "$CORTEX_BRIDGE_INSTALLED" = "1" ] || return 0
+    if [ "$NO_SERVICE" = "1" ] || [ -n "$SYSTEM_ROOT" ]; then
+        echo "[skipped: test mode] cortex-bridge.py klipper-started"
+        return 0
+    fi
+    echo "Waiting for Klipper (up to 60 s)..."
+    python3 "${SCRIPT_DIR}/tools/cortex-bridge.py" klipper-started --wait 60 || \
+        echo "[NOTE] Check Klipper in Mainsail; FIRMWARE RESTART brings back an AMS the bridge stopped."
+}
+
 remove_cortex_bridge()
 {
     if ! system_files_visible || [ ! -f "$(cortex_bridge_unit_path)" ]; then
