@@ -59,13 +59,25 @@ looks the same from the host; see `klipper_mmu/`.
   no sense of distance. The AMS knows the filament has arrived only because
   the FPS slide is pushed home: its reading goes from about 0 (relaxed) to
   about 1 (compressed).
-- **`ptfe_length` sets when to listen.** The unit feeds fast until it is
-  100 mm short of `ptfe_length`, then slows down and stops once the buffer
-  reads arrival (`fps_upper_threshold` on OpenAMS 1, the host's
-  `arrival_threshold` on a Cortex Bridge). Before that point the reading is
-  ignored, so a slide that compresses early only matters if the load stops
-  there. While `ptfe_length` is 0, a Cortex Bridge AMS refuses to load, and
-  on OpenAMS 1 a runout pauses instead of reloading.
+- **`ptfe_length` sets when to listen, and how far to go.**
+  - **OpenAMS 1:** the unit feeds fast until it is 100 mm short of
+    `ptfe_length`, then slows down and stops once the buffer reads arrival
+    (`fps_upper_threshold`). Before that point the reading is ignored, so a
+    slide that compresses early only matters if the load stops there. While
+    `ptfe_length` is 0, a runout pauses instead of reloading.
+  - **Cortex Bridge (firmware 7):** the AMS feeds at full speed until the
+    buffer starts to compress, then slows and waits for the host's arrival
+    acknowledgement (`arrival_threshold`). The full-speed feed is capped at
+    about `ptfe_length` + 200 mm. Past that, the bridge stops the load and
+    reports a plain timeout (fault `motion_timeout`), the same as a stall. So
+    **a load that stops short of the gears, with the filament running freely,
+    means `ptfe_length` is too short**, not a jam. The path is about the old
+    length + 200 mm + the gap left at the gears. While `ptfe_length` is 0 the
+    AMS refuses to load. The AMS can't run `OAMS_CALIBRATE_PTFE_LENGTH`; the
+    human measures the path and converts it with `cortex-bridge.py ptfe <mm>`.
+  - **Both:** never lengthen `ptfe_length` past the real path to "get it
+    through". The runout reload starts from this length, so a long one
+    reloads late.
 - **The stall guard.** The unit's encoder counts the filament as it moves. If
   the motor runs and the count stops, `src/oams_runtime.py` fails the
   operation, lights the bay LED red, and pauses with `loading speed too low`
@@ -178,7 +190,15 @@ Each of these settled many support threads. They're consistent with
     far below.
   - The bridge stops an AMS whenever Klipper goes quiet. After a Klipper stop,
     `Can not update MCU … as it is shutdown` needs `FIRMWARE_RESTART`, and
-    nothing is wrong.
+    nothing is wrong. That includes a plain host restart
+    (`/printer/restart`, Mainsail's RESTART) after a config edit: on a Cortex
+    Bridge printer, always use `FIRMWARE_RESTART`.
+  - A load that ends `motion_timeout` well short of the toolhead, with the
+    buffer never rising, is usually a `ptfe_length` shorter than the path (see
+    `ptfe_length` above). The bridge doesn't report which limit it hit.
+  - A printer moving from OpenAMS 1 to a Cortex Bridge often keeps its old FPS
+    board as the USB-to-CAN bridge for the toolhead board. Keep its `[mcu]`;
+    only the `[fps] pin:` section goes, replaced by `[fps] source_oams:`.
 
 ---
 

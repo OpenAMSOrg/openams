@@ -222,6 +222,24 @@ Starting Klipper... [OK]
 - `No AMS was added to oams.cfg yet` means the bridge is fine but no AMS
   answered. Check the red LED, the BUFFER cable and the AMS cable, then run
   `python3 ~/openams/tools/cortex-bridge.py config --write`.
+- `oams.cfg was left unchanged: it still describes OpenAMS 1 hardware` means
+  this printer ran OpenAMS 1 before. The installer doesn't add the bridge's
+  AMS next to the old unit, because the two setups would mix. To move to the
+  bridge, run:
+
+  ```bash
+  python3 ~/openams/tools/cortex-bridge.py config --write --replace-openams1
+  ```
+
+  It comments out the OpenAMS 1 unit, its board's `[mcu]`, the sections that
+  use that board (its temperature sensor and RFID readers), its filament
+  groups and the `[fps]` section with a `pin:`, each marked
+  `# cortex_bridge config:`. Then it adds the bridge's AMS, with groups `T0`
+  onwards and an `[fps]` that reads the buffer through the AMS. Your cutter
+  values, macros and other sections stay as they are. Groups start again at
+  one bay each, so set up any spare-spool groups again afterwards. If the old
+  FPS board is still connected, for example as the USB-to-CAN bridge for your
+  toolhead board, keep its `[mcu]`; if it's gone, comment that out too.
 
 ## 6. Check the bridge
 
@@ -284,6 +302,26 @@ The value is in the AMS's encoder clicks (1.14 per millimetre), which is why
 the command converts it. If one bay's path is longer than the others, give
 that bay its own value with `ptfe_length_<bay>:` (bays count from 0).
 
+The AMS measures nothing itself: `OAMS_CALIBRATE_PTFE_LENGTH` is for OpenAMS 1
+boards, and a Cortex Bridge AMS refuses it. The number comes from your
+measurement, so measure it, don't guess it:
+
+- **What the length does.** A load runs at full speed until the buffer starts
+  to compress, then slows down and stops when the buffer reads arrival. The
+  length limits the full-speed part: the bridge stops a load that has fed
+  about 200 mm more than `ptfe_length` without the buffer compressing, so a
+  broken or unplugged tube never gets metres of filament.
+- **Too short** stops every load before the toolhead. Klipper says
+  `Spool loading failed (the AMS stopped feeding before the toolhead buffer
+  reached arrival_threshold: ...)`, and the AMS reports `motion_timeout`.
+  Measure how far the filament tip stopped from the extruder gears: the path
+  is about your old length, plus 200 mm, plus that gap. Then clear the fault
+  with `OAMS_CLEAR_FAULT OAMS=<n>` and `OAMSM_CLEAR_ERRORS`, set the new
+  length, and load again.
+- **Too long** is no fix either. When a spool runs out during a print, the
+  reload of the next spool starts from this length, so a length longer than
+  the path starts it late.
+
 ### The cutter
 
 OpenAMS cuts the filament at the toolhead before every swap. In
@@ -305,6 +343,9 @@ yours does more than that, see
 [configure](configure.md#oams_manager).
 
 When all three are set, restart Klipper (**FIRMWARE RESTART** in Mainsail).
+Use **FIRMWARE RESTART** after every change to `oams.cfg`, not **RESTART**:
+the bridge stops an AMS as soon as Klipper goes quiet, so after a plain
+restart Klipper reports `Can not update MCU '...' config as it is shutdown`.
 
 **Check:** Klipper is **Ready**, and the console command `OAMSM_SELFTEST`
 reports each AMS without errors.
@@ -425,7 +466,8 @@ names the first thing to fix.
 | `The bridge reports a fault` | The bridge's own self-test failed | Unplug USB for 10 s; if it stays, write a support report (below). |
 | Klipper: `Unable to open serial port '/dev/oams/...'` | Klipper started before the AMS was up | Power the AMS, wait for `status` to show it online, then **FIRMWARE RESTART**. |
 | Klipper: `Can not update MCU '...' config as it is shutdown` | Klipper was stopped for more than a few seconds. The bridge stops an AMS whenever Klipper goes quiet, so nothing keeps running unattended | **FIRMWARE RESTART**. |
-| Klipper: `Spool N is not calibrated` | `ptfe_length` is 0 for that AMS | [Set it](#filament-path-length). |
+| Klipper: `<ams> Spool N has no PTFE length` | `ptfe_length` is 0 for that AMS | [Measure and set it](#filament-path-length). `OAMS_CALIBRATE_PTFE_LENGTH` doesn't work on a Cortex Bridge AMS. |
+| A load stops before the toolhead with `the AMS stopped feeding before the toolhead buffer reached arrival_threshold` and fault `motion_timeout` | `ptfe_length` is shorter than the filament path, or the filament snagged | If the filament runs freely, the length is too short: [set it](#filament-path-length) to the old length plus 200 mm plus the gap left at the gears. Clear the fault with `OAMS_CLEAR_FAULT OAMS=<n>`, then `OAMSM_CLEAR_ERRORS`. |
 | Loads stall, or the buffer reports arrival before the filament reaches the toolhead | Too much friction in the filament path | Check that every tube up to the coupler is 3 mm ID / 4 mm OD (not 2 mm ID), any 2 mm ID tube starts at the coupler's 2 end, the bends are gentle, the coupler and splitter joints are smooth, and the stronger buffer spring is fitted. |
 | A load stops just short of the toolhead | The buffer reading did not reach `arrival_threshold` | Lower it as the message suggests ([details](configure.md#host-confirmed-arrival-from-a-relayed-fps)). |
 | An unload ends in a unit fault | The filament tip stayed in the extruder gears | Use `toolhead_unload_macro: _OAMS_TOOLHEAD_EJECT`. |

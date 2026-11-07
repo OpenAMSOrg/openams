@@ -306,6 +306,7 @@ fi | tee ~/openams-agent-audit.txt
 | `E_MACRO_MISSING` | an OpenAMS macro calls a command nothing defines (usually `CLEAN_NOZZLE`) | section 6.5 |
 | `W_FOREIGN_MMU` | another MMU system is configured | same as `FOREIGN_MMU` in section 1.2 |
 | `W_TOOL_MACRO` | a `T<n>` macro is defined outside OpenAMS's files | section 6.5 |
+| `W_TOOLHEAD_MACRO` | `[oams_manager]`'s `toolhead_load_macro` or `toolhead_unload_macro` names a macro the running Klipper does not have (defaults `LOAD_FILAMENT`, `UNLOAD_FILAMENT`) | section 6.5 |
 | `M_MACRO_UNVERIFIED` | no `--commands` (Klipper not ready): a call that could not be checked | run section 5 again once Klipper is `ready` |
 | `M_CUTTER`, `M_PTFE_ZERO`, `M_FPS_ORIENTATION`, `M_RFID_FIRMWARE` | only a human can confirm these | do not change them; list them in the report (section 9) |
 | `I_*` | information | copy the `I_SUMMARY` lines into the report |
@@ -345,6 +346,22 @@ below. The installer already wrote one `[mcu]`, `[oams]` and the
 run `python3 ~/openams/tools/cortex-bridge.py config --write --yes` (it stops
 and restarts Klipper and only adds missing units). Anything about cables,
 LEDs or power: STOP and ask the human.
+
+**Moving from OpenAMS 1 to a Cortex Bridge.** If the installer printed
+`oams.cfg was left unchanged: it still describes OpenAMS 1 hardware`, the
+existing `oams.cfg` still has the old unit (`[oams]` on a CAN board) or a
+wired `[fps] pin:`.
+- ASK: "oams.cfg still describes your OpenAMS 1 unit. Should I replace it
+  with the Cortex Bridge AMS? The old sections are commented out, not
+  deleted."
+- On yes, run
+  `python3 ~/openams/tools/cortex-bridge.py config --write --replace-openams1 --yes`.
+  It prints each section it commented out. Groups start again at one bay
+  each: list the old groups for the human, from the `.bak-<date>` copy it
+  names.
+- Keep any `[mcu]` the old FPS board had: it is often still the USB-to-CAN
+  bridge for the toolhead board. Only if the human says that board is gone,
+  comment it out (rule 6).
 
 Each AMS's `ptfe_length` comes from the human's measurement, converted with
 `cortex-bridge.py ptfe <millimetres>`. NEVER guess it. Then continue at 6.3.
@@ -494,6 +511,15 @@ already used by another `[mcu]`. If there is more than one: ASK.
     ```
     and the `CUT_FILAMENT` copy they had is commented out. The plan now reads
     `cut, wipe, retract, ...`, so the displays show the wipe.
+- **`W_TOOLHEAD_MACRO`:** `OAMSM_LOAD_TO_TOOLHEAD` and
+  `OAMSM_UNLOAD_FROM_TOOLHEAD` call these macros after the AMS loads and
+  before it rewinds; toolchanges don't.
+  - For the unload macro, set `toolhead_unload_macro: _OAMS_TOOLHEAD_EJECT` in
+    `[oams_manager]` (it ships with OpenAMS).
+  - For the load macro, ASK: "OAMSM_LOAD_TO_TOOLHEAD calls <name> after the
+    AMS load, and this printer has none. Do you have an extruder-only load
+    macro I should name, or should I leave it (toolchanges don't need it)?"
+    Never write an extruder macro yourself.
 - **`W_TOOL_MACRO`:** a `T<n>` macro exists for a group OpenAMS's file does not
   define. Leave it, and list it in the report.
 - **`CLEAN_NOZZLE`** is called by every toolchange, after the load. It is the
@@ -544,6 +570,11 @@ already used by another `[mcu]`. If there is more than one: ASK.
 1. Run the audit (section 5) until it reports `errors=0`.
 2. Restart Klipper so it reads the config:
    `curl -s -X POST http://127.0.0.1:7125/printer/restart`
+   - **Cortex Bridge printer:** use
+     `curl -s -X POST http://127.0.0.1:7125/printer/firmware_restart`
+     instead. The bridge stops an AMS while Klipper is quiet, so after a plain
+     restart Klipper is `error` with `Can not update MCU '<ams>' config as it
+     is shutdown`.
 3. Wait (section 4) until `klipper: ready`.
 4. If it is `error`, read `state_message` and use the table in section 7, L1.
 5. Then run the audit again **with** `--commands` (Klipper is ready now).
@@ -594,6 +625,7 @@ the end of `klippy.log`:
 | `Invalid canbus_uuid` | a placeholder or typo in `canbus_uuid` | section 6.2 |
 | `Duplicate canbus_uuid` | the same UUID in two `[mcu]` sections | section 6.2 |
 | `mcu 'host': Unable to connect` (an `[mcu]` whose `serial:` is `/tmp/klipper_host_mcu`) | the Pi's own Linux MCU process | run `systemctl is-active klipper-mcu`, `ls -l /tmp/klipper_host_mcu` and `id -nG`. The Klipper user must be in group `tty` to open that pty. Do not fix it yourself: STOP and report the three outputs (the fix is `sudo usermod -a -G tty <user>` and a Klipper restart, the human's call) |
+| `Can not update MCU '<name>' config as it is shutdown`, where `<name>` is an `[mcu]` with `serial: /dev/oams/...` | a Cortex Bridge AMS stopped while Klipper restarted; nothing is wrong | `curl -s -X POST http://127.0.0.1:7125/printer/firmware_restart`, then section 4 |
 | `mcu '<name>': Unable to connect` or `Timeout on connect` | wrong UUID, board off, CAN down | check `CAN_can0_STATE`; recheck the UUID (6.2). Still failing: ASK the human to check the board's power and cable |
 | `Option '<x>' in section '<y>' must be specified` | a required option is missing | add it from `oams_sample.cfg`, same section |
 | `Section '<x>' is not a valid config section` | an extra is not installed (OpenAMS links missing) | run `install.sh` again (section 3) |
@@ -636,6 +668,11 @@ List these in the report, with the commands. Never run them yourself.
 - **PTFE length:** `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<idx> SPOOL=<bay>`. Then set
   `ptfe_length` (`M_PTFE_ZERO`). Until then, a runout pauses instead of
   reloading.
+  - **Cortex Bridge AMS:** it can't calibrate itself. The human measures the
+    path from the AMS outlet to the extruder gears in millimetres; convert
+    it with `python3 ~/openams/tools/cortex-bridge.py ptfe <mm>`. Never guess
+    it: too short stops every load before the toolhead (`motion_timeout`),
+    too long makes a runout reload late.
 - **The printer's half, before the first load.** Each of these is a hand
   test the human does. Each one finds a problem that no OpenAMS setting can fix
   (see [AGENTS.md](AGENTS.md#field-facts)):

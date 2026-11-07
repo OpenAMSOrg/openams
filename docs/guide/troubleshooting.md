@@ -69,7 +69,7 @@ The codes it uses:
 | Level | Codes |
 |---|---|
 | ERROR | `E_INCLUDE_CYCLE`, `E_INCLUDE_MISSING`, `E_PLACEHOLDER`, `E_MCU_TRANSPORT`, `E_FPS_LANE`, `E_OAMS_MCU`, `E_DEVICE_KIND`, `E_UNIT_IDX_DUP`, `E_FPS_SOURCE`, `E_GROUP_MEMBER`, `E_GROUP_BAY_DUP`, `E_GROUP_LANE_MIX`, `E_GROUP_NAME_DUP`, `E_TAG_KEY`, `E_HDC1080`, `E_PAUSE_RESUME`, `E_MACRO_COLLISION`, `E_MACRO_CUSTOMIZED`, `E_MACRO_MISSING` |
-| WARN | `W_FOREIGN_MMU`, `W_TOOL_MACRO` |
+| WARN | `W_FOREIGN_MMU`, `W_TOOL_MACRO`, `W_TOOLHEAD_MACRO` (needs `--commands`) |
 | MANUAL | `M_RFID_FIRMWARE`, `M_PTFE_ZERO`, `M_FPS_ORIENTATION`, `M_CUTTER`, `M_MACRO_UNVERIFIED` |
 | INFO | `I_NO_TAG_KEY`, `I_SUMMARY` |
 
@@ -154,15 +154,17 @@ Prints one `KEY=value` per line, then any `STOP_REASON=` and `ASK=` lines, then
 | `Refusing to unload: <bay> is loaded on this OAMS, not <bay>` | `SPOOL=` names a bay other than the loaded one | Drop `SPOOL=`, or name the loaded bay |
 | `OpenAMS cannot heat <extruder>: minimum_extrude_temperature <a> is above the temperature ceiling <b>. ...` | The flow has nowhere legal to heat: the floor is above `max_temp - 5` or above `max_operation_temperature` | Lower `minimum_extrude_temperature`, raise `max_temp` or `max_operation_temperature`, or check the `[extruder]` name |
 | `Filament not detected at toolhead extruder inlet` | The inlet switch did not trigger | Clear the jam, then retry; this raised because the request was `STRICT=1` |
+| `<unit> Spool <n> has no PTFE length; ...` | `ptfe_length` (or `ptfe_length_<bay>`) is 0 for that bay, so the load was refused before anything moved | Do what the message says. An OpenAMS 1 unit measures it: `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` (`SPOOL` counts from 0). A Cortex Bridge AMS can't: measure the path and set it ([details](cortex-bridge-setup.md#filament-path-length)) |
+| `Spool loading failed (the AMS stopped feeding before the toolhead buffer reached arrival_threshold: ...)` | A Cortex Bridge AMS stops a load that feeds about 200 mm past `ptfe_length` without the buffer compressing, or whose filament stops moving | Look where the tip stopped. Running freely but short of the extruder gears: `ptfe_length` is too short ([set it](cortex-bridge-setup.md#filament-path-length)). Stuck at a joint or bend: fix the path. Then `OAMS_CLEAR_FAULT OAMS=<n>` and `OAMSM_CLEAR_ERRORS` |
 | `AMS load reached the toolhead, but <MACRO> failed: <reason>. Filament remains loaded and forward following remains armed.` | The extruder callback failed after a successful AMS load | Fix the callback. Do not force an unload before knowing the toolhead state |
 
 ## Runout and calibration
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `ptfe_length is not calibrated (0); cannot auto-load the next spool. Run OAMS_CALIBRATE_PTFE_LENGTH.` | `ptfe_length` is still 0 | Run `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` |
+| `ptfe_length is not calibrated (0); cannot auto-load the next spool. To fix it, ...` | `ptfe_length` is still 0 | Do what the message says: `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` on OpenAMS 1; on a Cortex Bridge, [measure and set it](cortex-bridge-setup.md#filament-path-length) |
 | `filament runout on group <name> and no spare spool available` | Every other bay in the group is empty or not ready | Insert filament, or add a bay to the group |
-| `filament runout on group <name> and the spare spool is not calibrated (<bay>); run OAMS_CALIBRATE_PTFE_LENGTH SPOOL=<n>.` | The spare bay has no calibrated path length | Calibrate that bay |
+| `filament runout on group <name> and the spare spool is not calibrated (<bay>); ...` | The spare bay has no path length | Set that bay's length as the message says |
 | `filament runout on group <name> (auto reload is off)` | `auto_reload_on_runout` is False | `OAMSM_SET_OPTION NAME=auto_reload_on_runout VALUE=True` |
 | `Cannot calibrate PTFE length: filament is already loaded at the hub or follower mode is active. Run OAMS_UNLOAD_SPOOL OAMS=<n> before retrying.` | The bay is loaded | `OAMS_UNLOAD_SPOOL OAMS=<n>`, then retry |
 | `Cannot calibrate PTFE length: no filament was detected in <bay>. Insert filament in that spool position and retry.` | The named bay is empty | Insert filament |
