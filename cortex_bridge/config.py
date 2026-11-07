@@ -124,6 +124,137 @@ def configured_uids(text: str) -> set:
     return set(_SERIAL.findall(text))
 
 
+# ---------------------------------------------------------------------------
+# An oams.cfg that still describes OpenAMS 1 hardware
+# ---------------------------------------------------------------------------
+
+REPLACED_MARK = "# cortex_bridge config: "
+_OPTION = re.compile(r"^([A-Za-z0-9_]+)\s*[:=]\s*(.*?)\s*$")
+_GROUP_MEMBER = re.compile(r"^(.+)-(\d+)$")
+
+
+def _sections(lines: list) -> list:
+    """The active (uncommented) sections: dicts with `name`, `start` (header
+    line index), `end` (exclusive) and `options` (first value of each)."""
+    sections = []
+    for index, line in enumerate(lines):
+        match = re.match(r"^\[([^\]]+)\]\s*$", line)
+        if match:
+            if sections:
+                sections[-1]["end"] = index
+            sections.append({"name": " ".join(match.group(1).split()),
+                             "start": index, "end": len(lines),
+                             "options": {}})
+            continue
+        if sections and not line.startswith((" ", "\t", "#", ";")):
+            option = _OPTION.match(line)
+            if option:
+                sections[-1]["options"].setdefault(
+                    option.group(1).lower(), option.group(2))
+    return sections
+
+
+def openams1_hardware(text: str) -> dict:
+    """What in `text` belongs to OpenAMS 1 rather than the bridge: `units`,
+    (oams name, mcu name) pairs whose board is not a bridge port; `wired_fps`,
+    FPS sections read from a pin; `bridge_units`, units already on the
+    bridge."""
+    sections = _sections(text.splitlines())
+    mcus = {s["name"].split(None, 1)[1]: s for s in sections
+            if s["name"].startswith("mcu ")}
+    found = {"units": [], "wired_fps": [], "bridge_units": []}
+    for section in sections:
+        name = section["name"]
+        if name.startswith("oams "):
+            mcu = section["options"].get("mcu", "")
+            board = mcus.get(mcu)
+            serial = board["options"].get("serial", "") if board else ""
+            if re.match(r"^/dev/(?:serial/by-id/)?oams/", serial):
+                found["bridge_units"].append(name.split(None, 1)[1])
+            else:
+                found["units"].append((name.split(None, 1)[1], mcu))
+        elif (name == "fps" or name.startswith("fps ")) \
+                and "pin" in section["options"]:
+            found["wired_fps"].append((name, section["options"]["pin"]))
+    return found
+
+
+def describe_openams1(found: dict) -> str:
+    parts = ["[oams %s] (board %s, not on the bridge)" % unit
+             for unit in found["units"]]
+    parts += ["[%s] read from pin %s" % fps for fps in found["wired_fps"]]
+    return ", ".join(parts)
+
+
+def replace_openams1(text: str) -> tuple:
+    """Comment out the OpenAMS 1 sections of `text` so the bridge's units can
+    take their place. Returns (new_text, [(section, why), ...]). Never deletes
+    a line: each section is commented and marked with REPLACED_MARK.
+
+    Commented: each OpenAMS 1 `[oams]` and its `[mcu]`; every section that
+    uses that board (`i2c_mcu:`/`mcu:` naming it, or a `<board>:` pin); FPS
+    sections read from a pin; the filament groups made only of those units'
+    bays (an empty group too, so the bridge's T0.. can take its name); and
+    `[hdc1080]` once no HDC1080 sensor is left. Other boards' `[mcu]`
+    sections, an FPS board's included, are left alone."""
+    found = openams1_hardware(text)
+    if found["bridge_units"] and (found["units"] or found["wired_fps"]):
+        raise ConfigError(
+            "oams.cfg has units on the bridge (%s) and OpenAMS 1 hardware "
+            "(%s); a mixed setup is edited by hand"
+            % (", ".join(found["bridge_units"]), describe_openams1(found)))
+    lines = text.splitlines(keepends=True)
+    sections = _sections([line.rstrip("\n") for line in lines])
+    unit_names = {unit for unit, _mcu in found["units"]}
+    boards = {mcu for _unit, mcu in found["units"] if mcu}
+    why = {}
+    for section in sections:
+        name, options = section["name"], section["options"]
+        kind, _, rest = name.partition(" ")
+        if kind == "oams" and rest in unit_names:
+            why[name] = "OpenAMS 1 unit, replaced by the Cortex Bridge"
+        elif kind == "mcu" and rest in boards:
+            why[name] = "the OpenAMS 1 unit's board"
+        elif (name, options.get("pin")) in found["wired_fps"]:
+            why[name] = ("the buffer is read through the AMS now ([fps] "
+                         "source_oams below)")
+        elif kind == "filament_group":
+            members = [m.strip() for m in options.get("group", "").split(",")
+                       if m.strip()]
+            owners = set()
+            for member in members:
+                match = _GROUP_MEMBER.match(member)
+                owners.add(match.group(1) if match else member)
+            if owners - unit_names:
+                raise ConfigError(
+                    "[%s] mixes OpenAMS 1 bays with %s; edit it by hand"
+                    % (name, ", ".join(sorted(owners - unit_names))))
+            why[name] = "groups are rebuilt for the Cortex Bridge AMS below"
+        elif any(value in boards or any(
+                re.search(r"(?:^|[\s,!^~])%s:" % re.escape(board), value)
+                for board in boards)
+                for value in options.values()):
+            why[name] = "uses the OpenAMS 1 board"
+    hdc_left = any(s["options"].get("sensor_type", "").upper() == "HDC1080"
+                   for s in sections if s["name"] not in why)
+    if not hdc_left and any(s["name"] == "hdc1080" for s in sections):
+        why["hdc1080"] = "no HDC1080 sensor is left"
+    out = []
+    replaced = []
+    for index, line in enumerate(lines):
+        section = next((s for s in sections
+                        if s["start"] <= index < s["end"]), None)
+        reason = why.get(section["name"]) if section else None
+        if reason and index == section["start"]:
+            out.append("%s%s\n" % (REPLACED_MARK, reason))
+            replaced.append((section["name"], reason))
+        if reason and line.strip() and not line.lstrip().startswith("#"):
+            out.append("#" + line)
+        else:
+            out.append(line)
+    return "".join(out), replaced
+
+
 def add_units(text: str, units: list) -> tuple:
     """Return (new_text, added_names) with the missing units appended."""
     if any(placeholder in text for placeholder in CAN_SAMPLE_PLACEHOLDERS):
@@ -135,6 +266,16 @@ def add_units(text: str, units: list) -> tuple:
     missing = [unit for unit in units if unit["uid"] not in known]
     if not missing:
         return text, []
+    found = openams1_hardware(text)
+    if found["units"] or found["wired_fps"]:
+        raise ConfigError(
+            "oams.cfg still describes OpenAMS 1 hardware: %s. Adding the "
+            "bridge's AMS beside it would mix the two setups. To replace the "
+            "OpenAMS 1 setup with the Cortex Bridge, run python3 "
+            "~/openams/tools/cortex-bridge.py config --write "
+            "--replace-openams1: it comments those sections out and keeps a "
+            "copy of the old file. To run both, add the bridge's AMS by hand "
+            "on its own [fps NAME] lane." % describe_openams1(found))
     sections = set()
     for section in _SECTION.findall(text):
         parts = section.split()

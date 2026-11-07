@@ -105,6 +105,118 @@ class ConfigWriterTests(unittest.TestCase):
         self.assertIn("toolhead_unload_macro: _OAMS_TOOLHEAD_EJECT", sample)
 
 
+AMS1 = {"uid": "a1b2c3d4e5f6", "family": "ams1", "bays": 4, "name": "AMS 1"}
+
+# An OpenAMS 1 oams.cfg: one unit on CAN with its sensors and readers, groups
+# (one with a spare bay, one empty), a wired FPS, and the printer's own
+# sections that must survive.
+OPENAMS1_CFG = """[mcu oams_mcu1]
+canbus_uuid: 0123456789ab
+#canbus_uuid: ba9876543210
+
+[hdc1080]
+[temperature_sensor oams]
+sensor_type: HDC1080
+i2c_mcu: oams_mcu1
+i2c_bus: i2c0
+
+[oams oams1]
+mcu: oams_mcu1
+fps_upper_threshold: 0.7
+ptfe_length: 2062
+oams_idx: 1
+spool_id_1: 1
+
+[filament_group T0]
+group: oams1-0
+
+[filament_group T1]
+group: oams1-1, oams1-3
+
+[filament_group T3]
+group:
+
+[fps]
+pin: fps:PA3
+reversed: true
+
+[oams_manager]
+
+[filament_switch_sensor runout]
+switch_pin: ^!PG13
+pause_on_runout: False
+
+[mfrc522 openams]
+oams: 1
+cs_pin_a: oams_mcu1:PB3
+spi_software_sclk_pin: oams_mcu1:PA8
+
+[gcode_macro _oams_macro_variables]
+variable_cut_x: 7
+gcode:
+
+[include oams_macros.cfg]
+"""
+
+
+class ReplaceOpenAms1Tests(unittest.TestCase):
+    """A printer moving from OpenAMS 1 to a Cortex Bridge: the writer must not
+    mix the two setups, and --replace-openams1 swaps one for the other."""
+
+    def test_adding_beside_openams1_is_refused_with_the_way_out(self):
+        with self.assertRaises(config.ConfigError) as caught:
+            config.add_units(OPENAMS1_CFG, [AMS1])
+        message = str(caught.exception)
+        self.assertIn("[oams oams1] (board oams_mcu1", message)
+        self.assertIn("[fps] read from pin fps:PA3", message)
+        self.assertIn("--replace-openams1", message)
+
+    def test_replace_comments_the_openams1_setup_and_keeps_the_rest(self):
+        text, replaced = config.replace_openams1(OPENAMS1_CFG)
+        names = [name for name, _why in replaced]
+        self.assertEqual(sorted(names), sorted([
+            "mcu oams_mcu1", "hdc1080", "temperature_sensor oams",
+            "oams oams1", "filament_group T0", "filament_group T1",
+            "filament_group T3", "fps", "mfrc522 openams"]))
+        active = {s["name"] for s in config._sections(text.splitlines())}
+        self.assertEqual(active, {
+            "oams_manager", "filament_switch_sensor runout",
+            "gcode_macro _oams_macro_variables", "include oams_macros.cfg"})
+        # Nothing is deleted: every old line is still there, commented.
+        for line in OPENAMS1_CFG.splitlines():
+            if line.strip() and not line.startswith("#"):
+                self.assertTrue(line in text.splitlines()
+                                or "#" + line in text.splitlines(), line)
+        self.assertIn("#spool_id_1: 1", text)
+        self.assertIn(config.REPLACED_MARK + "the buffer is read through", text)
+
+    def test_after_replacing_the_bridge_unit_takes_the_place(self):
+        text, _ = config.replace_openams1(OPENAMS1_CFG)
+        text, names = config.add_units(text, [AMS1])
+        self.assertEqual(names, ["ams1"])
+        self.assertIn("oams_idx: 1", text)
+        for tool in range(4):
+            self.assertIn("[filament_group T%d]\ngroup: ams1-%d" % (tool, tool),
+                          text)
+        self.assertIn("[fps]\nsource_oams: ams1", text)
+        self.assertEqual(config.openams1_hardware(text),
+                         {"units": [], "wired_fps": [],
+                          "bridge_units": ["ams1"]})
+
+    def test_a_mixed_setup_is_left_for_a_human(self):
+        mixed, _ = config.add_units(
+            (ROOT / "oams_cortex_bridge_sample.cfg").read_text(), [AMS1])
+        mixed += "\n[mcu oams_mcu2]\ncanbus_uuid: 0123456789ab\n" \
+                 "\n[oams oams2]\nmcu: oams_mcu2\noams_idx: 2\n"
+        with self.assertRaises(config.ConfigError) as caught:
+            config.replace_openams1(mixed)
+        self.assertIn("edited by hand", str(caught.exception))
+
+    def test_the_bridge_sample_needs_no_replacing(self):
+        sample = (ROOT / "oams_cortex_bridge_sample.cfg").read_text()
+        self.assertEqual(config.replace_openams1(sample), (sample, []))
+
+
 def fake_mcu(fd, dictionary, *, nak_first=False, stop):
     """Answer Klipper identify requests on `fd` like an AMS would."""
     data = zlib.compress(json.dumps(dictionary).encode())

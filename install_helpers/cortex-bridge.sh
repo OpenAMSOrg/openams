@@ -310,7 +310,15 @@ configure_cortex_bridge_units()
         return 0
     fi
     echo "Looking for AMS units behind the bridge (up to 45 s)..."
-    if ! "${tool[@]}" config --write --yes --wait 45; then
+    local rc=0
+    "${tool[@]}" config --write --yes --wait 45 || rc=$?
+    if [ "$rc" -eq 3 ]; then
+        # cortex_bridge.cli.CONFIG_NEEDS_DECISION: oams.cfg still describes
+        # OpenAMS 1 hardware; the message above says what to run.
+        echo "[NOTE] oams.cfg was left unchanged: it still describes OpenAMS 1 hardware (above)."
+        echo "       To replace it with the Cortex Bridge AMS, run:"
+        echo "       python3 ${SCRIPT_DIR}/tools/cortex-bridge.py config --write --replace-openams1"
+    elif [ "$rc" -ne 0 ]; then
         echo "[NOTE] No AMS was added to oams.cfg yet. When the AMS is connected and powered, run:"
         echo "       python3 ${SCRIPT_DIR}/tools/cortex-bridge.py config --write"
     fi

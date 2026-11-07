@@ -21,6 +21,7 @@ import glob
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
@@ -342,6 +343,12 @@ def confirm(question: str, assume_yes: bool) -> bool:
     return answer.strip().lower() in ("y", "yes")
 
 
+# `config` could not change oams.cfg without a decision from the user (an
+# OpenAMS 1 setup is still configured); the installer says so instead of
+# blaming the AMS connection.
+CONFIG_NEEDS_DECISION = 3
+
+
 def cmd_config(args) -> int:
     from cortex_bridge import identify
 
@@ -386,24 +393,42 @@ def _write_config(args, units, target, identify) -> int:
 
     fresh = args.fresh or not target.exists()
     base = SAMPLE.read_text("utf-8") if fresh else target.read_text("utf-8")
+    replaced = []
     try:
-        text, names = bridge_config.add_units(base, described)
+        start = base
+        if getattr(args, "replace_openams1", False):
+            wired = bridge_config.openams1_hardware(base)["wired_fps"]
+            start, replaced = bridge_config.replace_openams1(base)
+        text, names = bridge_config.add_units(start, described)
     except bridge_config.ConfigError as exc:
         print(str(exc), file=sys.stderr)
-        return 1
-    if not names:
+        return CONFIG_NEEDS_DECISION
+    if replaced:
+        print("OpenAMS 1 sections %s:" % ("commented out" if args.write
+                                          else "to comment out"))
+        for name, why in replaced:
+            print("  [%s]: %s" % (name, why))
+        for _section, pin in wired:
+            board = pin.lstrip("^~!").split(":", 1)[0]
+            if ":" in pin and re.search(r"^\[mcu %s\]" % re.escape(board),
+                                        base, re.MULTILINE):
+                print("  [mcu %s] is left as it is: keep it while that board "
+                      "is connected (for example as the USB-to-CAN bridge "
+                      "for a toolhead board), comment it out if it is gone."
+                      % board)
+    if not names and not replaced:
         print("Every online AMS is already in %s." % target)
     elif not args.write:
         print()
-        print(text[len(base.rstrip("\n")):].strip("\n"))
+        print(text[len(start.rstrip("\n")):].strip("\n"))
         print()
-        print("Nothing written. Run again with --write to add this to %s."
+        print("Nothing written. Run again with --write to change %s."
               % target)
     else:
         backup = bridge_config.write_with_backup(target, text)
-        print("Added %s to %s%s." % (", ".join(names), target,
-                                     " (old file kept as %s)" % backup.name
-                                     if backup else ""))
+        print("%s %s%s." % (
+            "Added %s to" % ", ".join(names) if names else "Updated",
+            target, " (old file kept as %s)" % backup.name if backup else ""))
         print("Next: measure each AMS's filament path and set ptfe_length "
               "(`cortex-bridge.py ptfe <millimetres>`).")
     return 0
@@ -906,6 +931,10 @@ def parser() -> argparse.ArgumentParser:
                            help="write the file (default: only show)")
     configure.add_argument("--fresh", action="store_true",
                            help="start from the Cortex Bridge sample config")
+    configure.add_argument("--replace-openams1", action="store_true",
+                           help="comment out the OpenAMS 1 units, their "
+                           "boards, groups and wired FPS, and add the "
+                           "bridge's AMS in their place")
     configure.add_argument("--file", help="config file (default oams.cfg in "
                            "the config folder)")
     configure.add_argument("--wait", type=float, default=30.0,
