@@ -2769,6 +2769,9 @@ class OAMS(oams_ext.UnitHooks):
             )
         return "PTFE calibration failed with firmware error code %s." % code
 
+    # How long a calibration refused as Busy is tried again (seconds).
+    CALIBRATION_BUSY_RETRY_S = 10.0
+
     cmd_OAMS_CALIBRATE_PTFE_LENGTH_help = "Calibrate the length of the PTFE tube"
 
     def cmd_OAMS_CALIBRATE_PTFE_LENGTH(self, gcmd):
@@ -2815,8 +2818,18 @@ class OAMS(oams_ext.UnitHooks):
                 " (at most %.0f mm), measures the path at the buffer, and"
                 " rewinds it. Stay with the printer."
                 % (self.spool_label(bay), max_mm))
+        # A unit that has just rewound (an unload, or a calibration's own
+        # return to park) can answer Busy for a moment while it settles;
+        # nothing started then, so try again for a few seconds.
+        deadline = self.reactor.monotonic() + self.CALIBRATION_BUSY_RETRY_S
         try:
-            ok, value = self._calibrate("ptfe", bay)
+            while True:
+                ok, value = self._calibrate("ptfe", bay)
+                if (ok or getattr(self, "_calibration_refusal", None)
+                        or self.action_status_code != OAMS_OP_CODE_ERROR_BUSY
+                        or self.reactor.monotonic() >= deadline):
+                    break
+                self.reactor.pause(self.reactor.monotonic() + 1.0)
         finally:
             self.ptfe_calibrating = False
         if not ok:

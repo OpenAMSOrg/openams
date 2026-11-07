@@ -243,6 +243,66 @@ class CalibrationRefusalTests(unittest.TestCase):
                          " calibrate now.")
 
 
+class CalibrationBusyRetryTests(unittest.TestCase):
+    """A unit that has just rewound answers Busy for a moment: the command
+    tries again for a few seconds instead of failing at once."""
+
+    def _unit(self, answers):
+        unit = make_unit(capabilities=dict(bridge_capabilities(),
+                                           host_arrival_confirm=False))
+        unit.bay_count = 4
+        unit.ptfe_lengths = [None] * 4
+        clock = [0.0]
+        unit.reactor = types.SimpleNamespace(
+            monotonic=lambda: clock[0],
+            pause=lambda until: clock.__setitem__(0, until))
+        calls = []
+
+        def calibrate(kind, bay):
+            ok, code = answers[min(len(calls), len(answers) - 1)]
+            calls.append(clock[0])
+            unit._calibration_refusal = None
+            unit.action_status_code = code
+            unit.action_status_value = 2573 if ok else 0
+            return ok, 2573 if ok else None
+        unit._calibrate = calibrate
+        unit._persist_option = lambda option, value, gcmd: "saved"
+        unit.capabilities["ptfe_calibration"] = True
+        return unit, calls, clock
+
+    def _gcmd(self):
+        class G:
+            def __init__(self):
+                self.out = []
+
+            def get_int(self, name, default=None, minval=None, maxval=None):
+                return 3
+
+            def error(self, message):
+                return RuntimeError(message)
+
+            def respond_info(self, message):
+                self.out.append(message)
+        return G()
+
+    def test_busy_then_accepted(self):
+        unit, calls, _ = self._unit([(False, S.OAMS_OP_CODE_ERROR_BUSY),
+                                     (False, S.OAMS_OP_CODE_ERROR_BUSY),
+                                     (True, S.OAMS_OP_CODE_SUCCESS)])
+        gcmd = self._gcmd()
+        unit.cmd_OAMS_CALIBRATE_PTFE_LENGTH(gcmd)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(unit.ptfe_lengths[3], 2573)
+
+    def test_busy_for_too_long_fails_with_the_busy_message(self):
+        unit, calls, clock = self._unit([(False, S.OAMS_OP_CODE_ERROR_BUSY)])
+        with self.assertRaises(RuntimeError) as caught:
+            unit.cmd_OAMS_CALIBRATE_PTFE_LENGTH(self._gcmd())
+        self.assertIn("busy", str(caught.exception))
+        self.assertLessEqual(clock[0], unit.CALIBRATION_BUSY_RETRY_S + 1.0)
+        self.assertGreater(len(calls), 5)
+
+
 class MeasuredPathTests(unittest.TestCase):
     def test_the_first_measurement_of_a_bay_is_reported(self):
         unit = make_unit(ptfe_length=2337)  # 2050 mm
