@@ -660,6 +660,17 @@ def _hub_occupied(lw):
     return any(lw.loaded.values())
 
 
+def _fed_unit(lw):
+    """The one bay whose filament is out past its hub while the lane holds
+    nothing, on a unit that rewinds such a bay itself (a host-arrival unit:
+    its unload finds the bay a stopped load or calibration left out); None
+    when there is no such bay, or more than one."""
+    out = [unit for unit, on in lw.loaded.items() if on]
+    if len(out) == 1 and out[0][0] in lw.host_arrival:
+        return out[0]
+    return None
+
+
 def _selectable(lw, unit):
     """A local PRELOAD holds its unit for that bay alone."""
     return lw.reserved.get(unit[0], unit[1]) == unit[1]
@@ -980,6 +991,14 @@ def _reduce_lane(lane, action, lw, now, fps, deadline):
             reload_target=None, runout_from=None, message=None, stage="feed")
 
     if isinstance(action, Unload):
+        fed = _fed_unit(lw) if op == OP_UNLOADED else None
+        if fed is not None:
+            # A load or calibration that stopped short left this bay's
+            # filament out: rewind it (the lane stays unloaded).
+            return _begin_op(
+                lane, now, fps, deadline,
+                lambda gen: StartUnload(fed, fps, gen),
+                op=OP_UNLOADING, unit=fed, group=None, stage="retract")
         if op != OP_LOADED or lane.unit is None:
             return _stage_refused(lane, now), [
                 Settle(fps, OpResult(False, None, "nothing loaded"))]
@@ -1011,7 +1030,9 @@ def _reduce_lane(lane, action, lw, now, fps, deadline):
         # A PTFE calibration feeds the bay to the toolhead: the shared path
         # must be clear, as for a load (a unit that measures by odometer
         # may not know, after a restart, that another bay is still out).
-        if action.kind == "ptfe" and (op != OP_UNLOADED or _hub_occupied(lw)):
+        others_out = any(on for out, on in lw.loaded.items()
+                         if on and out != unit)
+        if action.kind == "ptfe" and (op != OP_UNLOADED or others_out):
             return _stage_refused(lane, now), [
                 Settle(fps, OpResult(False, None,
                         "filament is loaded or still in a hub on this lane;"

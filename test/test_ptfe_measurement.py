@@ -178,10 +178,49 @@ class CalibrationGuardTests(unittest.TestCase):
         self.assertFalse([e for e in effects if isinstance(e, S.Settle)][0]
                          .result.ok)
 
+    def test_the_bay_itself_partway_out_may_be_calibrated_again(self):
+        # A stopped calibration leaves the bay's own filament past its hub;
+        # the unit measures from park, so a second attempt is allowed.
+        lw = S.LaneWorld(unit_names={1: "ams1"}, loaded={(1, 0): True})
+        state, effects = S.reduce(
+            S.SystemState(lanes={"fps1": S.LaneState()}),
+            S.Calibrate("fps1", 1, 0, "ptfe"), S.World(lanes={"fps1": lw}),
+            now=1.0)
+        self.assertEqual(state.lanes["fps1"].op, S.OP_CALIBRATING)
+
     def test_a_clear_lane_starts_it(self):
         state, effects = self._try(S.LaneState())
         self.assertEqual(state.lanes["fps1"].op, S.OP_CALIBRATING)
         self.assertTrue([e for e in effects if isinstance(e, S.StartCalibrate)])
+
+
+class FedBayUnloadTests(unittest.TestCase):
+    """A load or calibration that stopped short leaves the bay's filament out
+    past its hub with the lane unloaded. On a unit that rewinds such a bay
+    itself (a host-arrival unit), OAMSM_UNLOAD_FILAMENT brings it back."""
+
+    def _unload(self, loaded, host_arrival=frozenset({1})):
+        lw = S.LaneWorld(unit_names={1: "ams1"}, loaded=loaded,
+                         host_arrival=host_arrival)
+        return S.reduce(S.SystemState(lanes={"fps1": S.LaneState()}),
+                        S.Unload("fps1"), S.World(lanes={"fps1": lw}),
+                        now=1.0)
+
+    def test_the_one_bay_out_is_rewound(self):
+        state, effects = self._unload({(1, 2): True, (1, 0): False})
+        lane = state.lanes["fps1"]
+        self.assertEqual((lane.op, lane.unit), (S.OP_UNLOADING, (1, 2)))
+        start = [e for e in effects if isinstance(e, S.StartUnload)][0]
+        self.assertEqual(start.unit, (1, 2))
+
+    def test_other_units_and_ambiguity_keep_nothing_loaded(self):
+        for loaded, arrival in (({(1, 2): True}, frozenset()),
+                                ({(1, 2): True, (1, 3): True}, frozenset({1})),
+                                ({}, frozenset({1}))):
+            state, effects = self._unload(loaded, arrival)
+            settle = [e for e in effects if isinstance(e, S.Settle)][0]
+            self.assertEqual(settle.result.message, "nothing loaded")
+            self.assertEqual(state.lanes["fps1"].op, S.OP_UNLOADED)
 
 
 class MeasuredPathTests(unittest.TestCase):
