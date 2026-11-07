@@ -238,6 +238,55 @@ The host persists per-bay lengths (`ptfe_length_<bay>`) and sends
 every load, or uses `oams_cmd_load_spool3`, which carries the length in the
 load request itself.
 
+### 4.3.1 Path calibration by the unit's odometer (`AMS_CAP_PTFE_CALIBRATION`)
+
+A unit with no FPS of its own that confirms arrival through the host
+(`AMS_CAP_HOST_ARRIVAL_CONFIRM`, the Cortex Bridge) can still measure its
+PTFE path, with the odometer the stock AMS reports. It publishes
+`AMS_CAP_PTFE_CALIBRATION=1` (§7.2) and keeps `AMS_HT_CAP_PTFE_CALIBRATION=0`,
+so a host that does not know this constant never starts a calibration it
+could not confirm.
+
+| Host string | Response / status |
+|---|---|
+| `oams_cmd_calibrate_ptfe_length2 spool=%c gen=%c` | NEW (bridge firmware 8): the calibration with the unit's default limit (`AMS_PTFE_CALIBRATION_DEFAULT_MAX_CLICKS`) |
+| `oams_cmd_calibrate_ptfe_length3 spool=%c gen=%c max_clicks=%u` | NEW (bridge firmware 8): the same, with the limit of the full-speed feed in encoder clicks, clamped by the unit to `AMS_PTFE_CALIBRATION_MAX_CLICKS` |
+
+What the unit does:
+
+1. A load of the bay, the same as a normal load: full speed, then the slow
+   servo once the relayed buffer compresses. The odometer is read from
+   park, at admission; the unit refuses (`OP_ERROR_UNSPECIFIED`) when it has
+   no reading, or `OP_ERROR_BUSY` when filament is already out.
+2. It waits for `oams_cmd_load_arrived gen=%c` with **this calibration's
+   generation**, exactly as for a load (§7.2). The host sends it from the
+   lane's toolhead-side signal while the lane is calibrating.
+3. At the acknowledgement it takes the odometer distance, lets the buffer
+   settle, and pulls the filament back to park the way an unload does
+   after the cut (no extruder latch, no follower).
+4. The terminal `oams_action_status2` (action `OAMS_STATUS_CALIBRATING`)
+   carries the distance in encoder clicks in `value`, like an OpenAMS
+   unit's own calibration, and the host saves it as `ptfe_length_<bay>`.
+
+A feed that passes the limit by 200 mm without the acknowledgement, or whose
+odometer stops advancing for 4 s, ends with `OAMS_OP_CODE_TIMEOUT` and the
+reason in `value` (`AMS_REASON_FEED_OVERRUN` / `AMS_REASON_FEED_STALLED`).
+
+**`value` of a load, and of any failure.** Two capability constants give the
+terminal `value` a meaning outside a calibration; without them the host
+ignores it:
+
+- `AMS_CAP_ARRIVAL_DISTANCE=1`: a successful load's `value` is the filament
+  the unit fed from the start of the load to the host's arrival
+  acknowledgement, in encoder clicks (the real path; 0 when not measured).
+- `AMS_CAP_OP_REASON=1`: a failed, timed-out or aborted operation's `value`
+  is its reason, one of the `AMS_REASON_*` constants the dictionary
+  publishes (0: none), matched by name: `FEED_OVERRUN`, `FEED_STALLED`,
+  `ARRIVAL_ACK_TIMEOUT`, `MOVING_NOT_OBSERVED`, `RETRACT_TIMEOUT`,
+  `FOLLOW_NOT_CONFIRMED`, `STOP_NOT_CONFIRMED`, `FEED_DISTANCE_TIMEOUT`,
+  `ODOMETER_LOST`, `NO_SPOOL`, `HOST_SESSION_LOST`, `UNIT_SILENT`, and
+  `ERROR_BASE` (`ERROR_BASE + n`: the AMS raised its own error `n`).
+
 ### 4.4 Dryer
 
 | Host string | Status |
@@ -662,6 +711,11 @@ All of these are additive: **absent keeps today's behaviour**.
 | Constant | Meaning |
 |---|---|
 | `AMS_CAP_HOST_ARRIVAL_CONFIRM` | `1`: the unit has no input of its own that senses toolhead arrival, so a load finishes only when the host confirms arrival with `oams_cmd_load_arrived gen=%c` (§4.1). Absent or `0`: the unit senses arrival itself; the host sends nothing and does not look the command up. |
+| `AMS_CAP_PTFE_CALIBRATION` | `1`: PTFE path calibration by the unit's odometer (§4.3.1). Read after `AMS_HT_CAP_PTFE_CALIBRATION`, and over it. Absent: that constant decides, as before. |
+| `AMS_CAP_ARRIVAL_DISTANCE` | `1`: a successful load's terminal `value` is the measured path in encoder clicks (§4.3.1). |
+| `AMS_CAP_OP_REASON` | `1`: a failed operation's terminal `value` is its reason, one of the published `AMS_REASON_*` constants (§4.3.1). |
+| `AMS_REASON_<NAME>` | The numeric value of each reason; published with `AMS_CAP_OP_REASON`. |
+| `AMS_PTFE_CALIBRATION_DEFAULT_MAX_CLICKS`, `AMS_PTFE_CALIBRATION_MAX_CLICKS` | The calibration's default limit and the largest accepted, in encoder clicks (§4.3.1). |
 | `AMS_CAP_LINK_STATUS` | `1`: the MCU relays a device over its own link and reports that link's state (see below). Absent or `0`: nothing is registered, queried or changed; the unit is as reachable as its stats frames say (§6.2). |
 | `AMS_CAP_TRAY_INFO` | `1`: the unit decodes its spools' tags itself and reports `ams_tray_info` per bay (§4.7.1). |
 | `AMS_CAP_TRAY_READ` | `1`: the unit accepts `ams_tray_read` (§4.7.1); a read may move filament. Meaningful with `AMS_CAP_TRAY_INFO`. |

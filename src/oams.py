@@ -278,6 +278,16 @@ class OAMS(oams_ext.UnitHooks):
         self.oams_unload_spool2_cmd = None
         self.oams_calibrate_ptfe_length2_cmd = None
         self.oams_calibrate_hub_hes2_cmd = None
+        # The PTFE calibration with a limit for the feed (max_clicks), on a
+        # unit that measures its path by its own odometer (C1 4.4.1).
+        self.oams_calibrate_ptfe_length3_cmd = None
+        self._ptfe_calibration_max_clicks = None
+        # True while a PTFE calibration of this unit is in flight: the
+        # manager confirms its arrival like a load's (host-arrival units).
+        self.ptfe_calibrating = False
+        # bay -> the path the unit measured on its last load, in millimetres
+        # (C1 AMS_CAP_ARRIVAL_DISTANCE).
+        self.measured_path_mm = {}
         # F9: the atomic load (programs the PTFE length and requests the load
         # in one command); looked up on its own so a firmware that advertises
         # the *2 set but not this one keeps the separate length write.
@@ -369,6 +379,7 @@ class OAMS(oams_ext.UnitHooks):
         self.on_action_complete = (
             lambda code, value, gen: runtime.dispatch(
                 S.OpCompleted(fps_name, code, value, gen=gen,
+                              reason=self._failure_reason(code, value),
                               fault=(None if code == OAMS_OP_CODE_SUCCESS
                                      else self._latched_fault_text()))))
 
@@ -814,6 +825,12 @@ class OAMS(oams_ext.UnitHooks):
             "spool_hint": None,  # D6
             "filament": self.bay_filament(bay),  # C2 §4.5
         })
+        if (getattr(self, "capabilities", None) or {}).get("arrival_distance"):
+            # C2: the path the unit measured on its last load or calibration
+            # of this bay, in millimetres; null until it has measured one.
+            measured = (getattr(self, "measured_path_mm", None) or {}).get(bay)
+            entry["measured_path_mm"] = (round(measured, 1)
+                                         if measured is not None else None)
         return entry
 
     def get_webhook_status(self):
@@ -1104,6 +1121,18 @@ class OAMS(oams_ext.UnitHooks):
                 "oams_cmd_calibrate_ptfe_length2 spool=%c gen=%c")
             self.oams_calibrate_hub_hes2_cmd = self.mcu.lookup_command(
                 "oams_cmd_calibrate_hub_hes2 spool=%c gen=%c")
+            # Only a unit that measures its path by odometer has it (C1
+            # 4.4.1); asked only then, so other firmware sees no lookup.
+            self.oams_calibrate_ptfe_length3_cmd = None
+            if (getattr(self, "capabilities", None) or {}).get(
+                    "arrival_distance"):
+                try:
+                    self.oams_calibrate_ptfe_length3_cmd = (
+                        self.mcu.lookup_command(
+                            "oams_cmd_calibrate_ptfe_length3 spool=%c gen=%c"
+                            " max_clicks=%u"))
+                except Exception:
+                    self.oams_calibrate_ptfe_length3_cmd = None
         except Exception:
             self._use_gen_protocol = False
             logging.info("OAMS[%s]: generation-matched commands unavailable;"
@@ -1592,7 +1621,11 @@ class OAMS(oams_ext.UnitHooks):
         and the load's terminal status stays the outcome."""
         if not self.needs_host_arrival or self.oams_load_arrived_cmd is None:
             return False
-        if self.action_status != self.status_loading:
+        # A PTFE calibration on such a unit is a load to the confirmed
+        # arrival too (C1 4.4.1).
+        if not (self.action_status == self.status_loading
+                or (self.action_status == self.status_calibrating
+                    and getattr(self, "ptfe_calibrating", False))):
             return False
         wire = self._wire_gen(gen)
         if self._arrival_sent_gen == wire:
@@ -2256,6 +2289,13 @@ class OAMS(oams_ext.UnitHooks):
                 else self.oams_calibrate_ptfe_length4_cmd,
                 "protocol-v4 calibrate command")
             cmd.send([bay, self._wire_gen32(gen)])
+        elif (self._use_gen_protocol and kind == "ptfe"
+                and getattr(self, "oams_calibrate_ptfe_length3_cmd", None)
+                is not None
+                and getattr(self, "_ptfe_calibration_max_clicks", None)):
+            self.oams_calibrate_ptfe_length3_cmd.send(
+                [bay, self._wire_gen(gen),
+                 int(self._ptfe_calibration_max_clicks)])
         elif self._use_gen_protocol:
             cmd = self._require_cmd(
                 self.oams_calibrate_hub_hes2_cmd if kind == "hub_hes"
@@ -2272,6 +2312,7 @@ class OAMS(oams_ext.UnitHooks):
         self.action_status_code = None
         self.action_status_value = None
         self.action_status = OAMS_STATUS_CALIBRATING
+        self.ptfe_calibrating = kind == "ptfe"
         self._note_active(self.status_calibrating, gen)
 
     def load_spool_cancel(self):
@@ -2669,6 +2710,11 @@ class OAMS(oams_ext.UnitHooks):
         reply to this calibration, set by _apply_action_status just before the
         request this method is called from returns."""
         code = self.action_status_code
+        reason = self._failure_reason(code, self.action_status_value,
+                                      calibrating=True)
+        if reason is not None:
+            return ("PTFE calibration of %s failed: %s."
+                    % (self.spool_label(spool), reason))
         if code == OAMS_OP_CODE_ERROR_BUSY:
             return "Cannot calibrate PTFE length: OAMS is busy with another operation."
         if code == OAMS_OP_CODE_SPOOL_ALREADY_IN_BAY:
@@ -2722,9 +2768,45 @@ class OAMS(oams_ext.UnitHooks):
             raise gcmd.error(reason)
         bay = gcmd.get_int("SPOOL", minval=0, maxval=self.bay_count - 1)
         if not self.capabilities.get("ptfe_calibration"):
+            if self.ptfe_how == S.PTFE_CORTEX_BRIDGE:
+                raise gcmd.error(
+                    "This AMS's bridge firmware cannot measure the path; update"
+                    " it (python3 ~/openams/tools/cortex-bridge.py version), or"
+                    " %s" % S.ptfe_length_advice(
+                        S.PTFE_CORTEX_BRIDGE, self.name.split()[-1],
+                        self.oams_idx, bay))
             raise gcmd.error("PTFE calibration is unsupported by this unit")
-
-        ok, value = self._calibrate("ptfe", bay)
+        # A unit that waits for the host's arrival confirmation measures to
+        # that point: the lane needs the arrival signal, and the full-speed
+        # feed is limited (MAX_LENGTH, millimetres).
+        self._ptfe_calibration_max_clicks = None
+        if getattr(self, "needs_host_arrival", False):
+            mgr = self.printer.lookup_object("oams_manager", None)
+            block = (mgr._arrival_block_reason(self, self.fps_name)
+                     if mgr is not None and getattr(self, "fps_name", None)
+                     else None)
+            if block is not None:
+                raise gcmd.error(block)
+            limit_clicks = self.capabilities.get(
+                "ptfe_calibration_max_clicks") or 0
+            default_clicks = self.capabilities.get(
+                "ptfe_calibration_default_max_clicks") or 0
+            max_mm = gcmd.get_float(
+                "MAX_LENGTH", default_clicks / FILAMENT_PATH_LENGTH_FACTOR
+                if default_clicks else 4000.0, minval=200.0,
+                maxval=(limit_clicks / FILAMENT_PATH_LENGTH_FACTOR
+                        if limit_clicks else 10000.0))
+            self._ptfe_calibration_max_clicks = int(
+                round(max_mm * FILAMENT_PATH_LENGTH_FACTOR))
+            gcmd.respond_info(
+                "Calibrating %s: the AMS feeds the filament to the toolhead"
+                " (at most %.0f mm), measures the path at the buffer, and"
+                " rewinds it. Stay with the printer."
+                % (self.spool_label(bay), max_mm))
+        try:
+            ok, value = self._calibrate("ptfe", bay)
+        finally:
+            self.ptfe_calibrating = False
         if not ok:
             raise gcmd.error(self._ptfe_calibration_error_message(bay))
         option = "ptfe_length" if self.bay_count == 1 else "ptfe_length_%d" % bay
@@ -2735,7 +2817,120 @@ class OAMS(oams_ext.UnitHooks):
             self.ptfe_lengths[bay] = value
         if getattr(self, "_selected_ptfe_bay", None) in (None, bay):
             self._selected_path_length = value
-        gcmd.respond_info("Calibrated PTFE length to %d (%s)." % (value, how))
+        if self._ptfe_calibration_max_clicks:
+            self.measured_path_mm[bay] = value / FILAMENT_PATH_LENGTH_FACTOR
+            gcmd.respond_info(
+                "Calibrated %s: %.0f mm of filament path, %s: %d (%s)."
+                % (self.spool_label(bay), value / FILAMENT_PATH_LENGTH_FACTOR,
+                   option, value, how))
+        else:
+            gcmd.respond_info("Calibrated PTFE length to %d (%s)." % (value, how))
+
+
+    # -------------------------------------- measured path and op reasons (C1)
+
+    # A measured path this far from the configured one is worth saying.
+    MEASURED_PATH_NOTICE_MM = 100.0
+    MEASURED_PATH_NOTICE_FRACTION = 0.05
+
+    def _note_arrival_distance(self, bay, clicks):
+        """A unit with AMS_CAP_ARRIVAL_DISTANCE reports, in a successful
+        load's value, the filament it fed to the arrival the host confirmed:
+        the real path. Kept per bay for the status, logged, and said on the
+        console the first time for a bay or when it differs from
+        ptfe_length, with the command that saves it."""
+        caps = getattr(self, "capabilities", None) or {}
+        if (not caps.get("arrival_distance") or bay is None
+                or not isinstance(clicks, int) or clicks <= 0):
+            return
+        mm = clicks / FILAMENT_PATH_LENGTH_FACTOR
+        measured = getattr(self, "measured_path_mm", None)
+        if measured is None:
+            measured = self.measured_path_mm = {}
+        first = bay not in measured
+        measured[bay] = mm
+        configured = self._ptfe_length_for_bay(bay)
+        configured_mm = (configured / FILAMENT_PATH_LENGTH_FACTOR
+                         if configured else 0.0)
+        logging.info("OAMS[%s]: %s reached the toolhead after %.0f mm"
+                     " (ptfe_length %.0f mm)", self.oams_idx,
+                     self.spool_label(bay), mm, configured_mm)
+        far = configured_mm > 0 and abs(mm - configured_mm) >= max(
+            self.MEASURED_PATH_NOTICE_MM,
+            self.MEASURED_PATH_NOTICE_FRACTION * configured_mm)
+        if not (first or far):
+            return
+        message = ("%s reached the toolhead after %.0f mm of filament path"
+                   " (ptfe_length: %.0f mm)."
+                   % (self.spool_label(bay), mm, configured_mm))
+        if far:
+            option = ("ptfe_length" if self.bay_count == 1
+                      else "ptfe_length_%d" % bay)
+            message += (" To use the measured length, run"
+                        " OAMS_CALIBRATE_PTFE_LENGTH OAMS=%d SPOOL=%d, or set"
+                        " %s: %d under [%s]."
+                        % (self.oams_idx, bay, option, clicks, self.name))
+        try:
+            self.printer.lookup_object("gcode").respond_info(message)
+        except Exception:
+            logging.exception("OAMS[%s]: could not report the measured path",
+                              self.oams_idx)
+
+    def _failure_reason(self, code, value, calibrating=None):
+        """A failed operation's reason in words, from a unit that reports it
+        (AMS_CAP_OP_REASON: the terminal value names one of its AMS_REASON_*
+        constants); None for a success, an older unit, or no reason."""
+        caps = getattr(self, "capabilities", None) or {}
+        if (code == OAMS_OP_CODE_SUCCESS or not caps.get("op_reason")
+                or not isinstance(value, int) or value <= 0):
+            return None
+        names = caps.get("op_reasons") or {}
+        if calibrating is None:
+            calibrating = (getattr(self, "action_status", None)
+                           == getattr(self, "status_calibrating", None)
+                           or getattr(self, "ptfe_calibrating", False))
+        base = next((code_ for code_, name in names.items()
+                     if name == "ERROR_BASE"), None)
+        if base is not None and base <= value < base + 0x100:
+            return "the AMS reported error 0x%02x" % (value - base)
+        name = names.get(value)
+        if name == "FEED_OVERRUN":
+            if calibrating:
+                limit = (getattr(self, "_ptfe_calibration_max_clicks", None)
+                         or caps.get("ptfe_calibration_default_max_clicks")
+                         or 0) / FILAMENT_PATH_LENGTH_FACTOR
+                return ("the filament fed %.0f mm (MAX_LENGTH %.0f mm + 200 mm)"
+                        " without reaching the toolhead buffer: the path is"
+                        " longer than MAX_LENGTH, or the filament is not"
+                        " reaching the toolhead; check where it stopped and run"
+                        " it again with a larger MAX_LENGTH"
+                        % (limit + 200.0, limit))
+            length = self.path_length_mm
+            return ("the filament fed %.0f mm (ptfe_length %.0f mm + 200 mm)"
+                    " without the toolhead buffer reaching arrival_threshold:"
+                    " if it ran freely and stopped short of the extruder gears,"
+                    " ptfe_length is shorter than the filament path; run"
+                    " OAMS_CALIBRATE_PTFE_LENGTH OAMS=%d SPOOL=<bay> to measure"
+                    " it" % (length + 200.0, length, self.oams_idx))
+        texts = {
+            "FEED_STALLED": "the filament stopped moving for 4 s before the"
+                            " toolhead buffer reached arrival_threshold: a snag"
+                            " in the path, at a joint, a bend or the hub",
+            "ARRIVAL_ACK_TIMEOUT": "the toolhead buffer never reached"
+                                   " arrival_threshold",
+            "MOVING_NOT_OBSERVED": "the AMS did not start feeding",
+            "RETRACT_TIMEOUT": "the AMS did not finish rewinding the filament",
+            "FOLLOW_NOT_CONFIRMED": "the AMS did not confirm the follower"
+                                    " after the load",
+            "STOP_NOT_CONFIRMED": "the AMS did not confirm that it stopped",
+            "FEED_DISTANCE_TIMEOUT": "the filament did not cover the path in"
+                                     " time",
+            "ODOMETER_LOST": "the AMS stopped reporting how far the filament"
+                             " went, so nothing was measured",
+            "NO_SPOOL": "no filament in the bay",
+            "UNIT_SILENT": "the AMS stopped answering",
+        }
+        return texts.get(name)
 
     # ----------------------------------------------------- firmware callbacks
 
@@ -2812,6 +3007,7 @@ class OAMS(oams_ext.UnitHooks):
         if action == self.status_calibrating:
             self.action_status_value = params["value"]
             self.action_status_code = code
+            self.ptfe_calibrating = False
         # Verified against firmware 2.0.25: code 5 (KLIPPER_CALL) only ever
         # co-occurs with action=CALIBRATING, so the `or` clause is redundant
         # there — kept for robustness against other firmware versions. The
@@ -2819,9 +3015,19 @@ class OAMS(oams_ext.UnitHooks):
         elif action in (self.status_loading, self.status_unloading,
                         self.status_error) or code == OAMS_OP_CODE_ERROR_KLIPPER_CALL:
             self.action_status_code = code
+            # A unit with AMS_CAP_ARRIVAL_DISTANCE or AMS_CAP_OP_REASON says
+            # something in the value: the measured path, or the reason. Any
+            # other unit's load/unload value carries nothing (None, as before).
+            caps = getattr(self, "capabilities", None) or {}
+            self.action_status_value = (
+                params.get("value")
+                if caps.get("arrival_distance") or caps.get("op_reason")
+                else None)
             # Keep the firmware mirror of current_spool in step with our commands.
             if action == self.status_loading and code == OAMS_OP_CODE_SUCCESS:
                 self.current_spool = self._pending_bay
+                self._note_arrival_distance(self._pending_bay,
+                                            params.get("value"))
             elif action == self.status_unloading and code == OAMS_OP_CODE_SUCCESS:
                 self._clear_hub_after_unload()
                 self.current_spool = None

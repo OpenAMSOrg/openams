@@ -904,6 +904,14 @@
           "minimum": 0,
           "description": "NEW-v2 (D7). Effective ptfe length for this bay in mm (clicks / 1.14)."
         },
+        "measured_path_mm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "NEW (C1 AMS_CAP_ARRIVAL_DISTANCE). The path the unit measured on its last load or calibration of this bay, in mm; null until it has measured one. Omitted by units that do not measure their path."
+        },
         "spool_id": {
           "type": [
             "integer",

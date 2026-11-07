@@ -335,9 +335,35 @@ def resolve_capabilities(configured, constants):
             # (C1 section 4.7.2); absent means 0, and the key is not published.
             ("tray_write", "AMS_CAP_TRAY_WRITE"),
             ("fps_toolhead", "AMS_CAP_FPS_TOOLHEAD"),
-            ("reverse_follower", "AMS_CAP_REVERSE_FOLLOWER")):
+            ("reverse_follower", "AMS_CAP_REVERSE_FOLLOWER"),
+            # A unit that measures its PTFE path itself and reports it
+            # (C1 section 4.4.1): OAMS_CALIBRATE_PTFE_LENGTH runs on it, after
+            # (and over) AMS_HT_CAP_PTFE_CALIBRATION, which such firmware
+            # keeps at 0 for hosts that predate this constant.
+            ("ptfe_calibration", "AMS_CAP_PTFE_CALIBRATION"),
+            # A successful load's terminal value is the measured path, in
+            # encoder clicks (C1 section 4.1).
+            ("arrival_distance", "AMS_CAP_ARRIVAL_DISTANCE"),
+            # A failed operation's terminal value is its reason, one of the
+            # AMS_REASON_* constants (C1 section 4.1).
+            ("op_reason", "AMS_CAP_OP_REASON")):
         if constant in constants:
             result[field] = bool(_int_constant(constants, constant, 0))
+    reasons = {}
+    for name, raw in constants.items():
+        if name.startswith("AMS_REASON_"):
+            try:
+                reasons[int(raw)] = name[len("AMS_REASON_"):]
+            except (TypeError, ValueError):
+                continue
+    if reasons:
+        result["op_reasons"] = reasons
+    for field, constant in (
+            ("ptfe_calibration_default_max_clicks",
+             "AMS_PTFE_CALIBRATION_DEFAULT_MAX_CLICKS"),
+            ("ptfe_calibration_max_clicks", "AMS_PTFE_CALIBRATION_MAX_CLICKS")):
+        if constant in constants:
+            result[field] = _int_constant(constants, constant, 0)
     for field, constant in (
             ("dryer_zone_count", "AMS_DRYER_ZONES"),
             ("rfid_reader_count", "AMS_RFID_READERS"),

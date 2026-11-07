@@ -336,6 +336,7 @@ component pushes it again.
 | `calibrated` | bool | — | no | NEW-v2 | HC | H1 | D7: true iff `calibration_state` is `configured` |
 | `calibration_state` | enum `configured`, `calibrating`, `uncalibrated` | — | no | NEW-v2 | HC + HR | H1 | D7; §5.4 |
 | `path_length_mm` | number | mm | no | NEW-v2 | HC | H1 | D7; effective `ptfe_length_<bay>` or shared `ptfe_length`, clicks ÷ 1.14 (`src/oams.py:40`, `:296-313`); `0` when none is configured, never `null` |
+| `measured_path_mm` | number or null | mm | no | NEW | HC | C1 4.3.1 | the path the unit measured on its last load or calibration of this bay (C1 `AMS_CAP_ARRIVAL_DISTANCE`, the Cortex Bridge from firmware 8); `null` until measured; omitted by units that do not measure it |
 | `spool_id` | int | Spoolman spool id | yes | NEW-v2 | HC (D2) | H3 | set by `OAMSM_SET_BAY_SPOOL` (C3) |
 | `link_source` | enum `tag`, `manual`, `none` | — | no | NEW-v2 | HC (D2) | H3 | §5.5 |
 | `tag` | §4.6 | — | yes | NEW-v2 | TAG | H1 | last successful read; `null` when no tag is present |

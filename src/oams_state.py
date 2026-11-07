@@ -309,6 +309,9 @@ class OpCompleted:
     # The unit's latched fault text at completion (name plus the recovery
     # hint), when its telemetry carries one; shown beside a failure code.
     fault: Optional[str] = None
+    # Why the unit ended the operation, in words, when it reports a reason
+    # (C1 AMS_CAP_OP_REASON); it replaces the generic text of the code.
+    reason: Optional[str] = None
 
 @dataclass(frozen=True)
 class Timeout:
@@ -1104,8 +1107,9 @@ def _reduce_lane(lane, action, lw, now, fps, deadline):
             # unit on this lane, or an unsolicited status (gen=None) — it does
             # not belong to the op in flight.
             return lane, []
-        code_text = None
-        if (lane.op == OP_LOADING and action.code == OAMS_OP_CODE_TIMEOUT
+        code_text = action.reason
+        if (code_text is None and lane.op == OP_LOADING
+                and action.code == OAMS_OP_CODE_TIMEOUT
                 and lane.unit is not None
                 and lane.unit[0] in lw.host_arrival):
             code_text = _arrival_timeout_text(lw, lane.unit)
@@ -1256,9 +1260,15 @@ def _complete(lane, code, value, now, fps, timed_out=False, fault=None,
     if op == OP_CALIBRATING:
         lane = _stage_op_end(lane, now, ok)
         target = lane.prior_op or OP_UNLOADED
-        msg = ("Calibration complete" if ok
-               else ("timed out calibrating" if timed_out
-                     else "Calibration failed (%s)" % describe_code(code, fault)))
+        if ok:
+            msg = "Calibration complete"
+        elif timed_out:
+            msg = "timed out calibrating"
+        elif code_text is not None:
+            msg = "Calibration failed (%s)" % (
+                "%s; %s" % (code_text, fault) if fault else code_text)
+        else:
+            msg = "Calibration failed (%s)" % describe_code(code, fault)
         fields = {} if ok else {"fault_unit": lane.unit, "fault_text": msg}
         nl = replace(lane, op=target, prior_op=None, op_deadline=None,
                      message=("calibrated" if ok else "calibration failed"),

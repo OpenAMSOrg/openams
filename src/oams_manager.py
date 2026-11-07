@@ -835,6 +835,14 @@ class OAMSManager(oams_ext.ManagerHooks):
             elif (lane is not None and lane.op == S.OP_LOADED
                     and lane.runout == S.RUNOUT_LOADING):
                 target = lane.reload_target
+            elif lane is not None and lane.op == S.OP_CALIBRATING:
+                # A PTFE calibration on a host-arrival unit feeds to the
+                # arrival the host confirms (C1 4.4.1); the lane's op_gen is
+                # the calibration's generation.
+                target = next(((oam.oams_idx, None)
+                               for oam in self.lane_oams.get(fps_name, ())
+                               if getattr(oam, "ptfe_calibrating", False)),
+                              None)
             else:
                 target = None
             if target is None:
