@@ -21,6 +21,9 @@ import urllib.parse
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".mypy_cache", ".pytest_cache",
              "build"}
 SKIP_SCHEMES = ("http://", "https://", "mailto:", "tel:", "ftp://", "file://", "//")
+# Sources of pages pushed to the wiki: their "/en/..." links are paths on the
+# wiki, not in this repository.
+WIKI_SOURCE_PREFIX = os.path.join("tools", "docs", "wiki-")
 
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)\n]*)\)")
 FENCE_RE = re.compile(r"^\s{0,3}(```|~~~)")
@@ -137,6 +140,8 @@ def main(argv):
             if not target or target.startswith(SKIP_SCHEMES):
                 continue
             rel = os.path.relpath(path, root)
+            if target.startswith("/") and rel.startswith(WIKI_SOURCE_PREFIX):
+                continue
             path_part, _, anchor = target.partition("#")
             path_part = urllib.parse.unquote(path_part.split("?")[0])
             resolved = os.path.normpath(os.path.join(os.path.dirname(path), path_part)) if path_part else path
