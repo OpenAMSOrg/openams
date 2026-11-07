@@ -581,7 +581,7 @@ Runs on every monitor tick (default 1 s, `src/oams_state.py:78`) while `op` is
 | `idle` | printing, and the lane's bay no longer sees filament at the hub | `pausing` | remember the extruder position | `:724-729` |
 | `pausing` | the extruder has fed `PAUSE_DISTANCE` (60 mm) more | `coasting` | follower off | `:736-741`, `:69` |
 | `coasting` | follower state unknown | (hold) | no automatic reload | `:719-722` |
-| `coasting` | unit `path_len` ≤ 0 | op `UNLOADED`, runout `idle` | pause: "ptfe_length is not calibrated (0); cannot auto-load the next spool. Run OAMS_CALIBRATE_PTFE_LENGTH." | `:743-751` |
+| `coasting` | unit `path_len` ≤ 0 | op `UNLOADED`, runout `idle` | pause: "ptfe_length is not calibrated (0); cannot auto-load the next spool. To fix it, <advice>." (`ptfe_length_advice`: `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<idx> SPOOL=<bay>` for a unit with `ptfe_calibration`; the measuring steps with `cortex-bridge.py ptfe` for a Cortex Bridge unit; otherwise set `ptfe_length` by hand) | `:743-751` |
 | `coasting` | consumed + 60 mm + `reload_before_toolhead_distance` > `path_len`, and a group member other than the empty bay is ready | `loading`, `reload_target` set | start the load of that member | `:752-761`; `src/oams_manager.py:32` |
 | `coasting` | same, no ready member | op `UNLOADED` | pause: "filament runout on group %s and no spare spool available" | `:762-766` |
 | `coasting` | `settings.auto_reload_on_runout` is false (H7), when the reload would start | op `UNLOADED` | message `auto reload off`; pause: "filament runout on group %s (auto reload is off)" | H7 |
@@ -781,8 +781,10 @@ three layers, each with a distinct job:
 
 - **Reducer** (policy, the user-facing refusal): `LaneWorld.path_len` keyed
   by `(oams_idx, bay)`; `_load_guard` refuses `Load` and `LoadBay` for a bay
-  whose `calibration_state` is not `configured` (message `<unit> Spool <n> is
-  not calibrated; run OAMS_CALIBRATE_PTFE_LENGTH SPOOL=<bay index>`); `_group_candidates`
+  whose `calibration_state` is not `configured` (message `<unit> Spool <n> has
+  no PTFE length; <advice>`, the advice from `ptfe_length_advice` and
+  `LaneWorld.ptfe_how`, so a unit that cannot calibrate itself is not told to
+  run `OAMS_CALIBRATE_PTFE_LENGTH`); `_group_candidates`
   skips uncalibrated bays; `_runout_tick` checks `reload_target` before
   `_begin_op`.
 - **Driver** (mechanism): `start_load_spool` raises `command_error` if the

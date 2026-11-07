@@ -489,6 +489,8 @@ class OAMSManager(oams_ext.ManagerHooks):
         lanes = {}
         for fps_name, fps in self.fpss.items():
             loaded, ready, path_len, reserved, calibrated = {}, {}, {}, {}, {}
+            ptfe_how = {}
+            host_arrival = set()
             motion_blocked = {}
             positioning = {}
             for oam in self.lane_oams[fps_name]:
@@ -516,6 +518,11 @@ class OAMSManager(oams_ext.ManagerHooks):
                         value = ptfe_for_bay(bay)
                         calibrated[key] = value is not None and value > 0
                 path_len[oam.oams_idx] = oam.path_length_mm
+                how = getattr(oam, "ptfe_how", None)
+                if how is not None:
+                    ptfe_how[oam.oams_idx] = how
+                if getattr(oam, "needs_host_arrival", False) is True:
+                    host_arrival.add(oam.oams_idx)
                 # H15: a unit that may not move filament is recorded so the
                 # reducer refuses loads on its bays.
                 reason = ams_family.motion_block_reason(
@@ -541,7 +548,8 @@ class OAMSManager(oams_ext.ManagerHooks):
                 group_bays=self.groups_by_lane.get(fps_name, {}),
                 path_len=path_len, reload_before=self.reload_before,
                 auto_reload=self._settings()["auto_reload_on_runout"],
-                unit_names=dict(self.unit_name_by_idx))
+                unit_names=dict(self.unit_name_by_idx), ptfe_how=ptfe_how,
+                host_arrival=frozenset(host_arrival))
         return S.World(lanes=lanes)
 
     def unit_runout_active(self, oams_idx):

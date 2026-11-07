@@ -91,7 +91,9 @@ Klipper would after a manual command. A flow that failed leaves the heater on,
 so the retry starts hot.
 
 **Why does a runout pause instead of reloading?**
-Usually `ptfe_length` is still 0. Run `OAMS_CALIBRATE_PTFE_LENGTH` once per bay.
+Usually `ptfe_length` is still 0. On OpenAMS 1, run
+`OAMS_CALIBRATE_PTFE_LENGTH` once per bay; on a Cortex Bridge,
+[measure the path and set it](cortex-bridge-setup.md#filament-path-length).
 A group with no spare spool, or `auto_reload_on_runout` set to `False`, also
 pauses. The messages are in
 [troubleshooting](troubleshooting.md#runout-and-calibration).

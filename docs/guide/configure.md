@@ -87,9 +87,12 @@ thresholds answer "how compressed is the buffer".
 Klipper with `f1s_hes_on requires one value (single-bay AMS HT) or four
 comma-separated values`.
 
-`ptfe_length: 0` is correct for a fresh machine. Run
-`OAMS_CALIBRATE_PTFE_LENGTH` and OpenAMS writes the result back. Until then a
-runout pauses the print instead of reloading the next spool.
+`ptfe_length: 0` is correct for a fresh machine. On OpenAMS 1, run
+`OAMS_CALIBRATE_PTFE_LENGTH` and OpenAMS writes the result back. A Cortex
+Bridge AMS can't measure it, so you measure the path and set it
+([how](cortex-bridge-setup.md#filament-path-length)); it refuses to load until
+then. Until it is set, a runout pauses the print instead of reloading the next
+spool.
 
 ### Hardware families
 

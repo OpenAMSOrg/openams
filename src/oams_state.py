@@ -62,7 +62,7 @@ def _describe_code(code):
     if code == OAMS_OP_CODE_SESSION_LOST:
         return SESSION_LOST_TEXT
     if code == OAMS_OP_CODE_UNCALIBRATED:
-        return "the bay has no PTFE length; run OAMS_CALIBRATE_PTFE_LENGTH"
+        return "the bay has no PTFE length (ptfe_length is 0)"
     if code == OAMS_OP_CODE_CANCEL:
         return "cancelled"
     if code == OAMS_OP_CODE_ERROR_UNSPECIFIED:
@@ -243,6 +243,15 @@ class LaneWorld:
     # unit index -> the unit's config name ("oams1"), so a reason can name a
     # spool the way the UI does ("oams1 Spool 3"). Absent: "OAMS <index>".
     unit_names: Mapping[int, str] = field(default_factory=dict)
+    # unit index -> how that unit gets its PTFE length (PTFE_CALIBRATE,
+    # PTFE_CORTEX_BRIDGE, PTFE_MEASURE), so an uncalibrated refusal names a fix
+    # the unit accepts. Absent: PTFE_CALIBRATE.
+    ptfe_how: Mapping[int, str] = field(default_factory=dict)
+    # unit indexes whose load ends only on the host's arrival acknowledgement
+    # (C1 AMS_CAP_HOST_ARRIVAL_CONFIRM, a Cortex Bridge unit). Such a unit
+    # stops a load that feeds past its path without arrival, and reports it as
+    # a timeout, so the failure names ptfe_length as well as a snag.
+    host_arrival: FrozenSet[int] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -687,12 +696,54 @@ def _unit_label(lw, idx):
     return lw.unit_names.get(idx, "OAMS %d" % idx)
 
 
+# How a unit gets its PTFE length (LaneWorld.ptfe_how): it measures the path
+# itself, or the user measures it. A Cortex Bridge unit is measured and the
+# millimetres converted to clicks with the bridge tool.
+PTFE_CALIBRATE = "calibrate"
+PTFE_CORTEX_BRIDGE = "cortex_bridge"
+PTFE_MEASURE = "measure"
+
+
+def ptfe_length_advice(how, unit_name, idx, bay):
+    """What to do about a bay with no PTFE length, as a command the user can
+    run as written. A unit that cannot measure its own path gets the steps to
+    set it by hand instead of a calibration command it would refuse."""
+    if how == PTFE_CORTEX_BRIDGE:
+        return ("measure the filament path from the AMS to the extruder gears"
+                " in millimetres, convert it with python3"
+                " ~/openams/tools/cortex-bridge.py ptfe <millimetres>, put the"
+                " result in ptfe_length: under [oams %s], then FIRMWARE_RESTART"
+                % unit_name)
+    if how == PTFE_MEASURE:
+        return ("set ptfe_length: under [oams %s] to its filament path, then"
+                " FIRMWARE_RESTART" % unit_name)
+    return ("run OAMS_CALIBRATE_PTFE_LENGTH OAMS=%d SPOOL=%d (SPOOL counts"
+            " from 0)" % (idx, bay))
+
+
+def _ptfe_advice(lw, unit):
+    return ptfe_length_advice(lw.ptfe_how.get(unit[0], PTFE_CALIBRATE),
+                              _unit_label(lw, unit[0]), unit[0], unit[1])
+
+
 def _uncalibrated_msg(lw, unit):
     """H10 refusal: the bay has no PTFE length, so a load would be refused by
     the unit anyway. Naming the exact bay lets the user fix it directly."""
-    return ("%s is not calibrated; run OAMS_CALIBRATE_PTFE_LENGTH"
-            " SPOOL=%d" % (spool_name(_unit_label(lw, unit[0]), unit[1]),
-                           unit[1]))
+    return "%s has no PTFE length; %s" % (
+        spool_name(_unit_label(lw, unit[0]), unit[1]), _ptfe_advice(lw, unit))
+
+
+def _arrival_timeout_text(lw, unit):
+    """A load timeout from a unit that waits for host-confirmed arrival. The
+    unit reports only "timeout", whether the filament stalled or ran past the
+    path it was given, so name both causes and the one setting behind the
+    second."""
+    length = lw.path_len.get(unit[0], 0.0)
+    return ("the AMS stopped feeding before the toolhead buffer reached"
+            " arrival_threshold: either the filament stopped moving (a snag in"
+            " the path), or it fed past ptfe_length (%.0f mm) and stopped there;"
+            " if the tip stopped short of the extruder gears, ptfe_length is"
+            " shorter than the filament path" % length)
 
 
 def _positioning_msg(lw, unit):
@@ -1053,8 +1104,13 @@ def _reduce_lane(lane, action, lw, now, fps, deadline):
             # unit on this lane, or an unsolicited status (gen=None) — it does
             # not belong to the op in flight.
             return lane, []
+        code_text = None
+        if (lane.op == OP_LOADING and action.code == OAMS_OP_CODE_TIMEOUT
+                and lane.unit is not None
+                and lane.unit[0] in lw.host_arrival):
+            code_text = _arrival_timeout_text(lw, lane.unit)
         return _complete(lane, action.code, action.value, now, fps,
-                         fault=action.fault)
+                         fault=action.fault, code_text=code_text)
 
     if isinstance(action, Timeout):
         return _complete(lane, OAMS_OP_CODE_ERROR_UNSPECIFIED, None, now, fps,
@@ -1085,7 +1141,8 @@ def _reduce_lane(lane, action, lw, now, fps, deadline):
     return lane, []
 
 
-def _complete(lane, code, value, now, fps, timed_out=False, fault=None):
+def _complete(lane, code, value, now, fps, timed_out=False, fault=None,
+              code_text=None):
     op = lane.op
     ok = (code == OAMS_OP_CODE_SUCCESS)
 
@@ -1144,8 +1201,13 @@ def _complete(lane, code, value, now, fps, timed_out=False, fault=None):
             effects.append(Settle(fps, OpResult(False, code,
                 "OAMS is busy (positioning a newly inserted spool?); retry")))
             return nl, effects
-        msg = ("timed out loading spool" if timed_out
-               else "Spool loading failed (%s)" % describe_code(code, fault))
+        if timed_out:
+            msg = "timed out loading spool"
+        elif code_text is not None:
+            msg = "Spool loading failed (%s)" % (
+                "%s; %s" % (code_text, fault) if fault else code_text)
+        else:
+            msg = "Spool loading failed (%s)" % describe_code(code, fault)
         nl = replace(lane, op=OP_UNLOADED, group=None, unit=None,
                      following=False, op_deadline=None, message="load failed",
                      fault_unit=lane.unit, fault_text=msg)
@@ -1247,8 +1309,8 @@ def _runout_tick(lane, lw, now, fps, deadline):
         path_len = lw.path_len.get(lane.unit[0], 0.0)
         if path_len <= 0:
             reason = ("ptfe_length is not calibrated (0); cannot"
-                      " auto-load the next spool. Run"
-                      " OAMS_CALIBRATE_PTFE_LENGTH.")
+                      " auto-load the next spool. To fix it, %s."
+                      % _ptfe_advice(lw, lane.unit))
             nl = replace(lane, op=OP_UNLOADED, group=None, unit=None,
                          runout=RUNOUT_IDLE, pause_origin=None,
                          coast_origin=None, message="ptfe_length uncalibrated",
@@ -1308,11 +1370,10 @@ def _runout_tick(lane, lw, now, fps, deadline):
                 if (unit != lane.unit and lw.ready.get(unit)
                         and lw.calibrated.get(unit) is False):
                     reason = ("filament runout on group %s and the"
-                              " spare spool is not calibrated (%s); run"
-                              " OAMS_CALIBRATE_PTFE_LENGTH SPOOL=%d."
+                              " spare spool is not calibrated (%s); %s."
                               % (lane.group,
                                  spool_name(_unit_label(lw, unit[0]), unit[1]),
-                                 unit[1]))
+                                 _ptfe_advice(lw, unit)))
                     nl = replace(lane, op=OP_UNLOADED, group=None, unit=None,
                                  runout=RUNOUT_IDLE, pause_origin=None,
                                  coast_origin=None,

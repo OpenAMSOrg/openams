@@ -18,8 +18,10 @@ BAY_A = (1, 0)   # (oams_idx, bay)
 BAY_B = (1, 3)
 BAY_C = (1, 2)
 
-UNCAL_A = "oams1 Spool 1 is not calibrated; run OAMS_CALIBRATE_PTFE_LENGTH SPOOL=0"
-UNCAL_B = "oams1 Spool 4 is not calibrated; run OAMS_CALIBRATE_PTFE_LENGTH SPOOL=3"
+UNCAL_A = ("oams1 Spool 1 has no PTFE length; run OAMS_CALIBRATE_PTFE_LENGTH"
+           " OAMS=1 SPOOL=0 (SPOOL counts from 0)")
+UNCAL_B = ("oams1 Spool 4 has no PTFE length; run OAMS_CALIBRATE_PTFE_LENGTH"
+           " OAMS=1 SPOOL=3 (SPOOL counts from 0)")
 
 
 def world(extruder_pos=0.0, printing=False, loaded=None, ready=None,
@@ -106,6 +108,90 @@ class UncalibratedLoadTests(unittest.TestCase):
         self.assertEqual(find(fx, S.StartLoad)[0].unit, BAY_B)
 
 
+class UncalibratedAdviceTests(unittest.TestCase):
+    """The refusal names a fix the unit accepts: a Cortex Bridge unit cannot
+    calibrate itself (no ptfe_calibration), so it gets the measuring steps."""
+
+    def _bridge_world(self, **kwargs):
+        w = world(**kwargs)
+        lw = w.lanes[FPS]
+        from dataclasses import replace
+        return S.World(lanes={FPS: replace(
+            lw, unit_names={1: "ams1"}, ptfe_how={1: S.PTFE_CORTEX_BRIDGE})})
+
+    def test_bridge_load_refusal_gives_the_measuring_steps(self):
+        w = self._bridge_world(ready={BAY_A: True}, calibrated={BAY_A: False})
+        _, fx = S.reduce(system(S.LaneState()), S.LoadBay(FPS, BAY_A), w,
+                         now=1.0)
+        message = refusal_message(fx)
+        self.assertTrue(message.startswith("ams1 Spool 1 has no PTFE length;"))
+        self.assertIn("cortex-bridge.py ptfe <millimetres>", message)
+        self.assertIn("ptfe_length: under [oams ams1]", message)
+        self.assertIn("FIRMWARE_RESTART", message)
+        self.assertNotIn("OAMS_CALIBRATE_PTFE_LENGTH", message)
+
+    def test_bridge_runout_with_no_length_gives_the_measuring_steps(self):
+        lane = S.LaneState(op=S.OP_LOADED, group=GROUP, unit=BAY_A,
+                           runout=S.RUNOUT_COASTING, coast_origin=0.0)
+        w = self._bridge_world(extruder_pos=10.0, printing=True,
+                               loaded={BAY_A: False}, path_len=0.0)
+        _, fx = S.reduce(system(lane), S.Tick(), w, now=1.0)
+        reason = find(fx, S.Pause)[0].reason
+        self.assertIn("cortex-bridge.py ptfe", reason)
+        self.assertNotIn("OAMS_CALIBRATE_PTFE_LENGTH", reason)
+
+    def test_a_unit_measured_by_hand_is_told_to_set_ptfe_length(self):
+        self.assertEqual(
+            S.ptfe_length_advice(S.PTFE_MEASURE, "mmu1", 2, 1),
+            "set ptfe_length: under [oams mmu1] to its filament path, then"
+            " FIRMWARE_RESTART")
+
+    def test_self_calibrating_unit_gets_the_complete_command(self):
+        self.assertEqual(
+            S.ptfe_length_advice(S.PTFE_CALIBRATE, "oams2", 2, 1),
+            "run OAMS_CALIBRATE_PTFE_LENGTH OAMS=2 SPOOL=1 (SPOOL counts"
+            " from 0)")
+
+
+class HostArrivalLoadTimeoutTests(unittest.TestCase):
+    """A Cortex Bridge unit stops a load that feeds past its path without the
+    toolhead buffer reading arrival, and reports it as a plain timeout. The
+    failure must name ptfe_length, not only a jam."""
+
+    FAULT = ("the unit reports fault motion_timeout; clear it with"
+             " OAMS_CLEAR_FAULT OAMS=1, then OAMSM_CLEAR_ERRORS")
+
+    def _failed_load(self, host_arrival):
+        from dataclasses import replace
+        w = world(ready={BAY_A: True}, calibrated={BAY_A: True},
+                  path_len=1300.0)
+        lw = replace(w.lanes[FPS], unit_names={1: "ams1"},
+                     host_arrival=frozenset({1}) if host_arrival
+                     else frozenset())
+        w = S.World(lanes={FPS: lw})
+        s, _ = S.reduce(system(S.LaneState()), S.LoadBay(FPS, BAY_A), w,
+                        now=1.0)
+        gen = lane_of(s).op_gen
+        s, fx = S.reduce(s, S.OpCompleted(FPS, S.OAMS_OP_CODE_TIMEOUT, 0,
+                                          gen=gen, fault=self.FAULT),
+                         w, now=11.0)
+        return s, refusal_message(fx)
+
+    def test_bridge_timeout_names_ptfe_length_and_keeps_the_fault(self):
+        s, message = self._failed_load(host_arrival=True)
+        self.assertEqual(lane_of(s).op, S.OP_UNLOADED)
+        self.assertIn("fed past ptfe_length (1300 mm)", message)
+        self.assertIn("a snag in the path", message)
+        self.assertIn("shorter than the filament path", message)
+        self.assertTrue(message.endswith(self.FAULT + ")"))
+        self.assertNotIn("dead motor", message)
+
+    def test_other_units_keep_the_firmware_watchdog_text(self):
+        _, message = self._failed_load(host_arrival=False)
+        self.assertIn("no filament progress", message)
+        self.assertNotIn("ptfe_length", message)
+
+
 class UncalibratedRunoutTests(unittest.TestCase):
     """H10: the runout reload picks a calibrated spare, or pauses and says so."""
 
@@ -136,7 +222,7 @@ class UncalibratedRunoutTests(unittest.TestCase):
         self.assertIn("spare spool is not calibrated", pause.reason)
         # The spare is named the way the UI names it: its unit, and Spool <n>.
         self.assertIn("(oams1 Spool 4)", pause.reason)
-        self.assertIn("SPOOL=3", pause.reason)
+        self.assertIn("OAMS_CALIBRATE_PTFE_LENGTH OAMS=1 SPOOL=3", pause.reason)
         self.assertEqual(lane_of(s).op, S.OP_UNLOADED)
         self.assertEqual(lane_of(s).message, "spare spool is not calibrated")
 

@@ -244,6 +244,41 @@ class SenderRoutingTests(unittest.TestCase):
         self.assertIsNone(o.action_status)     # sentinel not left armed either
 
 
+class PtfeAdviceTests(unittest.TestCase):
+    """How a unit's PTFE length is set decides what an uncalibrated refusal
+    tells the user to run."""
+
+    def test_ptfe_how_follows_the_capabilities(self):
+        o = make_oams(True)
+        o.capabilities = {"ptfe_calibration": True}
+        self.assertEqual(o.ptfe_how, S.PTFE_CALIBRATE)
+        o.capabilities = {"ptfe_calibration": False,
+                          "build_version": "cortex-bridge"}
+        self.assertEqual(o.ptfe_how, S.PTFE_CORTEX_BRIDGE)
+        o.capabilities = {"ptfe_calibration": False}
+        self.assertEqual(o.ptfe_how, S.PTFE_MEASURE)
+
+    def test_bridge_backstop_refusal_names_the_bridge_tool(self):
+        o = make_oams(True)
+        o.name = "oams ams1"
+        o.bay_count = 4
+        o.filament_path_length = 0
+        o.ptfe_lengths = [None] * 4
+        o.capabilities = {"ptfe_calibration": False,
+                          "build_version": "cortex-bridge"}
+        o._require_motion = lambda: None
+
+        class Error(Exception):
+            pass
+        o.printer = types.SimpleNamespace(command_error=Error)
+        with self.assertRaises(Error) as caught:
+            o.start_load_spool(1, gen=3)
+        message = str(caught.exception)
+        self.assertTrue(message.startswith("ams1 Spool 2 has no PTFE length;"))
+        self.assertIn("cortex-bridge.py ptfe <millimetres>", message)
+        self.assertNotIn("OAMS_CALIBRATE_PTFE_LENGTH", message)
+
+
 class GenSourcingTests(unittest.TestCase):
     def test_status2_uses_wire_gen(self):
         o = make_oams(use_gen_protocol=True)

@@ -354,7 +354,7 @@ cycle. Stay in the room anyway.
 | `OpenAMS cannot heat <extruder>: minimum_extrude_temperature ...` | The floor is above the ceiling, so the flow has nowhere legal to heat | See [runtime errors](troubleshooting.md#runtime-errors) |
 | `Unknown OpenAMS filament group <name>` | `T<n>` has no `[filament_group]` | Add the group |
 | `Multiple FPS present; specify FPS=<name>` | Several lanes, no `FPS=` | Add `FPS=` |
-| Runout pauses with `ptfe_length is not calibrated (0)` | Path length never calibrated | `OAMS_CALIBRATE_PTFE_LENGTH` |
+| Runout pauses with `ptfe_length is not calibrated (0)` | Path length never set | `OAMS_CALIBRATE_PTFE_LENGTH` on OpenAMS 1; on a Cortex Bridge, [measure and set it](cortex-bridge-setup.md#filament-path-length) |
 | A UI load stops at `Filament not detected at toolhead extruder inlet` | The inlet switch never triggered | Clear the jam, retry |
 
 The full list is in [troubleshooting](troubleshooting.md).

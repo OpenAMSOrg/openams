@@ -413,6 +413,18 @@ class OAMS(oams_ext.UnitHooks):
         return self.oams_load_spool_cmd is not None
 
     @property
+    def ptfe_how(self):
+        """How this unit's PTFE length is set (oams_state.PTFE_*): measured by
+        the unit (OAMS_CALIBRATE_PTFE_LENGTH), or by the user; a Cortex Bridge
+        unit's millimetres are converted with the bridge tool."""
+        caps = getattr(self, "capabilities", None) or {}
+        if caps.get("ptfe_calibration"):
+            return S.PTFE_CALIBRATE
+        if caps.get("build_version") == "cortex-bridge":
+            return S.PTFE_CORTEX_BRIDGE
+        return S.PTFE_MEASURE
+
+    @property
     def path_length_mm(self):
         """Filament path from the hub HES to the extruder in millimetres (the
         unit LaneWorld.path_len carries). ptfe_length is calibrated in encoder
@@ -2166,8 +2178,11 @@ class OAMS(oams_ext.UnitHooks):
             if (length is None or length <= 0
                     or length > PTFE_LENGTH_MAX_CLICKS):
                 raise self.printer.command_error(
-                    "%s is not calibrated; run OAMS_CALIBRATE_PTFE_LENGTH"
-                    " SPOOL=%d" % (self.spool_label(spool_idx), spool_idx))
+                    "%s has no PTFE length; %s" % (
+                        self.spool_label(spool_idx),
+                        S.ptfe_length_advice(self.ptfe_how,
+                                             self.name.split()[-1],
+                                             self.oams_idx, spool_idx)))
         # Resolve the command and SEND before mutating any state: a lookup or
         # send failure must leave no phantom FIFO entry and no stuck sentinel
         # (a stale FIFO entry would desync completion matching for every
