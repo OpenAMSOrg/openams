@@ -156,6 +156,34 @@ class ReasonTests(unittest.TestCase):
                          "Spool loading failed (the filament fed 2700 mm)")
 
 
+class CalibrationGuardTests(unittest.TestCase):
+    """A PTFE calibration feeds the bay to the toolhead: never with the lane
+    loaded or another bay's filament still in a hub."""
+
+    def _try(self, lane, loaded=None):
+        lw = S.LaneWorld(unit_names={1: "ams1"}, loaded=loaded or {})
+        world = S.World(lanes={"fps1": lw})
+        state = S.SystemState(lanes={"fps1": lane})
+        return S.reduce(state, S.Calibrate("fps1", 1, 0, "ptfe"), world, now=1.0)
+
+    def test_a_hub_with_filament_refuses_it(self):
+        _, effects = self._try(S.LaneState(), loaded={(1, 1): True})
+        settle = [e for e in effects if isinstance(e, S.Settle)][0]
+        self.assertFalse(settle.result.ok)
+        self.assertIn("unload it first", settle.result.message)
+
+    def test_a_loaded_lane_refuses_it(self):
+        lane = S.LaneState(op=S.OP_LOADED, unit=(1, 1), group="T1")
+        _, effects = self._try(lane)
+        self.assertFalse([e for e in effects if isinstance(e, S.Settle)][0]
+                         .result.ok)
+
+    def test_a_clear_lane_starts_it(self):
+        state, effects = self._try(S.LaneState())
+        self.assertEqual(state.lanes["fps1"].op, S.OP_CALIBRATING)
+        self.assertTrue([e for e in effects if isinstance(e, S.StartCalibrate)])
+
+
 class MeasuredPathTests(unittest.TestCase):
     def test_the_first_measurement_of_a_bay_is_reported(self):
         unit = make_unit(ptfe_length=2337)  # 2050 mm

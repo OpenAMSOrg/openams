@@ -1008,6 +1008,14 @@ def _reduce_lane(lane, action, lw, now, fps, deadline):
                 Settle(fps, OpResult(False, None,
                         "busy, cannot calibrate now"))]
         unit = (action.oams_idx, action.bay)
+        # A PTFE calibration feeds the bay to the toolhead: the shared path
+        # must be clear, as for a load (a unit that measures by odometer
+        # may not know, after a restart, that another bay is still out).
+        if action.kind == "ptfe" and (op != OP_UNLOADED or _hub_occupied(lw)):
+            return _stage_refused(lane, now), [
+                Settle(fps, OpResult(False, None,
+                        "filament is loaded or still in a hub on this lane;"
+                        " unload it first"))]
         return _begin_op(
             lane, now, fps, deadline,
             lambda gen: StartCalibrate(unit, action.kind, fps, gen),
