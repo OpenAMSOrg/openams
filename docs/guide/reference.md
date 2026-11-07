@@ -19,7 +19,7 @@ One section per unit. Required unless marked otherwise.
 | `f1s_hes_is_above:` | yes | — | Whether the switch reads ON above the threshold |
 | `hub_hes_on:` | yes | — | Hub sensor thresholds: one value or four |
 | `hub_hes_is_above:` | yes | — | Whether the switch reads ON above the threshold |
-| `ptfe_length:` | yes | — | Filament path length in encoder clicks; `0` until you run `OAMS_CALIBRATE_PTFE_LENGTH` (OpenAMS 1) or set it from your measurement with `cortex-bridge.py ptfe <mm>` (Cortex Bridge) |
+| `ptfe_length:` | yes | — | Filament path length in encoder clicks; `0` until you run `OAMS_CALIBRATE_PTFE_LENGTH` (OpenAMS 1, Cortex Bridge firmware 8 or later) or set it from your measurement with `cortex-bridge.py ptfe <mm>` (older bridge firmware) |
 | `device_kind:` | no | `auto` | `auto`, `ams1`, `ams_ht` or `ams2` |
 | `fps:` | no | sole lane | Which FPS lane this unit feeds |
 | `environment_sensor:` | no | sole HDC1080 | Host sensor object for ambient temperature and humidity |
@@ -221,7 +221,7 @@ the unit's `oams_idx`, except in the four group and spool-link commands and
 | `OAMS_UNLOAD_SPOOL` | `SPOOL=<bay>` (optional; refused if another bay is loaded) |
 | `OAMS_FOLLOWER` | `ENABLE=<0\|1>`, `DIRECTION=<0\|1>` |
 | `OAMS_CALIBRATE_HUB_HES` | `SPOOL=<bay>` |
-| `OAMS_CALIBRATE_PTFE_LENGTH` | `SPOOL=<bay>`; units that measure their own path only (not a Cortex Bridge AMS) |
+| `OAMS_CALIBRATE_PTFE_LENGTH` | `SPOOL=<bay>`; on a Cortex Bridge AMS (firmware 8 or later) also `MAX_LENGTH=<mm>`, the longest the full-speed feed may go, default 4000 |
 | `OAMS_PID_SET` | `P=`, `I=`, `D=`, `TARGET=` (optional) |
 | `OAMS_CURRENT_PID_SET` | `P=`, `I=`, `D=`, `TARGET=` (optional) |
 | `OAMS_PID_AUTOTUNE` | none; always answers that autotune is unsupported |

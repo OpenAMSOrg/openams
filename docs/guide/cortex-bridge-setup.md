@@ -284,11 +284,48 @@ that reads the buffer through the AMS. Three things need your printer's values.
 
 ### Filament path length
 
-OpenAMS refuses to load from an AMS whose `ptfe_length` is 0. Measure the
-filament path from the AMS outlet, through the buffer, to the extruder gears,
-in millimetres: the length of the tube from the AMS to the buffer, plus the
-tube from the buffer to the toolhead, plus the path inside the toolhead to the
-gears. Then convert it:
+OpenAMS refuses to load a bay whose `ptfe_length` is 0. With Cortex Bridge
+firmware 8 or later the AMS measures it for you; with older firmware you
+measure it by hand. `python3 ~/openams/tools/cortex-bridge.py version` shows
+which firmware the bridge runs, and [the update guide](cortex-bridge-update.md)
+installs a newer one.
+
+**Let the AMS measure it (firmware 8 or later).** Leave `ptfe_length: 0` for
+now and finish the cutter and the toolhead macros below. After the
+**FIRMWARE RESTART** at the end of this step, put filament in each bay you will
+use, stay with the printer, and run this in the Mainsail console, once per bay:
+
+```gcode
+OAMS_CALIBRATE_PTFE_LENGTH OAMS=1 SPOOL=0
+```
+
+`OAMS=` is the AMS's `oams_idx` (1 for the first), `SPOOL=` the bay, counted
+from 0. The hotend can stay cold: the extruder doesn't move. The AMS feeds the
+filament at full speed until the buffer compresses at the extruder gears,
+takes the distance there, and rewinds it to the bay:
+
+```text
+Calibrating ams1 Spool 1: the AMS feeds the filament to the toolhead (at most 4000 mm), measures the path at the buffer, and rewinds it. Stay with the printer.
+Calibrated ams1 Spool 1: 2034 mm of filament path, ptfe_length_0: 2319 (saved to /home/pi/printer_data/config/oams.cfg).
+```
+
+The result is saved as that bay's `ptfe_length_<bay>` and used at once. The
+feed stops after at most 4 m (plus 200 mm), so a disconnected tube never gets
+more than that; for a longer path, add `MAX_LENGTH=<millimetres>`.
+
+After that, every load reports the path it measured on the way, in the
+console, the first time for a bay and whenever it differs from `ptfe_length`
+by more than 100 mm, with the command that updates it:
+
+```text
+ams1 Spool 2 reached the toolhead after 2030 mm of filament path (ptfe_length: 2500 mm). To use the measured length, run OAMS_CALIBRATE_PTFE_LENGTH OAMS=1 SPOOL=1, or set ptfe_length_1: 2314 under [oams ams1].
+```
+
+**Measure it by hand (older firmware).** Measure the filament path from the
+AMS outlet, through the buffer, to the extruder gears, in millimetres: the
+length of the tube from the AMS to the buffer, plus the tube from the buffer
+to the toolhead, plus the path inside the toolhead to the gears. Then convert
+it:
 
 ```bash
 python3 ~/openams/tools/cortex-bridge.py ptfe 2050
@@ -308,22 +345,21 @@ The value is in the AMS's encoder clicks (1.14 per millimetre), which is why
 the command converts it. If one bay's path is longer than the others, give
 that bay its own value with `ptfe_length_<bay>:` (bays count from 0).
 
-The AMS measures nothing itself: `OAMS_CALIBRATE_PTFE_LENGTH` is for OpenAMS 1
-boards, and a Cortex Bridge AMS refuses it. The number comes from your
-measurement, so measure it, don't guess it:
+Either way, the length matters:
 
-- **What the length does.** A load runs at full speed until the buffer starts
-  to compress, then slows down and stops when the buffer reads arrival. The
+- **What it does.** A load runs at full speed until the buffer starts to
+  compress, then slows down and stops when the buffer reads arrival. The
   length limits the full-speed part: the bridge stops a load that has fed
   about 200 mm more than `ptfe_length` without the buffer compressing, so a
   broken or unplugged tube never gets metres of filament.
-- **Too short** stops every load before the toolhead. Klipper says
-  `Spool loading failed (the AMS stopped feeding before the toolhead buffer
-  reached arrival_threshold: ...)`, and the AMS reports `motion_timeout`.
-  Measure how far the filament tip stopped from the extruder gears: the path
-  is about your old length, plus 200 mm, plus that gap. Then clear the fault
-  with `OAMS_CLEAR_FAULT OAMS=<n>` and `OAMSM_CLEAR_ERRORS`, set the new
-  length, and load again.
+- **Too short** stops every load before the toolhead. Firmware 8 or later
+  says `Spool loading failed (the filament fed <n> mm (ptfe_length <n> mm +
+  200 mm) without the toolhead buffer reaching arrival_threshold: ...)`; older
+  firmware says `the AMS stopped feeding before the toolhead buffer reached
+  arrival_threshold`, and the AMS reports `motion_timeout`. Clear the fault
+  with `OAMS_CLEAR_FAULT OAMS=<n>` and `OAMSM_CLEAR_ERRORS`, then calibrate the
+  bay, or measure how far the filament tip stopped from the extruder gears:
+  the path is about your old length, plus 200 mm, plus that gap.
 - **Too long** is no fix either. When a spool runs out during a print, the
   reload of the next spool starts from this length, so a length longer than
   the path starts it late.
@@ -472,8 +508,10 @@ names the first thing to fix.
 | `The bridge reports a fault` | The bridge's own self-test failed | Unplug USB for 10 s; if it stays, write a support report (below). |
 | Klipper: `Unable to open serial port '/dev/oams/...'` | Klipper started before the AMS was up | Power the AMS, wait for `status` to show it online, then **FIRMWARE RESTART**. |
 | Klipper: `Can not update MCU '...' config as it is shutdown` | Klipper was stopped for more than a few seconds. The bridge stops an AMS whenever Klipper goes quiet, so nothing keeps running unattended | **FIRMWARE RESTART**. |
-| Klipper: `<ams> Spool N has no PTFE length` | `ptfe_length` is 0 for that AMS | [Measure and set it](#filament-path-length). `OAMS_CALIBRATE_PTFE_LENGTH` doesn't work on a Cortex Bridge AMS. |
-| A load stops before the toolhead with `the AMS stopped feeding before the toolhead buffer reached arrival_threshold` and fault `motion_timeout` | `ptfe_length` is shorter than the filament path, or the filament snagged | If the filament runs freely, the length is too short: [set it](#filament-path-length) to the old length plus 200 mm plus the gap left at the gears. Clear the fault with `OAMS_CLEAR_FAULT OAMS=<n>`, then `OAMSM_CLEAR_ERRORS`. |
+| Klipper: `<ams> Spool N has no PTFE length` | `ptfe_length` is 0 for that bay | Run the command the message names: `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` on firmware 8 or later, or [measure and set it](#filament-path-length) on older firmware. |
+| `PTFE calibration of <ams> Spool N failed: the filament fed <n> mm (MAX_LENGTH <n> mm + 200 mm) without reaching the toolhead buffer` | The path is longer than `MAX_LENGTH`, or the filament isn't reaching the toolhead | Look where the tip stopped. Running freely: run it again with a larger `MAX_LENGTH=`. Stuck: fix the path. |
+| `PTFE calibration ... failed: the filament stopped moving for 4 s` | A snag in the path, at a joint, a bend or the hub | Push filament by hand through the whole path; fix where it catches. |
+| A load stops before the toolhead: `the filament fed <n> mm (ptfe_length ... + 200 mm)` (firmware 8 or later) or `the AMS stopped feeding before the toolhead buffer reached arrival_threshold` (older), fault `motion_timeout` | `ptfe_length` is shorter than the filament path, or the filament snagged (`stopped moving for 4 s` on firmware 8) | Clear the fault with `OAMS_CLEAR_FAULT OAMS=<n>`, then `OAMSM_CLEAR_ERRORS`. If the filament runs freely, the length is too short: [calibrate the bay](#filament-path-length), or set the old length plus 200 mm plus the gap left at the gears. |
 | Loads stall, or the buffer reports arrival before the filament reaches the toolhead | Too much friction in the filament path | Check that every tube up to the coupler is 3 mm ID / 4 mm OD (not 2 mm ID), any 2 mm ID tube starts at the coupler's 2 end, the bends are gentle, the coupler and splitter joints are smooth, and the stronger buffer spring is fitted. |
 | A load stops just short of the toolhead | The buffer reading did not reach `arrival_threshold` | Lower it as the message suggests ([details](configure.md#host-confirmed-arrival-from-a-relayed-fps)). |
 | An unload ends in a unit fault | The filament tip stayed in the extruder gears | Use `toolhead_unload_macro: _OAMS_TOOLHEAD_EJECT`. |

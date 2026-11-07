@@ -668,9 +668,11 @@ List these in the report, with the commands. Never run them yourself.
 - **PTFE length:** `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<idx> SPOOL=<bay>`. Then set
   `ptfe_length` (`M_PTFE_ZERO`). Until then, a runout pauses instead of
   reloading.
-  - **Cortex Bridge AMS:** it can't calibrate itself. The human measures the
-    path from the AMS outlet to the extruder gears in millimetres; convert
-    it with `python3 ~/openams/tools/cortex-bridge.py ptfe <mm>`. Never guess
+  - **Cortex Bridge AMS:** with bridge firmware 8 or later, the same
+    command measures it (the human runs it, watching; `MAX_LENGTH=<mm>` for
+    a path over 4 m). With older firmware the human measures the path from
+    the AMS outlet to the extruder gears in millimetres; convert it with
+    `python3 ~/openams/tools/cortex-bridge.py ptfe <mm>`. Never guess
     it: too short stops every load before the toolhead (`motion_timeout`),
     too long makes a runout reload late.
 - **The printer's half, before the first load.** Each of these is a hand

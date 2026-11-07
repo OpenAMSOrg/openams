@@ -45,7 +45,7 @@ and half the troubleshooting are not.
 | Buffer | The OpenAMS FPS board and its slide, with the kit's spring | Bambu Lab's own filament buffer, with the stronger spring that ships with the bridge |
 | Connection | CAN, with the FPS board usually as the USB-to-CAN bridge; `[mcu …] canbus_uuid:` | A Cortex Bridge on USB; the `cortex-bridge` relay gives each AMS a serial port, `[mcu …] serial: /dev/oams/<uid>` |
 | Buffer reading | Wired to the FPS board: `[fps] pin: fps:PA2` | Relayed by the AMS: `[fps] source_oams: oams1`, with arrival confirmed by the host at `arrival_threshold` (default 0.65) |
-| `ptfe_length` | Calibrated: `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` | Measured and converted: `cortex-bridge.py ptfe <mm>` (encoder clicks, 1.14 per mm) |
+| `ptfe_length` | Calibrated: `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` | Bridge firmware 8 or later: the same command (the AMS's odometer measures it). Older: measured and converted, `cortex-bridge.py ptfe <mm>` (encoder clicks, 1.14 per mm) |
 | First check | `bringup_check.py --selftest`, then the CAN bus | `python3 ~/openams/tools/cortex-bridge.py status`, then the ladder |
 | Setup guide | [install](docs/guide/install.md), [configure](docs/guide/configure.md), [docs/stm32f072.md](docs/stm32f072.md) | [Set up a Cortex Bridge printer](docs/guide/cortex-bridge-setup.md) |
 
@@ -73,8 +73,13 @@ looks the same from the host; see `klipper_mmu/`.
     **a load that stops short of the gears, with the filament running freely,
     means `ptfe_length` is too short**, not a jam. The path is about the old
     length + 200 mm + the gap left at the gears. While `ptfe_length` is 0 the
-    AMS refuses to load. The AMS can't run `OAMS_CALIBRATE_PTFE_LENGTH`; the
-    human measures the path and converts it with `cortex-bridge.py ptfe <mm>`.
+    AMS refuses to load. From bridge firmware 8 the AMS measures it:
+    `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` (a human watches), every
+    load reports its measured path, and a failed load names its reason
+    (`fed <n> mm (ptfe_length + 200 mm)` or `stopped moving for 4 s`). Older
+    firmware can't: the human measures the path and converts it with
+    `cortex-bridge.py ptfe <mm>`, and the stop is the plain `motion_timeout`
+    above.
   - **Both:** never lengthen `ptfe_length` past the real path to "get it
     through". The runout reload starts from this length, so a long one
     reloads late.
