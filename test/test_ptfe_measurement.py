@@ -121,8 +121,8 @@ class ReasonTests(unittest.TestCase):
     def test_a_calibration_that_ran_past_its_limit_names_max_length(self):
         unit = make_unit()
         unit._ptfe_calibration_max_clicks = 3420  # 3000 mm
-        text = unit._failure_reason(S.OAMS_OP_CODE_TIMEOUT, 26,
-                                    calibrating=True)
+        unit._completed_action = unit.status_calibrating  # as at completion
+        text = unit._failure_reason(S.OAMS_OP_CODE_TIMEOUT, 26)
         self.assertIn("fed 3200 mm (MAX_LENGTH 3000 mm + 200 mm)", text)
         self.assertIn("larger MAX_LENGTH", text)
 
@@ -135,6 +135,16 @@ class ReasonTests(unittest.TestCase):
         text = make_unit()._failure_reason(S.OAMS_OP_CODE_ERROR_UNSPECIFIED,
                                            512 + 0x25)
         self.assertEqual(text, "the AMS reported error 0x25")
+
+    def test_older_bridge_firmware_gets_both_causes_of_a_load_timeout(self):
+        unit = make_unit(capabilities={"host_arrival_confirm": True},
+                         ptfe_length=1482)  # 1300 mm
+        unit._completed_action = unit.status_loading
+        text = unit._failure_reason(S.OAMS_OP_CODE_TIMEOUT, 0)
+        self.assertIn("fed past ptfe_length (1300 mm)", text)
+        self.assertIn("a snag in the path", text)
+        unit._completed_action = unit.status_calibrating
+        self.assertIsNone(unit._failure_reason(S.OAMS_OP_CODE_TIMEOUT, 0))
 
     def test_no_reason_without_the_capability_or_on_success(self):
         old = make_unit(capabilities={"op_reason": False})
@@ -301,6 +311,15 @@ class CalibrationBusyRetryTests(unittest.TestCase):
         self.assertIn("busy", str(caught.exception))
         self.assertLessEqual(clock[0], unit.CALIBRATION_BUSY_RETRY_S + 1.0)
         self.assertGreater(len(calls), 5)
+
+
+class SnapshotTests(unittest.TestCase):
+    def test_unload_and_calibrate_get_the_hardware_snapshot(self):
+        # The runtime builds the world only for these actions; without it the
+        # fed-bay rewind and the hub guard of a calibration see no filament
+        # (found on the printer, 2026-11-07).
+        self.assertIn(S.Unload, S.WORLD_ACTIONS)
+        self.assertIn(S.Calibrate, S.WORLD_ACTIONS)
 
 
 class MeasuredPathTests(unittest.TestCase):

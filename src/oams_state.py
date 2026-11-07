@@ -411,7 +411,10 @@ class UnitSessionLost:
 # a World for these; everything else (completions, timeouts, follower toggles)
 # is decided from LaneState alone. Keep this in sync with the reducer: a branch
 # that starts reading `lw` for a new action type must be added here.
-WORLD_ACTIONS = (Load, LoadBay, Tick, ClearErrors, FirmwareFaultCleared)
+# Unload reads it for a bay a stopped load left out; Calibrate for the
+# filament still in a hub.
+WORLD_ACTIONS = (Load, LoadBay, Unload, Calibrate, Tick, ClearErrors,
+                 FirmwareFaultCleared)
 
 
 # ===================================================================== effects

@@ -2821,15 +2821,18 @@ class OAMS(oams_ext.UnitHooks):
         # A unit that has just rewound (an unload, or a calibration's own
         # return to park) can answer Busy for a moment while it settles;
         # nothing started then, so try again for a few seconds.
-        deadline = self.reactor.monotonic() + self.CALIBRATION_BUSY_RETRY_S
+        reactor = getattr(self, "reactor", None)
+        deadline = (reactor.monotonic() + self.CALIBRATION_BUSY_RETRY_S
+                    if reactor is not None else 0.0)
         try:
             while True:
                 ok, value = self._calibrate("ptfe", bay)
-                if (ok or getattr(self, "_calibration_refusal", None)
+                if (ok or reactor is None
+                        or getattr(self, "_calibration_refusal", None)
                         or self.action_status_code != OAMS_OP_CODE_ERROR_BUSY
-                        or self.reactor.monotonic() >= deadline):
+                        or reactor.monotonic() >= deadline):
                     break
-                self.reactor.pause(self.reactor.monotonic() + 1.0)
+                reactor.pause(reactor.monotonic() + 1.0)
         finally:
             self.ptfe_calibrating = False
         if not ok:
@@ -2906,14 +2909,28 @@ class OAMS(oams_ext.UnitHooks):
         (AMS_CAP_OP_REASON: the terminal value names one of its AMS_REASON_*
         constants); None for a success, an older unit, or no reason."""
         caps = getattr(self, "capabilities", None) or {}
-        if (code == OAMS_OP_CODE_SUCCESS or not caps.get("op_reason")
-                or not isinstance(value, int) or value <= 0):
+        if code == OAMS_OP_CODE_SUCCESS:
+            return None
+        if not caps.get("op_reason"):
+            # Older bridge firmware reports only "timeout", whether the
+            # filament stalled or ran past its length: name both.
+            if (code == OAMS_OP_CODE_TIMEOUT
+                    and getattr(self, "needs_host_arrival", False)
+                    and getattr(self, "_completed_action", None)
+                    == getattr(self, "status_loading", None)):
+                return ("the AMS stopped feeding before the toolhead buffer"
+                        " reached arrival_threshold: either the filament"
+                        " stopped moving (a snag in the path), or it fed past"
+                        " ptfe_length (%.0f mm) and stopped there; if the tip"
+                        " stopped short of the extruder gears, ptfe_length is"
+                        " shorter than the filament path" % self.path_length_mm)
+            return None
+        if not isinstance(value, int) or value <= 0:
             return None
         names = caps.get("op_reasons") or {}
         if calibrating is None:
-            calibrating = (getattr(self, "action_status", None)
-                           == getattr(self, "status_calibrating", None)
-                           or getattr(self, "ptfe_calibrating", False))
+            calibrating = (getattr(self, "_completed_action", None)
+                           == getattr(self, "status_calibrating", None))
         base = next((code_ for code_, name in names.items()
                      if name == "ERROR_BASE"), None)
         if base is not None and base <= value < base + 0x100:
@@ -3026,6 +3043,9 @@ class OAMS(oams_ext.UnitHooks):
     def _apply_action_status(self, params, wire_gen=None):
         action = params["action"]
         code = params["code"]
+        # The completion's action, for the reason text: action_status is
+        # cleared before the completion is dispatched.
+        self._completed_action = action
         if self._use_wide_gen_protocol and wire_gen is not None:
             self._apply_action_status4(params, wire_gen)
             return
