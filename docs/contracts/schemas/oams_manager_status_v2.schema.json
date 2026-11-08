@@ -846,7 +846,7 @@
                     },
                     "purging": {
                       "type": "boolean",
-                      "description": "True while the loop holds the vents open."
+                      "description": "True while the unit's vents are open during a dry (firmware 10: while its loop held them open)."
                     },
                     "ah_gm3": {
                       "type": ["number", "null"],

@@ -344,11 +344,16 @@ chamber temperature), `vent_position` where the unit can read it, `purging=1`
 while the loop holds the vents open, and state 4 during the sealed cooldown;
 `remaining_s` is the requested time.
 
-Observed on hardware: the AMS acts on the open request only when its chamber
-temperature is within about 1 °C of the target, and once open it keeps the
-vents open until the dry ends; releasing the request does not close them.
-With firmware 10 the loop therefore opens the vents once per dry. Closing
-them mid-dry is planned for firmware 11.
+Observed on hardware (AMS HT and AMS 2 Pro, 2026-11-08): the AMS acts on the
+bridge's exhaust request only when its chamber temperature is within about
+1 °C of the target, and once open it keeps the vents open until the dry ends;
+releasing the request does not close them. A stock printer holds the request
+for about 9.5 s every 327 s for the whole dry. **Firmware 11 does exactly
+that** (plus a 0.3 s request at the start) and uses only `enable` and
+`cooldown_centic` from the tuning; the other fields are accepted and
+ignored. In its dryer status `purging=1` means the unit's vents are open, and
+`vent_position` is reported for the AMS HT too. Firmware 10 opened the vents
+once from the moisture loop above, with the same end.
 
 ### 4.5 Vent
 

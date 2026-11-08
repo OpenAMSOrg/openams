@@ -185,24 +185,29 @@ duration, so 0 stays 0), `odo_flags` (`start`, `base`, `rewind_seen`,
 firmware shows its odometer nowhere else, so this row is how a report shows
 the rewind profile of, say, an AMS 1 whose load failed.
 
-**Dryers** (section 0x13, bridge firmware 10, one 73-byte row per unit whose
-dryer vent loop has run since it was bound): `slot`, `index`, `vent_state`
-(`idle`, `heating`, `closed`, `open`, `cooldown`), `opened_by` (`none`,
-`plateau`, `forced`, `unit`), `closed_by` (`none`, `settled`, `max_open`,
-`cold`, `end`, `stopped`, `disabled`), `openings` this dry, `vent_flags`
-(`enabled`, `timed`, `forcing`, `cooling`, `fast`), `ended` (how the last
-sealed cooldown went: `cool_down`, `stop`, `unit_off`, `vents_opened`,
-`capped`), `ah_mgm3` (the loop's last moisture sample), `reply_ms`,
-`reply_length` and `reply`: the unit's latest dryer status answer as 110 hex
-digits (55 bytes, zero past `reply_length`). The reply is the one block of
-received bytes a report carries (the owner's decision below).
+**Dryers** (section 0x13, one 73-byte row per unit whose dryer schedule has
+run since it was bound). Bridge firmware 11: `slot`, `index`, `vent_state`
+(`idle`, `drying`, `forcing` while an exhaust request is held, `cooldown`),
+`opened_by` (`none`, `forced`: the vents opened during a request, `unit`:
+without one), `closed_by` (`none`, `end`, `stopped`, `disabled`), `pulses`
+(exhaust requests this dry, the start's included), `vent_flags` (`enabled`,
+`timed`, `forcing`, `cooling`, `fast`, `open_at_pulse`: open during the latest
+request, `vents_open`: open now), `ended` (how the last sealed cooldown went:
+`cool_down`, `stop`, `unit_off`, `vents_opened`: they opened again during it,
+`capped`), `last_pulse_ms`, `reply_ms`, `reply_length` and `reply`: the unit's
+latest dryer status answer as 110 hex digits (55 bytes, zero past
+`reply_length`). A row from firmware 10 (`system.app_version` 10) has the same
+bytes with that firmware's meanings: `vent_state` `closed`/`open`, `openings`
+and `ah_mgm3` (the loop's last moisture sample) instead of `pulses` and
+`last_pulse_ms`. The reply is the one block of received bytes a report
+carries (the owner's decision below).
 
 **Tested against the firmware's own encoder:**
 `test/fixtures/bridge_snapshot/vectors_v1.json` holds five bodies the bridge
 firmware's encoder wrote (a silent line, an AMS refused at an HT index with
 an unrecognised suffix, an admitted AMS Klipper has not configured, an AMS 1
 whose load stalled while it was still rewinding, and an AMS 2 Pro in the
-sealed cooldown after a dry), each with its exact
+sealed cooldown after a dry, encoded by bridge firmware 11), each with its exact
 decoded JSON; the decoder must reproduce it key for key and in order, and
 each must read as its class.
 
@@ -235,11 +240,13 @@ For example: `Last load of AMS df5d1d75218e failed: the AMS rewound from
 1200 mm to 601 mm and then stopped moving for 4 s, 6.2 s into the feed; it
 was still rewinding. AMS state: moving.`
 
-Then one sentence per dryer row (`bridge_snapshot.dryer_lines`): the vent
-state, the openings this dry, why the vents last opened and closed, the
-moisture, and how the last dry ended. For example: `Dryer of the AMS at index
-0: vents cooldown, 0 openings this dry; moisture 15.6 g/m³; the last dry
-ended with the cool-down request and the stop.`
+Then one sentence per dryer row (`bridge_snapshot.dryer_lines`): what the
+dry is doing, the exhaust requests sent, whether the vents are open and
+whether the AMS opened them on a request, why they last closed, and how the
+last dry ended. For example: `Dryer of the AMS at index 0: in the sealed
+cooldown, 1 exhaust request this dry, vents closed (the AMS opened them on a
+request); vents last closed at the end of the dry; the last dry ended with the
+cool-down request.`
 
 **In `status`:** when the relay runs and no AMS is online, `status` asks for
 the snapshot; if it has a reading, the next-step line becomes `No AMS

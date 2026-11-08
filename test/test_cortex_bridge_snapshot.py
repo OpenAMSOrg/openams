@@ -660,21 +660,39 @@ if __name__ == "__main__":
 
 
 class DryerRowTests(unittest.TestCase):
-    """Section 0x13 (bridge firmware 10): the vent loop's row per unit."""
+    """Section 0x13: the dryer row (bridge firmware 11: the stock printer's
+    exhaust schedule; firmware 10: its moisture loop)."""
 
     CASE = VECTORS["ams2_dryer_cooldown"]
 
     def test_the_row_decodes_and_reads(self):
         decoded = snap.decode_body(bytes.fromhex(self.CASE["body_hex"]))
         row = decoded["dryers"][0]
-        self.assertEqual((row["vent_state"], row["ah_mgm3"],
-                          row["reply_length"]), ("cooldown", 15606, 55))
+        self.assertEqual((row["vent_state"], row["pulses"],
+                          row["reply_length"]), ("cooldown", 1, 55))
+        self.assertIs(row["vent_flags"]["open_at_pulse"], True)
         self.assertEqual(len(row["reply"]), 110)
-        lines = snap.classify(decoded)["dryers"]
-        self.assertEqual(lines, [
-            "Dryer of the AMS at index 0: vents cooldown, 0 openings this "
-            "dry; moisture 15.6 g/m³; the last dry ended with the cool-down "
-            "request and the stop."])
+        self.assertEqual(snap.classify(decoded)["dryers"], [
+            "Dryer of the AMS at index 0: in the sealed cooldown, 1 exhaust "
+            "request this dry, vents closed (the AMS opened them on a "
+            "request); vents last closed at the end of the dry; the last dry "
+            "ended with the cool-down request."])
+
+    def test_a_firmware_10_row_keeps_its_own_names(self):
+        body = bytearray(bytes.fromhex(self.CASE["body_hex"]))
+        system = snap.decode_body(bytes(body))["system"]
+        # app_version is the system section's first field (u32, big-endian).
+        at = bytes(body).index(bytes((0x01, 25))) + 2
+        body[at:at + 4] = (10).to_bytes(4, "big")
+        decoded = snap.decode_body(bytes(body))
+        self.assertNotEqual(system["app_version"], 10)
+        row = decoded["dryers"][0]
+        self.assertIn("openings", row)
+        self.assertIn("ah_mgm3", row)
+        self.assertNotIn("pulses", row)
+        kept = snap.allowlisted(decoded)["dryers"][0]
+        self.assertEqual(kept["openings"], row["openings"])
+        self.assertIn("opening", snap.classify(decoded)["dryers"][0])
 
     def test_a_report_keeps_the_reply_and_nothing_else_raw(self):
         decoded = snap.decode_body(bytes.fromhex(self.CASE["body_hex"]))
@@ -693,4 +711,3 @@ class DryerRowTests(unittest.TestCase):
         decoded = snap.decode_body(SILENT_LINE_BODY)
         self.assertEqual(decoded["dryers"], [])
         self.assertEqual(snap.classify(decoded)["dryers"], [])
-

@@ -101,11 +101,16 @@ FLAG_BITS = ("model", "identity", "status", "announce", "conflict", "fresh",
              "synthetic")
 ODO_BITS = ("start", "base", "rewind_seen", "rewinding", "at_valid", "rule")
 # The dryer vent loop (bridge firmware 10, section 0x13).
-VENT_STATE = ("idle", "heating", "closed", "open", "cooldown")
+# Bridge firmware 11 follows the stock printer's schedule (an exhaust request
+# held about 9.5 s every 327 s); firmware 10 ran a moisture loop, and its rows
+# keep their own names (DRYER_V10, chosen by system.app_version).
+VENT_STATE = ("idle", "heating", "drying", "forcing", "cooldown")
+VENT_STATE_V10 = ("idle", "heating", "closed", "open", "cooldown")
 OPENED_BY = ("none", "plateau", "forced", "unit")
 CLOSED_BY = ("none", "settled", "max_open", "cold", "end", "stopped",
              "disabled")
-VENT_FLAG_BITS = ("enabled", "timed", "forcing", "cooling", "fast")
+VENT_FLAG_BITS = ("enabled", "timed", "forcing", "cooling", "fast",
+                  "open_at_pulse", "vents_open")
 ENDED_BITS = ("cool_down", "stop", "unit_off", "vents_opened", "capped")
 DRYER_REPLY_SIZE = 55
 
@@ -304,14 +309,28 @@ FEED_FAILURE = (
     _f("odo_flags", 1, _bitfield(ODO_BITS), "bits"),
     _f("ams_state", 1, _enum(AMS_STATE), "enum"),
 )
-# One row per unit whose dryer vent loop has run since it was bound.
+# One row per unit whose dryer schedule has run since it was bound.
 DRYER = (
     _f("slot", 1), _f("index", 1),
     _f("vent_state", 1, _enum(VENT_STATE), "enum"),
     _f("opened_by", 1, _enum(OPENED_BY), "enum"),
     _f("closed_by", 1, _enum(CLOSED_BY), "enum"),
-    _f("openings", 2),
+    _f("pulses", 2),
     _f("vent_flags", 1, _bitfield(VENT_FLAG_BITS), "bits"),
+    _f("ended", 1, _bitfield(ENDED_BITS), "bits"),
+    _f("last_pulse_ms", 4, _instant, "int?"),
+    _f("reply_ms", 4, _instant, "int?"),
+    _f("reply_length", 1),
+    _f("reply", DRYER_REPLY_SIZE, _reply, "reply", raw=True),
+)
+# The same 73 bytes from bridge firmware 10 (its moisture loop).
+DRYER_V10 = (
+    _f("slot", 1), _f("index", 1),
+    _f("vent_state", 1, _enum(VENT_STATE_V10), "enum"),
+    _f("opened_by", 1, _enum(OPENED_BY), "enum"),
+    _f("closed_by", 1, _enum(CLOSED_BY), "enum"),
+    _f("openings", 2),
+    _f("vent_flags", 1, _bitfield(VENT_FLAG_BITS[:5]), "bits"),
     _f("ended", 1, _bitfield(ENDED_BITS), "bits"),
     _f("ah_mgm3", 4), _f("reply_ms", 4, _instant, "int?"),
     _f("reply_length", 1),
@@ -391,6 +410,9 @@ def decode_body(body: bytes) -> dict:
             last_id = section_id
             continue                              # a later firmware's
         name, layout, table = known
+        if section_id == 0x13 and (out.get("system") or {}).get(
+                "app_version") == 10:
+            layout = DRYER_V10
         if not table and section_id == last_id:
             raise SnapshotError("the %s section appears twice" % name)
         last_id = section_id
@@ -570,43 +592,52 @@ def classify(snapshot) -> dict:
     return reading
 
 
-OPENED_TEXT = {"plateau": "once the moisture stopped rising",
-               "forced": "because an hour had passed",
-               "unit": "by the AMS itself"}
-CLOSED_TEXT = {"settled": "once the moisture stopped falling",
+STATE_TEXT = {"drying": "drying", "forcing": "drying, asking the AMS to "
+              "vent", "cooldown": "in the sealed cooldown", "idle": "idle",
+              "heating": "heating", "closed": "drying, vents closed",
+              "open": "drying, vents held open"}
+CLOSED_TEXT = {"end": "at the end of the dry", "stopped": "when the dry was "
+               "stopped", "disabled": "when the vents were left to the AMS",
+               "settled": "once the moisture stopped falling",
                "max_open": "at the longest opening",
-               "cold": "because the chamber fell 5 °C below target",
-               "end": "at the end of the dry", "stopped": "when the dry was "
-               "stopped", "disabled": "when the vent loop was turned off"}
+               "cold": "because the chamber fell 5 °C below target"}
 
 
 def dryer_lines(snapshot) -> list:
-    """One sentence per dryer row: the vent loop's state, its last opening
-    and closing and how its last dry ended, from the row's own fields."""
+    """One sentence per dryer row: what the dry is doing, the exhaust requests
+    sent (firmware 11) or the openings (firmware 10), whether the AMS's vents
+    are open, and how the last dry ended, from the row's own fields."""
     snap = snapshot or {}
     lines = []
     for row in snap.get("dryers") or []:
         if not isinstance(row, dict):
             continue
-        text = "Dryer of the AMS at index %s: vents %s" % (
-            row.get("index"), row.get("vent_state"))
-        openings = row.get("openings")
-        if isinstance(openings, int):
+        text = "Dryer of the AMS at index %s: %s" % (
+            row.get("index"), STATE_TEXT.get(row.get("vent_state"),
+                                             row.get("vent_state")))
+        flags = row.get("vent_flags") or {}
+        if isinstance(row.get("pulses"), int):
+            text += ", %d exhaust request%s this dry" % (
+                row["pulses"], "" if row["pulses"] == 1 else "s")
+            if "vents_open" in flags:
+                text += ", vents %s" % ("open" if flags["vents_open"]
+                                        else "closed")
+            if flags.get("open_at_pulse"):
+                text += " (the AMS opened them on a request)"
+        elif isinstance(row.get("openings"), int):
             text += ", %d opening%s this dry" % (
-                openings, "" if openings == 1 else "s")
-        if row.get("opened_by") in OPENED_TEXT:
-            text += "; last opened %s" % OPENED_TEXT[row["opened_by"]]
+                row["openings"], "" if row["openings"] == 1 else "s")
+            moisture = row.get("ah_mgm3")
+            if isinstance(moisture, int) and moisture:
+                text += "; moisture %.1f g/m³" % (moisture / 1000.0)
         if row.get("closed_by") in CLOSED_TEXT:
-            text += ", closed %s" % CLOSED_TEXT[row["closed_by"]]
-        moisture = row.get("ah_mgm3")
-        if isinstance(moisture, int) and moisture:
-            text += "; moisture %.1f g/m³" % (moisture / 1000.0)
+            text += "; vents last closed %s" % CLOSED_TEXT[row["closed_by"]]
         ended = row.get("ended") or {}
         if ended.get("cool_down") or ended.get("stop"):
             text += "; the last dry ended %s%s%s" % (
-                "with the cool-down request and the stop"
-                if ended.get("cool_down") else "with the stop",
-                ", the vents read open during the cooldown"
+                "with the cool-down request" if ended.get("cool_down")
+                else "with the stop",
+                ", the vents opened again during the cooldown"
                 if ended.get("vents_opened") else "",
                 ", at the 60-minute cap" if ended.get("capped") else "")
         lines.append(text + ".")
@@ -902,6 +933,10 @@ def allowlisted(snapshot) -> dict:
     out = {"format": FORMAT_1 if snap.get("format") == FORMAT_1 else None}
     for name, layout, table in SECTIONS.values():
         value = snap.get(name)
+        if name == "dryers":                  # a firmware 10 row's fields too
+            layout = layout + tuple(field for field in DRYER_V10
+                                    if field[0] not in
+                                    {f[0] for f in layout})
         if table:
             out[name] = [_allowed_fields(row, layout)
                          for row in (value if isinstance(value, list)

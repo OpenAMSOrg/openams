@@ -74,7 +74,7 @@ and the report asks it for them. Its first line is a plain reading, such as:
 | An AMS answers but the bridge refuses it: ... | The AMS reached the bridge and was turned away; the sentence gives the reason, for example an AMS index kept from another printer (power the AMS off and on). |
 | The bridge offers AMS `<id>` but Klipper does not use it. | The AMS is online. Check that an `[mcu]` section in `oams.cfg` has `serial: /dev/oams/<id>`, then **FIRMWARE RESTART**. |
 | Last load of AMS `<id>` failed: the AMS rewound from 1200 mm to 601 mm and then stopped moving for 4 s, 6.2 s into the feed; ... | What the AMS's own odometer showed around the failed load (or calibration): where it started, where it was when it failed, how long it had stopped moving, and whether it was still rewinding. Support reads it with the rest of the report. |
-| Dryer of the AMS at index 0: vents closed, 3 openings this dry; ... | Bridge firmware 10 or later: what the dryer's vents did during the last dry (why they last opened and closed, the moisture, how the dry ended). The report also carries the AMS's own dryer status bytes for support. |
+| Dryer of the AMS at index 0: drying, 4 exhaust requests this dry, vents open (the AMS opened them on a request); ... | Bridge firmware 10 or later: what the dryer did during the last dry (the bridge's requests to vent, whether the AMS opened its vents, how the dry ended). The report also carries the AMS's own dryer status bytes for support. |
 
 `cortex-bridge.py status` asks for the same reading when no AMS answers, and
 its last line names it. The bridge is only asked when it runs firmware 9 or

@@ -528,25 +528,22 @@ An AMS 2 Pro or AMS HT dries from Mainsail's panel or with
 `OAMS_DRYER_START OAMS=<n> TARGET=<C> DURATION=<s>`. The AMS HT needs its own
 power adapter for the heater.
 
-With older bridge firmware the vents stay closed for the whole dry, so the
-moisture the filament gives off has nowhere to go. With bridge firmware 10 or
-later, the bridge opens them. It does this from the moisture in the chamber,
-the absolute humidity it works out from the AMS's humidity and temperature
-readings:
+With bridge firmware 9 or older the vents stay closed for the whole dry, so
+the moisture the filament gives off has nowhere to go. From bridge firmware 11
+the bridge drives them the way a Bambu printer does:
 
-- Once the chamber is at temperature and the moisture has risen and stopped
-  rising, the bridge opens the vents. If that hasn't happened within an hour,
-  it opens them anyway.
-- The AMS then keeps them open until the dry ends, as it does on a Bambu
-  printer. Closing them in between comes with a later bridge firmware.
+- Every five and a half minutes it asks the AMS to vent. The AMS opens the
+  vents once the chamber is at temperature, and keeps them open until the dry
+  ends.
 - When the dry time is up, the heater stops and the vents close until the
-  chamber is below 45 °C.
+  chamber is below 45 °C (`dryer_cooldown_below:` in `[oams <name>]` changes
+  that; see [the reference](reference.md#oams-name)).
 
-The bridge does this by itself, so a dry finishes the same way when Klipper
-restarts. Mainsail's panel shows the humidity. `VENT=unit` on
-`OAMS_DRYER_START` leaves the vents to the AMS: closed for the whole dry. The
-numbers can be changed with the `dryer_vent_*` options in `[oams <name>]`; see
-[the reference](reference.md#oams-name).
+Bridge firmware 10 opened them once the moisture in the chamber stopped
+rising instead. The bridge does this by itself, so a dry finishes the same
+way when Klipper restarts. Mainsail's panel shows the vent position and the
+humidity. `VENT=unit` on `OAMS_DRYER_START` leaves the vents to the AMS:
+closed for the whole dry.
 
 ## Keep it up to date
 

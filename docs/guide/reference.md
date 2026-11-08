@@ -30,12 +30,8 @@ One section per unit. Required unless marked otherwise.
 | `ptfe_length_<bay>:` | no | shared `ptfe_length` | Per-bay path length override |
 | `spool_id_<bay>:` | no | — | Spoolman spool linked to that bay |
 | `link_source_<bay>:` | no | `manual` | `tag` or `manual`; written by the plugin |
-| `dryer_vent_rise:` | no | unit's own (two RH steps at the target) | Dryer vent loop (Cortex Bridge firmware 10 or later): how far the moisture must rise above where it started, in g/m³, before it stops rising and the vents open |
-| `dryer_vent_flat:` | no | unit's own (one RH step at the target per 10 minutes: about 0.10 at 55 °C, 0.29 at 80 °C) | The moisture counts as no longer rising, or no longer falling, while it moves less than this many g/m³ per minute |
-| `dryer_vent_hold:` | no | unit's own (120) | Seconds the moisture must stay level before the vents move |
-| `dryer_vent_min_open:` / `dryer_vent_max_open:` | no | unit's own (90 / 600) | Seconds the vents stay open at least and at most; 30 to 1800 |
-| `dryer_vent_min_interval:` / `dryer_vent_max_interval:` | no | unit's own (600 / 3600) | Seconds between openings at least and at most; 300 to 14400 |
-| `dryer_cooldown_below:` | no | unit's own (45) | At the end of a dry the vents stay closed until the chamber is below this, in °C; 35 to 60 |
+| `dryer_vent_rise:` / `dryer_vent_flat:` / `dryer_vent_hold:` / `dryer_vent_min_open:` / `dryer_vent_max_open:` / `dryer_vent_min_interval:` / `dryer_vent_max_interval:` | no | unit's own | Cortex Bridge firmware 10 only: the moisture loop's thresholds and timings (rise and flat in g/m³ and g/m³ per minute, the others in seconds; open 30 to 1800, intervals 300 to 14400). Firmware 11 follows a Bambu printer's schedule and ignores them |
+| `dryer_cooldown_below:` | no | unit's own (45) | Cortex Bridge firmware 10 or later: at the end of a dry the vents stay closed until the chamber is below this, in °C; 35 to 60 |
 
 A threshold list must hold one value or four. Anything else stops Klipper with
 `<option> requires one value (single-bay AMS HT) or four comma-separated values`.
@@ -231,7 +227,7 @@ the unit's `oams_idx`, except in the four group and spool-link commands and
 | `OAMS_PID_SET` | `P=`, `I=`, `D=`, `TARGET=` (optional) |
 | `OAMS_CURRENT_PID_SET` | `P=`, `I=`, `D=`, `TARGET=` (optional) |
 | `OAMS_PID_AUTOTUNE` | none; always answers that autotune is unsupported |
-| `OAMS_DRYER_START` | `TARGET=<C>`, `DURATION=<s>` (default 3600), `HOLD_AFTER=<0\|1>`, `ROTATE=<0\|1>`, `VENT=<auto\|unit>` (default `auto`: on Cortex Bridge firmware 10 or later the vents follow the moisture; `unit` leaves them to the AMS) |
+| `OAMS_DRYER_START` | `TARGET=<C>`, `DURATION=<s>` (default 3600), `HOLD_AFTER=<0\|1>`, `ROTATE=<0\|1>`, `VENT=<auto\|unit>` (default `auto`: on Cortex Bridge firmware 11 the bridge asks the AMS to vent as a Bambu printer does, firmware 10 opens them once the moisture stops rising; `unit` leaves them to the AMS, closed) |
 | `OAMS_DRYER_STOP` | none |
 | `OAMS_CLEAR_FAULT` | none |
 | `OAMS_RFID_SCAN` | `BAY=<bay>`: asks a unit that reads its own tags to read that bay ([using](using.md#units-that-read-their-own-tags)) |

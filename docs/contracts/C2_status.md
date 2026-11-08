@@ -455,7 +455,7 @@ its `identity.board` is `"oams-stm32f072"`.
 | `fan_pct` | number or null | % | `fan_permille / 10` |
 | `fault` | string | — | `telemetry.dryer.fault_name` (`src/oams.py:1428`), `none` when clear |
 | `adapter` | bool or null | — | whether the dryer's power adapter is connected, where the unit reports it; `null` elsewhere (H6). While it is `false`, `OAMS_DRYER_START` is refused and `supported_actions` omits `dryer_start` |
-| `vent` | object, only with `capabilities.dryer_vent_loop` | — | the dryer vent loop (C1 §4.4, Cortex Bridge firmware 10 or later): `position` (`telemetry.dryer.vent_position_name`: `unknown`, `closed`, `open`), `purging` (true while the loop holds the vents open) and `ah_gm3` (`telemetry.dryer.humidity_gm3`, the chamber's absolute humidity; `null` while 0) |
+| `vent` | object, only with `capabilities.dryer_vent_loop` | — | the dryer vent loop (C1 §4.4, Cortex Bridge firmware 10 or later): `position` (`telemetry.dryer.vent_position_name`: `unknown`, `closed`, `open`), `purging` (firmware 11: true while the unit's vents are open during a dry; firmware 10: while its loop held them open) and `ah_gm3` (`telemetry.dryer.humidity_gm3`, the chamber's absolute humidity; `null` while 0) |
 
 ### 4.8 `devices.<unit>.faults[]` — NEW-v2 (H1)
 
