@@ -162,23 +162,36 @@ update OpenAMS.
 
 **Decoding** (`bridge_snapshot.decode_body`): format 1, then
 `id | length | value` sections in ascending order: `system`, `line`,
-`master`, `discovery` and `host` once each, then `units`, `candidates` and
-`refusals` rows. Unknown ids are skipped, bytes after the known fields of a
-section are ignored, and a section shorter than its known fields, a cut
-header, ids out of order or another format make the snapshot malformed. Each
-field becomes one key, in wire order; enums become names (`unknown_<n>` for
-a value this host does not know); bit fields become objects of booleans;
-instants are `null` for never; the unit ID is 12 lowercase hex digits; the
-AMS version is a list of four integers; a tag suffix is its four characters,
-`null` for none, or `0x` and hex when not printable. The layout tables in
-`bridge_snapshot.py` are the reference on this side.
+`master`, `discovery` and `host` once each, then `units`, `candidates`,
+`feed_failures` and `refusals` rows. Unknown ids are skipped, bytes after the
+known fields of a section are ignored, and a section shorter than its known
+fields, a cut header, ids out of order or another format make the snapshot
+malformed. Each field becomes one key, in wire order; enums become names
+(`unknown_<n>` for a value this host does not know); bit fields become
+objects of booleans; instants are `null` for never; the unit ID is 12
+lowercase hex digits; the AMS version is a list of four integers; a tag
+suffix is its four characters, `null` for none, or `0x` and hex when not
+printable. The layout tables in `bridge_snapshot.py` are the reference on
+this side.
+
+**Feed failures** (section 0x12, one 24-byte row per admitted unit whose
+latest failure was a load or calibration): `slot`, `index`, the odometer in
+millimetres from park when the operation started, at its lowest and when it
+failed (`odo_start_mm`, `odo_low_mm`, `odo_at_mm`, signed, so a reading
+below park is negative), `since_progress_ms` (since the last counted
+progress; `null` for none), `feed_ms` (from the start to the failure; a
+duration, so 0 stays 0), `odo_flags` (`start`, `base`, `rewind_seen`,
+`rewinding`, `at_valid`, `rule`) and `ams_state` at the failure. Production
+firmware shows its odometer nowhere else, so this row is how a report shows
+the rewind profile of, say, an AMS 1 whose load failed.
 
 **Tested against the firmware's own encoder:**
-`test/fixtures/bridge_snapshot/vectors_v1.json` holds three bodies the bridge
+`test/fixtures/bridge_snapshot/vectors_v1.json` holds four bodies the bridge
 firmware's encoder wrote (a silent line, an AMS refused at an HT index with
-an unrecognised suffix, an admitted AMS Klipper has not configured), each with
-its exact decoded JSON; the decoder must reproduce it key for key and in
-order, and each must read as its class.
+an unrecognised suffix, an admitted AMS Klipper has not configured, and an
+AMS 1 whose load stalled while it was still rewinding), each with its exact
+decoded JSON; the decoder must reproduce it key for key and in order, and
+each must read as its class.
 
 **In the report** (`support_report.bridge_support_snapshot`): only the
 fields `bridge_snapshot.allowlisted` keeps, each checked against its decoded
@@ -197,6 +210,17 @@ and `raw` is not carried. The section starts with a plain reading,
 | `not-admitted` | the same without a refusal | the identification step it stopped at |
 | `unused-by-klipper` | an admitted unit Klipper has not configured or not talked to | check `[mcu] serial: /dev/oams/<uid>` and FIRMWARE_RESTART |
 | `none` | nothing above | none of the known patterns |
+
+After the class, one sentence per feed-failure row
+(`bridge_snapshot.feed_failure_lines`), built from the row's fields and its
+unit's `last_failure_kind` and nothing else: which operation failed, how the
+odometer moved (`rewound from <start> mm to <at> mm` when a rewind was seen
+or the reading fell, with the lowest reading when it is 10 mm or more from
+the last; the plain readings otherwise), how long it then made no progress,
+how far into the feed, whether it was still rewinding, and the AMS state.
+For example: `Last load of AMS df5d1d75218e failed: the AMS rewound from
+1200 mm to 601 mm and then stopped moving for 4 s, 6.2 s into the feed; it
+was still rewinding. AMS state: moving.`
 
 **In `status`:** when the relay runs and no AMS is online, `status` asks for
 the snapshot; if it has a reading, the next-step line becomes `No AMS

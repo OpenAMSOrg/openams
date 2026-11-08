@@ -96,6 +96,7 @@ POLICY_BITS = ("master", "motion", "dryer")
 HOST_BITS = ("attached", "configured", "heard")
 FLAG_BITS = ("model", "identity", "status", "announce", "conflict", "fresh",
              "synthetic")
+ODO_BITS = ("start", "base", "rewind_seen", "rewinding", "at_valid", "rule")
 
 
 def enum_name(table, value: int) -> str:
@@ -164,6 +165,11 @@ def _operation(value: int) -> dict:
 
 def _bitfield(names):
     return lambda value: _bits(names, value)
+
+
+def _signed(raw: bytes) -> int:
+    """A signed (two's complement) reading: below park is negative."""
+    return int.from_bytes(raw, "big", signed=True)
 
 
 def _uid(raw: bytes) -> str:
@@ -268,6 +274,18 @@ CANDIDATE = (
     _f("last_answer_ms", 4, _instant, "int?"), _f("ams_error", 1),
     _f("tag_suffix", 4, _suffix, "suffix", raw=True),
 )
+# One row per admitted unit whose latest failure was a load or calibration:
+# the odometer around it, in millimetres from park.
+FEED_FAILURE = (
+    _f("slot", 1), _f("index", 1),
+    _f("odo_start_mm", 4, _signed, raw=True),
+    _f("odo_low_mm", 4, _signed, raw=True),
+    _f("odo_at_mm", 4, _signed, raw=True),
+    _f("since_progress_ms", 4, _age, "int?"),
+    _f("feed_ms", 4),
+    _f("odo_flags", 1, _bitfield(ODO_BITS), "bits"),
+    _f("ams_state", 1, _enum(AMS_STATE), "enum"),
+)
 REFUSAL_ROW = (
     _f("at_ms", 4, _instant, "int?"), _f("index", 1),
     _f("reason", 1, _enum(REFUSAL), "enum"),
@@ -286,6 +304,7 @@ SECTIONS = {
     0x05: ("host", HOST, False),
     0x10: ("units", UNIT, True),
     0x11: ("candidates", CANDIDATE, True),
+    0x12: ("feed_failures", FEED_FAILURE, True),
     0x20: ("refusals", REFUSAL_ROW, True),
 }
 
@@ -511,7 +530,69 @@ def classify(snapshot) -> dict:
     checked in order: the bridge kept off the line, another controller on
     it, a silent line, bytes that never decode, an AMS that announces but is
     refused or never finishes identification, and an AMS the bridge offers
-    that Klipper never uses."""
+    that Klipper never uses. ``feed_failures`` adds one sentence for each
+    unit whose last load or calibration failed (``feed_failure_lines``)."""
+    reading = _classify(snapshot)
+    reading["feed_failures"] = feed_failure_lines(snapshot)
+    return reading
+
+
+def _seconds(ms: int) -> str:
+    return "%g s" % round(ms / 1000.0, 1)
+
+
+def feed_failure_lines(snapshot) -> list:
+    """One sentence per feed-failure row: what the odometer did around the
+    failed load or calibration, from the row's own fields and nothing more.
+    For example: "Last load of AMS df5d1d75218e failed: the AMS rewound from
+    1200 mm to 601 mm and then stopped moving for 4 s, 6.2 s into the feed;
+    it was still rewinding. AMS state: moving." """
+    snap = snapshot or {}
+    units = {unit.get("slot"): unit for unit in snap.get("units") or []
+             if isinstance(unit, dict)}
+    lines = []
+    for row in snap.get("feed_failures") or []:
+        if not isinstance(row, dict):
+            continue
+        unit = units.get(row.get("slot")) or {}
+        flags = row.get("odo_flags") or {}
+        kind = unit.get("last_failure_kind")
+        operation = {"load": "load", "calibrate": "calibration"}.get(
+            kind, "load or calibration")
+        who = "AMS %s" % unit["uid"] if unit.get("uid") else \
+            "the AMS at index %s" % row.get("index")
+        start, low, at = (row.get("odo_start_mm"), row.get("odo_low_mm"),
+                          row.get("odo_at_mm"))
+        known_start = flags.get("start") and isinstance(start, int)
+        known_at = flags.get("at_valid") and isinstance(at, int)
+        if known_start and known_at and (flags.get("rewind_seen") or
+                                         at < start):
+            motion = "the AMS rewound from %d mm to %d mm" % (start, at)
+            if isinstance(low, int) and abs(low - at) >= 10:
+                motion += " (lowest %d mm)" % low
+        elif known_start and known_at:
+            motion = "the odometer read %d mm at the start and %d mm at " \
+                "the failure" % (start, at)
+        elif known_at:
+            motion = "the odometer read %d mm at the failure" % at
+        else:
+            motion = "the odometer gave no reading at the failure"
+        since = row.get("since_progress_ms")
+        if isinstance(since, int):
+            motion += " and then stopped moving for %s" % _seconds(since)
+        feed = row.get("feed_ms")
+        if isinstance(feed, int):
+            motion += ", %s into the feed" % _seconds(feed)
+        if flags.get("rewinding"):
+            motion += "; it was still rewinding"
+        state = row.get("ams_state")
+        lines.append("Last %s of %s failed: %s.%s" % (
+            operation, who, motion,
+            " AMS state: %s." % state if state else ""))
+    return lines
+
+
+def _classify(snapshot) -> dict:
     snap = snapshot or {}
     boot = _get(snap, "system", "boot_status")
     genuine = _get(snap, "system", "genuine_status")
@@ -612,6 +693,7 @@ NESTED = {
     "image": {key: "bool" for key in IMAGE_BITS},
     "role": {key: "bool" for key in ROLE_BITS},
     "flags": {key: "bool" for key in FLAG_BITS},
+    "odo_flags": {key: "bool" for key in ODO_BITS},
     "host": dict({key: "bool" for key in HOST_BITS}, latch="enum"),
     "operation": {"active": "bool", "kind": "enum?"},
 }

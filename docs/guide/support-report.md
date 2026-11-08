@@ -73,6 +73,7 @@ and the report asks it for them. Its first line is a plain reading, such as:
 | Bytes arrive from the AMS but none of them decode. | Check the data cable: its orientation, its crimps, and that it is the right cable. |
 | An AMS answers but the bridge refuses it: ... | The AMS reached the bridge and was turned away; the sentence gives the reason, for example an AMS index kept from another printer (power the AMS off and on). |
 | The bridge offers AMS `<id>` but Klipper does not use it. | The AMS is online. Check that an `[mcu]` section in `oams.cfg` has `serial: /dev/oams/<id>`, then **FIRMWARE RESTART**. |
+| Last load of AMS `<id>` failed: the AMS rewound from 1200 mm to 601 mm and then stopped moving for 4 s, 6.2 s into the feed; ... | What the AMS's own odometer showed around the failed load (or calibration): where it started, where it was when it failed, how long it had stopped moving, and whether it was still rewinding. Support reads it with the rest of the report. |
 
 `cortex-bridge.py status` asks for the same reading when no AMS answers, and
 its last line names it. The bridge is only asked when it runs firmware 9 or

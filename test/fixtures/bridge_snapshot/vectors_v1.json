@@ -107,6 +107,7 @@
     },
     "units": [],
     "candidates": [],
+    "feed_failures": [],
     "refusals": []
    }
   },
@@ -247,6 +248,7 @@
       "tag_suffix": "N700"
      }
     ],
+    "feed_failures": [],
     "refusals": [
      {
       "at_ms": 4201,
@@ -411,6 +413,181 @@
      }
     ],
     "candidates": [],
+    "feed_failures": [],
+    "refusals": []
+   }
+  },
+  {
+   "name": "ams1_load_stalled_rewinding",
+   "reading": "none",
+   "body_hex": "01011900000009000055f21800007f007709000100000fa0000002b2023000005f5300000000000000000000000000000000000001f700000000000000000000000000000fa2000055b7000055b7031c0000036c000001f7000000c80000000000000000000000000000036c043300000000000000000000000000ff000000000000ff000000000000000000000000210000000000000000000001010000000000051600000001000000000000000000000000000000000000103800df5d1d75218e0002011d15000301f70000000055b70000010f070001000000000f0002010100ff07f800010003001b000041354e30303012180000000004b0000002580000025900000fa0000018313f03",
+   "message_hex": "04090112010203040001011900000009000055f21800007f007709000100000fa0000002b2023000005f5300000000000000000000000000000000000001f700000000000000000000000000000fa2000055b7000055b7031c0000036c000001f7000000c80000000000000000000000000000036c043300000000000000000000000000ff000000000000ff000000000000000000000000210000000000000000000001010000000000051600000001000000000000000000000000000000000000103800df5d1d75218e0002011d15000301f70000000055b70000010f070001000000000f0002010100ff07f800010003001b000041354e30303012180000000004b0000002580000025900000fa0000018313f03",
+   "decoded": {
+    "format": 1,
+    "system": {
+     "app_version": 9,
+     "uptime_ms": 22002,
+     "reset_flags": 24,
+     "boot_status": 0,
+     "genuine_status": 0,
+     "image": {
+      "tx": true,
+      "motion": true,
+      "dryer": true,
+      "tray_info": true,
+      "tag_read": true,
+      "diagnostics": true,
+      "production": true,
+      "application": false
+     },
+     "min_evidence": "hypothesis",
+     "policy": {
+      "requested": {
+       "master": true,
+       "motion": true,
+       "dryer": true
+      },
+      "effective": {
+       "master": true,
+       "motion": true,
+       "dryer": true
+      }
+     },
+     "role": {
+      "master": true,
+      "foreign_master": false,
+      "tx_fault": false,
+      "awaiting": true
+     },
+     "master_acquisitions": 1,
+     "master_since_ms": 4000,
+     "max_pass_gap_us": 690
+    },
+    "line": {
+     "bytes": 24403,
+     "parity_errors": 0,
+     "framing_errors": 0,
+     "noise_errors": 0,
+     "overruns": 0,
+     "messages": 503,
+     "check_errors": 0,
+     "malformed": 0,
+     "skipped_bytes": 0,
+     "first_rx_ms": 4002,
+     "last_rx_ms": 21943,
+     "last_answer_ms": 21943
+    },
+    "master": {
+     "requests": 876,
+     "answers": 503,
+     "unanswered": 200,
+     "send_failures": 0,
+     "foreign_requests": 0,
+     "unmatched_answers": 0,
+     "sent_messages": 876
+    },
+    "discovery": {
+     "announces": 0,
+     "first_announce_ms": null,
+     "last_announce_ms": null,
+     "last_announce_marker": null,
+     "last_announce_tag_family": "none",
+     "offers": 0,
+     "offer_giveups": 0,
+     "last_offer_index": null,
+     "last_offer_basis": "none",
+     "last_offer_ms": null,
+     "identity_conflicts": 0,
+     "candidates_dropped": 0,
+     "index_polls": 33,
+     "refused_unsupported_family": 0,
+     "refused_index_mismatch": 0,
+     "refused_over_capacity": 0,
+     "refused_duplicate_identity": 0,
+     "refused_tag_model_mismatch": 0,
+     "admitted": 1,
+     "candidates": 1,
+     "omitted": 0,
+     "last_announce_tag_suffix": null
+    },
+    "host": {
+     "usb_sessions": 1,
+     "protocol_faults": 0,
+     "recoveries": 0,
+     "host_messages": 0,
+     "host_dropped": 0,
+     "host_stale": 0,
+     "update_refused": 0,
+     "attach_refused": 0,
+     "roster_rejected": 0
+    },
+    "units": [
+     {
+      "slot": 0,
+      "uid": "df5d1d75218e",
+      "index": 0,
+      "link": "online",
+      "family": "ams1",
+      "ams_version": [
+       29,
+       21,
+       0,
+       3
+      ],
+      "answers": 503,
+      "timeouts": 0,
+      "last_answer_ms": 21943,
+      "ams_error": 0,
+      "motion_error": 0,
+      "ams_state": "idle",
+      "spools_present": 15,
+      "host": {
+       "attached": true,
+       "configured": true,
+       "heard": true,
+       "latch": "none"
+      },
+      "configurations": 1,
+      "host_quiet_ms": 0,
+      "operation": {
+       "active": false,
+       "kind": null
+      },
+      "stage": "none",
+      "fault_severity": "pause",
+      "fault_code": 257,
+      "fault_bay": 0,
+      "loaded_bay": null,
+      "path_mm": 2040,
+      "failures": 1,
+      "last_failure_kind": "load",
+      "last_failure_outcome": "timeout",
+      "last_failure_detail": 27,
+      "last_failure_ms": 16693,
+      "tag_suffix": "N000"
+     }
+    ],
+    "candidates": [],
+    "feed_failures": [
+     {
+      "slot": 0,
+      "index": 0,
+      "odo_start_mm": 1200,
+      "odo_low_mm": 600,
+      "odo_at_mm": 601,
+      "since_progress_ms": 4000,
+      "feed_ms": 6193,
+      "odo_flags": {
+       "start": true,
+       "base": true,
+       "rewind_seen": true,
+       "rewinding": true,
+       "at_valid": true,
+       "rule": true
+      },
+      "ams_state": "moving"
+     }
+    ],
     "refusals": []
    }
   }

@@ -140,6 +140,8 @@ def snapshot_text(result: dict, redactor: redact.Redactor) -> str:
         lines.append("Reading: " + reading["summary"])
         if reading.get("action"):
             lines.append("What to do: " + reading["action"])
+        # The odometer around each failed load or calibration.
+        lines.extend(reading.get("feed_failures") or [])
     else:
         lines.append(result.get("text") or "unavailable")
     lines.append("")

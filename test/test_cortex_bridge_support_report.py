@@ -958,6 +958,21 @@ class SnapshotTests(Fixture):
         self.assertIn('"ams_version": [\n', section)
         self.assertIn('"last_offer_basis": "marker_ht"', section)
 
+    def test_a_failed_load_shows_its_odometer_profile(self):
+        _, section = self.snapshot_section(
+            self.vector("ams1_load_stalled_rewinding"))
+        lines = section.splitlines()
+        self.assertEqual(lines[1], "Reading: The snapshot shows none of the "
+                         "known failure patterns.")
+        self.assertEqual(lines[2], "Last load of AMS df5d1d75218e failed: "
+                         "the AMS rewound from 1200 mm to 601 mm and then "
+                         "stopped moving for 4 s, 6.2 s into the feed; it "
+                         "was still rewinding. AMS state: moving.")
+        for field in ('"odo_start_mm": 1200', '"odo_low_mm": 600',
+                      '"since_progress_ms": 4000', '"feed_ms": 6193',
+                      '"rewinding": true'):
+            self.assertIn(field, section)
+
     def test_only_allowlisted_fields_reach_the_report(self):
         decoded = self.vector("admitted_not_configured")
         decoded = dict(decoded, serial=AMS_SERIAL, bridge={

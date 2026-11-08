@@ -128,6 +128,14 @@ def encode_candidate(index=0x80, link=4, refusal=2, waiting=0, family=2,
         first_seen_ms, last_answer_ms, ams_error, tag_suffix))
 
 
+def encode_feed_failure(slot=0, index=0, odo_start_mm=1200, odo_low_mm=600,
+                        odo_at_mm=601, since_progress_ms=4000, feed_ms=6193,
+                        odo_flags=0x3F, ams_state=3):
+    return section(0x12, struct.pack(
+        ">BBiiiIIBB", slot, index, odo_start_mm, odo_low_mm, odo_at_mm,
+        since_progress_ms, feed_ms, odo_flags, ams_state))
+
+
 def encode_refusal(at_ms=6000, index=0x80, reason=2, family=2,
                    model_class=3, tag_family=0, tag_suffix=b"N700"):
     return section(0x20, struct.pack(">IBBBBB4s", at_ms, index, reason,
@@ -192,7 +200,8 @@ class DecodeTests(unittest.TestCase):
                  for name, layout, _ in snap.SECTIONS.values()}
         self.assertEqual(sizes, {"system": 25, "line": 48, "master": 28,
                                  "discovery": 51, "host": 22, "units": 56,
-                                 "candidates": 29, "refusals": 13})
+                                 "candidates": 29, "feed_failures": 24,
+                                 "refusals": 13})
         self.assertEqual(len(body()), len(SILENT_LINE_BODY))
 
     def test_rows_decode(self):
@@ -491,6 +500,97 @@ class ReadingTests(unittest.TestCase):
             line=encode_line(bytes=9000, messages=700),
             discovery=encode_discovery(admitted=1, candidates=1))
         self.assertEqual(reading["class"], "none")
+
+
+class FeedFailureTests(unittest.TestCase):
+    """Section 0x12: the odometer around a unit's failed load or
+    calibration."""
+
+    def decode(self, *rows, unit_kind=0):
+        return snap.decode_body(body(
+            encode_unit(last_failure_kind=unit_kind, last_failure_outcome=3,
+                        host=0x07), *rows))
+
+    def test_rows_decode_signed_and_null(self):
+        decoded = self.decode(
+            encode_feed_failure(),
+            encode_feed_failure(slot=1, index=1, odo_start_mm=-25,
+                                odo_low_mm=-40, odo_at_mm=-31,
+                                since_progress_ms=0xFFFFFFFF, feed_ms=0,
+                                odo_flags=0x05, ams_state=99))
+        first, second = decoded["feed_failures"]
+        self.assertEqual(first, {
+            "slot": 0, "index": 0, "odo_start_mm": 1200, "odo_low_mm": 600,
+            "odo_at_mm": 601, "since_progress_ms": 4000, "feed_ms": 6193,
+            "odo_flags": {"start": True, "base": True, "rewind_seen": True,
+                          "rewinding": True, "at_valid": True, "rule": True},
+            "ams_state": "moving"})
+        self.assertEqual((second["odo_start_mm"], second["odo_low_mm"],
+                          second["odo_at_mm"]), (-25, -40, -31))
+        self.assertIsNone(second["since_progress_ms"])
+        self.assertEqual(second["feed_ms"], 0, "a duration, not an instant")
+        self.assertEqual(second["odo_flags"]["rewind_seen"], True)
+        self.assertEqual(second["odo_flags"]["base"], False)
+        self.assertEqual(second["ams_state"], "unknown_99")
+        self.assertEqual(list(decoded)[-3:],
+                         ["candidates", "feed_failures", "refusals"])
+
+    def lines(self, *rows, unit_kind=0):
+        return snap.classify(self.decode(*rows, unit_kind=unit_kind))[
+            "feed_failures"]
+
+    def test_the_rewind_profile_in_one_sentence(self):
+        self.assertEqual(self.lines(encode_feed_failure()), [
+            "Last load of AMS 0a1b2c3d4e5f failed: the AMS rewound from "
+            "1200 mm to 601 mm and then stopped moving for 4 s, 6.2 s into "
+            "the feed; it was still rewinding. AMS state: moving."])
+
+    def test_the_sentence_says_only_what_the_fields_say(self):
+        cases = (
+            # A lowest reading 10 mm or more from the last is named.
+            (encode_feed_failure(odo_low_mm=450), 0,
+             "Last load of AMS 0a1b2c3d4e5f failed: the AMS rewound from "
+             "1200 mm to 601 mm (lowest 450 mm) and then stopped moving for "
+             "4 s, 6.2 s into the feed; it was still rewinding. AMS state: "
+             "moving."),
+            # No rewind: the readings as they are.
+            (encode_feed_failure(odo_start_mm=0, odo_low_mm=0,
+                                 odo_at_mm=850, odo_flags=0x13,
+                                 since_progress_ms=4500, feed_ms=30000,
+                                 ams_state=1), 9,
+             "Last calibration of AMS 0a1b2c3d4e5f failed: the odometer read "
+             "0 mm at the start and 850 mm at the failure and then stopped "
+             "moving for 4.5 s, 30 s into the feed. AMS state: idle."),
+            # Nothing known but the feed time.
+            (encode_feed_failure(slot=3, index=2, odo_flags=0x00,
+                                 since_progress_ms=0xFFFFFFFF, feed_ms=1500,
+                                 ams_state=0), 0,
+             "Last load or calibration of the AMS at index 2 failed: the "
+             "odometer gave no reading at the failure, 1.5 s into the feed. "
+             "AMS state: unknown."),
+        )
+        for row, kind, expected in cases:
+            self.assertEqual(self.lines(row, unit_kind=kind), [expected])
+
+    def test_no_row_no_sentence(self):
+        self.assertEqual(snap.classify(SILENT_LINE)["feed_failures"], [])
+
+    def test_the_golden_vector_reads_as_its_profile(self):
+        decoded = VECTORS["ams1_load_stalled_rewinding"]["decoded"]
+        self.assertEqual(snap.classify(decoded)["feed_failures"], [
+            "Last load of AMS df5d1d75218e failed: the AMS rewound from "
+            "1200 mm to 601 mm and then stopped moving for 4 s, 6.2 s into "
+            "the feed; it was still rewinding. AMS state: moving."])
+
+    def test_only_its_fields_pass_the_allowlist(self):
+        decoded = self.decode(encode_feed_failure())
+        row = dict(decoded["feed_failures"][0], raw_line="0102030405",
+                   odo_flags=dict(decoded["feed_failures"][0]["odo_flags"],
+                                  extra=True))
+        kept = snap.allowlisted(dict(decoded, feed_failures=[row]))
+        self.assertNotIn("raw_line", kept["feed_failures"][0])
+        self.assertNotIn("extra", kept["feed_failures"][0]["odo_flags"])
+        self.assertEqual(kept["feed_failures"][0]["odo_at_mm"], 601)
 
 
 class AllowlistTests(unittest.TestCase):
