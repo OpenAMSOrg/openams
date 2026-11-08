@@ -615,6 +615,33 @@ def test_reload_without_a_fast_speed_is_one_move(setup):
     assert reloads[-1] == "G1 E%s F%s" % (total, variables["reload_speed"])
 
 
+@pytest.mark.parametrize("fast_speed", [0, 2400])
+def test_load_without_the_cutter_reloads_like_a_toolchange(setup, fast_speed):
+    # The default toolhead_load_macro is _OAMS_TOOLHEAD_LOAD: the printer has
+    # no LOAD_FILAMENT (the harness registers none, so calling it would raise),
+    # and the bare load pushes exactly what the toolchange pushes.
+    printer, manager, unit = setup()
+    assert manager.toolhead_load_macro == "_OAMS_TOOLHEAD_LOAD"
+    variables = printer.objects["gcode_macro _oams_macro_variables"].variables
+    variables["reload_fast_speed"] = fast_speed
+    variables["reload_slow_length"] = 12
+    printer.gcode.run_script("OPENAMS_LOAD GROUP=T1 SLOT=3")
+    toolchange = [command for command in printer.trace if is_reload(command)]
+    printer.gcode.run_script("OPENAMS_UNLOAD")
+    assert unit.current_spool is None
+    printer.trace.clear()
+    printer.gcode.run_script("OAMSM_LOAD_TO_TOOLHEAD GROUP=T1")
+    assert unit.current_spool == 2
+    bare = [command for command in printer.trace if is_reload(command)]
+    assert bare == toolchange and bare
+    feed = printer.trace.index("feed:2")
+    first = printer.trace.index(bare[0])
+    assert feed < printer.trace.index("SAVE_GCODE_STATE NAME=oams_toolhead_load") < first
+    assert printer.trace[first - 1] == "M83"
+    # The macro's own M400, then the manager's.
+    assert printer.trace[-3:] == ["RESTORE_GCODE_STATE NAME=oams_toolhead_load", "M400", "M400"]
+
+
 def test_ui_load_from_empty_uses_relative_extrusion(setup):
     printer, _, unit = setup()
     printer.gcode.run_script("OPENAMS_LOAD GROUP=T1 SLOT=3")
@@ -1549,7 +1576,7 @@ EXPECTED_MACROS = {
     "OPENAMS_LOAD", "OPENAMS_UNLOAD",
     "_LOAD_FS_IN", "_LOAD_FS_OUT", "_UNLOAD_FS_OUT",
     "OAMS_TORTURE_TEST", "OAMS_TOOLCHANGE_TORTURE_TEST", "T0", "T1", "T2", "T3",
-    "_OAMS_TOOLHEAD_EJECT"}
+    "_OAMS_TOOLHEAD_EJECT", "_OAMS_TOOLHEAD_LOAD", "_OAMS_RELOAD"}
 NEW_VARIABLES = {"extrusion_unload_additional_length": 250, "unload_speed": 1000,
                  "additional_unload_speed": 5000, "minimum_extrude_temperature": 0,
                  "unknown_material_temperature": 235, "max_operation_temperature": 0}

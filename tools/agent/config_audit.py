@@ -793,13 +793,14 @@ def check_macro_calls(tree, commands):
 # only in OAMSM_LOAD_TO_TOOLHEAD and OAMSM_UNLOAD_FROM_TOOLHEAD; a toolchange
 # (T<n>, _TX) does its own extruder moves.
 TOOLHEAD_MACROS = (
-    ("toolhead_load_macro", "LOAD_FILAMENT",
+    ("toolhead_load_macro", "_OAMS_TOOLHEAD_LOAD",
      "OAMSM_LOAD_TO_TOOLHEAD loads the AMS and then fails, with the filament"
-     " left at the toolhead; add an extruder-only %s macro or name one here"),
-    ("toolhead_unload_macro", "UNLOAD_FILAMENT",
-     "OAMSM_UNLOAD_FROM_TOOLHEAD fails before the AMS rewinds; use the shipped"
-     " _OAMS_TOOLHEAD_EJECT, which ejects the filament past the extruder"
-     " gears"),
+     " left at the toolhead; include oams_macros.cfg, which ships %s, or name"
+     " an extruder-only macro here"),
+    ("toolhead_unload_macro", "_OAMS_TOOLHEAD_EJECT",
+     "OAMSM_UNLOAD_FROM_TOOLHEAD fails before the AMS rewinds; include"
+     " oams_macros.cfg, which ships %s (it ejects the filament past the"
+     " extruder gears), or name an extruder-only macro here"),
 )
 
 
@@ -827,7 +828,7 @@ def check_toolhead_macros(tree, commands):
                         "use it."
                         % (option_name, name,
                            "" if option is not None else " (the default)",
-                           effect % name if "%s" in effect else effect))
+                           effect % default if "%s" in effect else effect))
 
 
 def check_summary(tree, units, lanes):

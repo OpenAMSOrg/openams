@@ -1,0 +1,210 @@
+// How the OpenAMS macros run: the state machine of oams_macros.cfg.
+// Render: dot -Tsvg macro-sequence.dot -o macro-sequence.svg
+//         rsvg-convert -z 2 macro-sequence.svg -o macro-sequence.png
+// Checked against a traced run of the shipped macros (test/test_openams_klipper.py
+// harness). Keep it in step with oams_macros.cfg and docs/guide/macro-sequence.md.
+digraph macros {
+  graph [rankdir=TB, newrank=true, compound=true, nodesep=0.3, ranksep=0.32, pad=0.3,
+         fontname="Helvetica", fontsize=13, bgcolor="white",
+         label=<<b>How the OpenAMS macros run</b><br/><font point-size="11">oams_macros.cfg, one toolchange (T&lt;n&gt;) from top to bottom</font>>,
+         labelloc=t, labeljust=l];
+  node  [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11,
+         margin="0.14,0.06", penwidth=1.3];
+  edge  [fontname="Helvetica", fontsize=10, color="#5f6670", fontcolor="#3c4148", arrowsize=0.7];
+
+  // ---- who starts it --------------------------------------------------------
+  t_n     [shape=box, style="filled,bold", fillcolor="#ffffff", color="#2b2f36",
+           label=<<b>T0, T1, …</b><br/><font point-size="10">the slicer: print start and each colour change</font>>];
+  ui_load [shape=box, style="filled,bold", fillcolor="#ffffff", color="#2b2f36",
+           label=<<b>Panel Load</b><br/><font face="Courier" point-size="10">OPENAMS_LOAD GROUP= SLOT=</font>>];
+  ui_unload [shape=box, style="filled,bold", fillcolor="#ffffff", color="#2b2f36",
+           label=<<b>Panel Unload</b><br/><font face="Courier" point-size="10">OPENAMS_UNLOAD</font>>];
+
+  // ---- _TX: the toolchange --------------------------------------------------
+  subgraph cluster_tx {
+    label=<<font face="Courier"><b>_TX GROUP=T&lt;n&gt;</b></font>>; labeljust=l;
+    style="rounded,filled"; fillcolor="#f7f8fa"; color="#b9bfc8";
+    same    [shape=hexagon, fillcolor="#fff6cc", color="#b8900a",
+             label=<That group already loaded,<br/>or the object excluded?>];
+    plan    [fillcolor="#f0f1f4", color="#8a919b",
+             label=<<font face="Courier"><b>_OAMS_PLAN</b></font><br/><font point-size="10">works out the temperature, shows the plan on the displays</font>>];
+    home    [fillcolor="#efe5ff", color="#7d4fc7",
+             label=<<font face="Courier"><b>G28</b></font>   <font color="#7d4fc7"><b>home</b></font><br/><font point-size="10">only if the printer isn't homed</font>>];
+    loaded  [shape=hexagon, fillcolor="#fff6cc", color="#b8900a",
+             label=<Filament in the toolhead?>];
+    heat_tx [fillcolor="#f0f1f4", color="#8a919b",
+             label=<<font face="Courier"><b>_OAMS_HEAT</b></font>   <font color="#c0392b"><b>heat</b></font><br/><font point-size="10">your _OAMS_HOOK_BEFORE_HEAT, if any,<br/>then heats and waits, if colder</font>>];
+  }
+
+  // ---- SAFE_UNLOAD_FILAMENT: the unload -------------------------------------
+  subgraph cluster_unload {
+    label=<<font face="Courier"><b>SAFE_UNLOAD_FILAMENT</b></font>>; labeljust=l;
+    style="rounded,filled"; fillcolor="#f7f8fa"; color="#b9bfc8";
+    plan_u  [fillcolor="#f0f1f4", color="#8a919b", style="rounded,filled,dashed",
+             label=<<font face="Courier"><b>_OAMS_PLAN</b>, <b>G28</b></font><br/><font point-size="10">Panel Unload only: its own plan, homes if needed</font>>];
+    heat_u  [fillcolor="#f0f1f4", color="#8a919b",
+             label=<<font face="Courier"><b>_OAMS_HEAT</b></font>   <font color="#c0392b"><b>heat</b></font><br/><font point-size="10">your _OAMS_HOOK_BEFORE_HEAT, if any,<br/>then heats and waits, if colder</font>>];
+    follow  [fillcolor="#dceafe", color="#2f6fd0",
+             label=<<font face="Courier"><b>OAMSM_FOLLOWER</b></font><br/><font point-size="10">the AMS follows the extruder backwards</font>>];
+    ret1    [fillcolor="#ffeedd", color="#d9822b",
+             label=<<font face="Courier"><b>G1 E-retract_length</b></font>   <font color="#c0392b"><b>cut</b></font><br/><font point-size="10">a short retract before the cut</font>>];
+    cut     [fillcolor="#efe5ff", color="#7d4fc7",
+             label=<<font face="Courier"><b>CUT_FILAMENT</b></font><br/><font point-size="10">pre_cut → cut → post_cut, or your OAMS_CUT</font>>];
+    h_cut   [fillcolor="#e2f5e7", color="#2e8b4e", style="rounded,filled,dashed",
+             label=<<font face="Courier"><b>_OAMS_HOOK_AFTER_CUT</b></font><br/><font point-size="10">yours, if you wrote one</font>>];
+    ret2    [fillcolor="#ffeedd", color="#d9822b",
+             label=<<font face="Courier"><b>G1 E-extrusion_unload_length</b></font><br/><font point-size="10">pulls the cut end out of the extruder gears</font>>];
+    fs_u    [shape=hexagon, fillcolor="#fff6cc", color="#b8900a",
+             label=<<font face="Courier"><b>_UNLOAD_FS_OUT</b></font><br/><font point-size="10">filament gone from the extruder?<br/>(only with fs_extruder_out)</font>>];
+  }
+
+  subgraph cluster_finish_unload {
+    label=<<font face="Courier"><b>_OAMS_FINISH_UNLOAD</b></font>>; labeljust=l;
+    style="rounded,filled"; fillcolor="#f7f8fa"; color="#b9bfc8";
+    ret3    [fillcolor="#ffeedd", color="#d9822b",
+             label=<<font face="Courier"><b>G1 E-extrusion_unload_additional_length</b></font><br/><font point-size="10">an extra retract before the rewind</font>>];
+    rewind  [fillcolor="#dceafe", color="#2f6fd0",
+             label=<<font face="Courier"><b>OAMSM_UNLOAD_FILAMENT</b></font>   <font color="#c0392b"><b>retract</b></font><br/><font point-size="10">the AMS rewinds the filament to its bay</font>>];
+    confirm [shape=hexagon, fillcolor="#fff6cc", color="#b8900a",
+             label=<<font face="Courier"><b>_OAMS_CONFIRM_UNLOADED</b></font><br/><font point-size="10">the AMS says it's unloaded?</font>>];
+  }
+
+  // ---- the load -------------------------------------------------------------
+  subgraph cluster_after_unload {
+    label=<<font face="Courier"><b>_OAMS_CONTINUE_AFTER_UNLOAD</b></font>>; labeljust=l;
+    style="rounded,filled"; fillcolor="#f7f8fa"; color="#b9bfc8";
+    h_ret   [fillcolor="#e2f5e7", color="#2e8b4e", style="rounded,filled,dashed",
+             label=<<font face="Courier"><b>_OAMS_HOOK_AFTER_RETRACT</b></font><br/><font point-size="10">yours, if you wrote one (a swap only)</font>>];
+    feed    [fillcolor="#dceafe", color="#2f6fd0",
+             label=<<font face="Courier"><b>OAMSM_LOAD_FILAMENT</b></font>   <font color="#c0392b"><b>feed</b></font><br/><font point-size="10">the AMS feeds the group's next spool to the extruder gears,<br/>then follows the extruder</font>>];
+  }
+
+  subgraph cluster_after_load {
+    label=<<font face="Courier"><b>_OAMS_CONTINUE_AFTER_LOAD</b></font>>; labeljust=l;
+    style="rounded,filled"; fillcolor="#f7f8fa"; color="#b9bfc8";
+    did_load [shape=hexagon, fillcolor="#fff6cc", color="#b8900a",
+             label=<That group loaded?>];
+    fs_in   [shape=hexagon, fillcolor="#fff6cc", color="#b8900a",
+             label=<<font face="Courier"><b>_LOAD_FS_IN</b></font><br/><font point-size="10">filament at the extruder inlet?<br/>(only with fs_extruder_in)</font>>];
+  }
+
+  subgraph cluster_inlet {
+    label=<<font face="Courier"><b>_OAMS_CONTINUE_AFTER_INLET</b></font>>; labeljust=l;
+    style="rounded,filled"; fillcolor="#f7f8fa"; color="#b9bfc8";
+    reload  [fillcolor="#ffeedd", color="#d9822b",
+             label=<<font face="Courier"><b>_OAMS_RELOAD</b></font><br/><font point-size="10">the extruder pushes it from the gears into the melt zone:</font><br/><font face="Courier" point-size="10">extrusion_reload_length + retract_length</font><br/><font face="Courier" point-size="10">+ hotend_meltzone_compensation</font>>];
+    fs_out  [shape=hexagon, fillcolor="#fff6cc", color="#b8900a",
+             label=<<font face="Courier"><b>_LOAD_FS_OUT</b></font><br/><font point-size="10">filament past the extruder?<br/>(only with fs_extruder_out)</font>>];
+  }
+
+  subgraph cluster_finish {
+    label=<<font face="Courier"><b>_OAMS_FINISH_TOOLCHANGE</b></font>>; labeljust=l;
+    style="rounded,filled"; fillcolor="#f7f8fa"; color="#b9bfc8";
+    clean   [fillcolor="#e2f5e7", color="#2e8b4e",
+             label=<<font face="Courier"><b>CLEAN_NOZZLE</b></font><br/><font point-size="10">yours, required: wipe or purge</font>>];
+    h_feed  [fillcolor="#e2f5e7", color="#2e8b4e", style="rounded,filled,dashed",
+             label=<<font face="Courier"><b>_OAMS_HOOK_AFTER_FEED</b></font><br/><font point-size="10">yours, if you wrote one</font>>];
+    restore [fillcolor="#f0f1f4", color="#8a919b",
+             label=<<font face="Courier"><b>_OAMS_RESTORE</b>, <b>RESTORE_GCODE_STATE</b></font><br/><font point-size="10">heater back (idle printer only), toolhead back to the print</font>>];
+  }
+
+  done      [shape=box, style="rounded,filled,bold", fillcolor="#1f7a45", color="#1f7a45", fontcolor="white",
+             label=<<b>Done</b>: the print goes on>];
+  nothing   [shape=box, style="rounded,filled", fillcolor="#e9ecef", color="#8a919b",
+             label=<<b>Nothing moves</b>>];
+  unloaded  [shape=box, style="rounded,filled,bold", fillcolor="#1f7a45", color="#1f7a45", fontcolor="white",
+             label=<<b>Unloaded</b><br/><font point-size="10">Panel Unload ends here</font>>];
+
+  // Every failed check goes to the same place; one red node per check keeps
+  // the drawing readable.
+  node [shape=box, style="rounded,filled", fillcolor="#fde2e2", color="#c62828", fontcolor="#8e1b1b",
+        label=<<b>fail</b>>, fontsize=10, margin="0.08,0.03"];
+  f_u; f_c; f_l; f_in; f_out;
+
+  // ---- the flow -------------------------------------------------------------
+  t_n -> same;
+  ui_load -> same [label=" checks the slot first"];
+  same -> nothing [label=" yes"];
+  same -> plan [label=" no"];
+  plan -> home -> loaded;
+  loaded -> heat_tx [label=" no: an empty toolhead"];
+  loaded -> heat_u [label=" yes: a swap"];
+  heat_tx -> feed [label=" no unload"];
+
+  ui_unload -> plan_u -> heat_u;
+  heat_u -> follow -> ret1 -> cut -> h_cut -> ret2 -> fs_u;
+  fs_u -> f_u [label=" no", color="#c62828", fontcolor="#c62828"];
+  fs_u -> ret3 [label=" yes"];
+  ret3 -> rewind -> confirm;
+  confirm -> f_c [label=" no", color="#c62828", fontcolor="#c62828"];
+  confirm -> unloaded [label=" yes, Panel Unload"];
+  confirm -> h_ret [label=" yes, a toolchange"];
+  h_ret -> feed -> did_load;
+  did_load -> f_l [label=" no", color="#c62828", fontcolor="#c62828"];
+  did_load -> fs_in [label=" yes"];
+  fs_in -> f_in [label=" no", color="#c62828", fontcolor="#c62828"];
+  fs_in -> reload [label=" yes"];
+  reload -> fs_out;
+  fs_out -> f_out [label=" no", color="#c62828", fontcolor="#c62828"];
+  fs_out -> clean [label=" yes"];
+  clean -> h_feed -> restore -> done;
+
+  {rank=same; fs_u; f_u;}
+  {rank=same; confirm; f_c;}
+  {rank=same; did_load; f_l;}
+  {rank=same; fs_in; f_in;}
+  {rank=same; fs_out; f_out;}
+  {rank=same; t_n; ui_load;}
+  {rank=same; loaded; ui_unload;}
+
+  // ---- what "fail" does, and the other flows --------------------------------
+  node [shape=box, style="rounded,filled", fillcolor="#fde2e2", color="#c62828", fontcolor="#2b2f36",
+        fontsize=11, margin="0.14,0.06"];
+  failnote [label=<<b>fail</b>: <font face="Courier"><b>_OAMS_FAIL_TOOLCHANGE</b></font> → <font face="Courier"><b>_OAMS_ABORT</b></font><br/><font point-size="10">puts the G-code state back without moving, stops the AMS follower,<br/>then PAUSE and an error during a print, or only an error from the panel.<br/>The heater stays on, so a retry starts hot. The panel's Stop button<br/>ends the sequence the same way, before the next step.</font>>];
+
+  subgraph cluster_bare {
+    label=<<b>Without the cutter</b>>; labeljust=l;
+    style="rounded,filled"; fillcolor="#f7f8fa"; color="#b9bfc8";
+    node [fontcolor="#2b2f36", fontsize=11, margin="0.14,0.06"];
+    b_load  [shape=box, style="filled,bold", fillcolor="#ffffff", color="#2b2f36",
+             label=<<font face="Courier"><b>OAMSM_LOAD_TO_TOOLHEAD GROUP=</b></font>>];
+    b_feed  [style="rounded,filled", fillcolor="#dceafe", color="#2f6fd0",
+             label=<<font face="Courier"><b>OAMSM_LOAD_FILAMENT</b></font><br/><font point-size="10">the AMS feeds to the extruder gears</font>>];
+    b_tl    [style="rounded,filled", fillcolor="#f0f1f4", color="#8a919b",
+             label=<<font face="Courier"><b>_OAMS_TOOLHEAD_LOAD</b></font><br/><font point-size="10">heats if the spool's temperature is known<br/>and the nozzle is colder</font>>];
+    b_rel   [style="rounded,filled", fillcolor="#ffeedd", color="#d9822b",
+             label=<<font face="Courier"><b>_OAMS_RELOAD</b></font><br/><font point-size="10">the same move as a toolchange</font>>];
+    b_unload [shape=box, style="filled,bold", fillcolor="#ffffff", color="#2b2f36",
+             label=<<font face="Courier"><b>OAMSM_UNLOAD_FROM_TOOLHEAD</b></font>>];
+    b_fol   [style="rounded,filled", fillcolor="#dceafe", color="#2f6fd0",
+             label=<<font face="Courier"><b>OAMSM_FOLLOWER</b></font><br/><font point-size="10">the AMS follows the extruder backwards</font>>];
+    b_ej    [style="rounded,filled", fillcolor="#ffeedd", color="#d9822b",
+             label=<<font face="Courier"><b>_OAMS_TOOLHEAD_EJECT</b></font><br/><font point-size="10">heats if colder, 10 mm forward to soften<br/>the tip, 100 mm back in 25 mm moves</font>>];
+    b_rew   [style="rounded,filled", fillcolor="#dceafe", color="#2f6fd0",
+             label=<<font face="Courier"><b>OAMSM_UNLOAD_FILAMENT</b></font><br/><font point-size="10">the AMS rewinds it to its bay</font>>];
+    b_load -> b_feed -> b_tl -> b_rel;
+    b_unload -> b_fol -> b_ej -> b_rew;
+  }
+
+  runout [shape=box, style="rounded,filled", fillcolor="#f0f1f4", color="#8a919b", fontcolor="#2b2f36",
+          label=<<b>A spool runs out mid-print</b><br/><font point-size="10">no macro runs: OpenAMS feeds a spare bay of the same group,<br/>or runs PAUSE when it has none</font>>];
+
+  key [shape=plain, fontcolor="#2b2f36", fontsize=10, label=<
+    <table border="1" color="#b9bfc8" bgcolor="#ffffff" cellborder="1" cellspacing="5" cellpadding="5">
+      <tr><td colspan="2" border="0" align="left"><b>Key</b></td></tr>
+      <tr><td bgcolor="#dceafe" color="#2f6fd0">the AMS moves</td>
+          <td bgcolor="#ffeedd" color="#d9822b">the extruder moves</td></tr>
+      <tr><td bgcolor="#efe5ff" color="#7d4fc7">the toolhead moves</td>
+          <td bgcolor="#e2f5e7" color="#2e8b4e">your macro (dashed: optional)</td></tr>
+      <tr><td bgcolor="#fff6cc" color="#b8900a">a check</td>
+          <td bgcolor="#ffffff" color="#8a919b"><font color="#c0392b"><b>heat</b></font>: the step the displays show</td></tr>
+    </table>>];
+
+  // Park the side panels top right, above the first check that can fail, so
+  // each red "fail" sits next to its check.
+  {rank=same; same; nothing; key;}
+  key -> b_load [style=invis];
+  key -> b_unload [style=invis];
+  b_rel -> runout [style=invis];
+  runout -> failnote [style=invis];
+}

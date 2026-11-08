@@ -306,7 +306,7 @@ fi | tee ~/openams-agent-audit.txt
 | `E_MACRO_MISSING` | an OpenAMS macro calls a command nothing defines (usually `CLEAN_NOZZLE`) | section 6.5 |
 | `W_FOREIGN_MMU` | another MMU system is configured | same as `FOREIGN_MMU` in section 1.2 |
 | `W_TOOL_MACRO` | a `T<n>` macro is defined outside OpenAMS's files | section 6.5 |
-| `W_TOOLHEAD_MACRO` | `[oams_manager]`'s `toolhead_load_macro` or `toolhead_unload_macro` names a macro the running Klipper does not have (defaults `LOAD_FILAMENT`, `UNLOAD_FILAMENT`) | section 6.5 |
+| `W_TOOLHEAD_MACRO` | `[oams_manager]`'s `toolhead_load_macro` or `toolhead_unload_macro` names a macro the running Klipper does not have (defaults `_OAMS_TOOLHEAD_LOAD`, `_OAMS_TOOLHEAD_EJECT`) | section 6.5 |
 | `M_MACRO_UNVERIFIED` | no `--commands` (Klipper not ready): a call that could not be checked | run section 5 again once Klipper is `ready` |
 | `M_CUTTER`, `M_PTFE_ZERO`, `M_FPS_ORIENTATION`, `M_RFID_FIRMWARE` | only a human can confirm these | do not change them; list them in the report (section 9) |
 | `I_*` | information | copy the `I_SUMMARY` lines into the report |
@@ -514,12 +514,13 @@ already used by another `[mcu]`. If there is more than one: ASK.
 - **`W_TOOLHEAD_MACRO`:** `OAMSM_LOAD_TO_TOOLHEAD` and
   `OAMSM_UNLOAD_FROM_TOOLHEAD` call these macros after the AMS loads and
   before it rewinds; toolchanges don't.
-  - For the unload macro, set `toolhead_unload_macro: _OAMS_TOOLHEAD_EJECT` in
-    `[oams_manager]` (it ships with OpenAMS).
-  - For the load macro, ASK: "OAMSM_LOAD_TO_TOOLHEAD calls <name> after the
-    AMS load, and this printer has none. Do you have an extruder-only load
-    macro I should name, or should I leave it (toolchanges don't need it)?"
-    Never write an extruder macro yourself.
+  - Both defaults, `_OAMS_TOOLHEAD_LOAD` and `_OAMS_TOOLHEAD_EJECT`, ship in
+    `oams_macros.cfg`, so this warning means `oams_macros.cfg` is not
+    included, or the option names a macro that does not exist. Include
+    `oams_macros.cfg` (section 6.5), or ASK: "OpenAMS calls <name> around a
+    load or unload without the cutter, and this printer has none. Should I
+    remove the line, so the shipped macro is used?" Never write an extruder
+    macro yourself.
 - **`W_TOOL_MACRO`:** a `T<n>` macro exists for a group OpenAMS's file does not
   define. Leave it, and list it in the report.
 - **`CLEAN_NOZZLE`** is called by every toolchange, after the load. It is the

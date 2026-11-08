@@ -246,21 +246,29 @@ repository ships a placeholder, never a key; keep yours in your own config.
 The manager owns topology validation, the runout monitor and the load callbacks.
 Nothing here is required. Two options are easy to get wrong:
 
-- `toolhead_load_macro:` and `toolhead_unload_macro:` (default `LOAD_FILAMENT`
-  and `UNLOAD_FILAMENT`) are extruder-only callbacks for `OAMSM_LOAD_TO_TOOLHEAD`
-  and `OAMSM_UNLOAD_FROM_TOOLHEAD`, the loads and unloads that do not cut.
-  Screens and `T<n>` run the toolchange instead and do not call them. They must
-  not call an `OAMSM_*` command, and the name must be one macro (letters, digits
-  and underscores), or Klipper says `toolhead_load_macro must name one non-OAMSM
-  G-code macro (letters, digits, underscores only)`.
+- `toolhead_load_macro:` and `toolhead_unload_macro:` (default
+  `_OAMS_TOOLHEAD_LOAD` and `_OAMS_TOOLHEAD_EJECT`) are extruder-only callbacks for
+  `OAMSM_LOAD_TO_TOOLHEAD` and `OAMSM_UNLOAD_FROM_TOOLHEAD`, the loads and
+  unloads that do not cut. Screens and `T<n>` run the toolchange instead and do
+  not call them. They must not call an `OAMSM_*` command, and the name must be
+  one macro (letters, digits and underscores), or Klipper says
+  `toolhead_load_macro must name one non-OAMSM G-code macro (letters, digits,
+  underscores only)`.
+
+  `_OAMS_TOOLHEAD_LOAD` ships in `oams_macros.cfg`. It is the toolchange's own
+  reload (`_OAMS_RELOAD`: `extrusion_reload_length` + `retract_length` +
+  `hotend_meltzone_compensation` at `reload_speed`), after heating to the loaded
+  lane's `filament_temp_c` when the nozzle is colder, so the printer needs no
+  `LOAD_FILAMENT`. Name a macro of your own only when your toolhead needs
+  something the reload does not do.
 
   The unload macro must heat the extruder and eject the filament past the
   extruder gears (about 100 mm) before the unit rewinds it. A stock
   `UNLOAD_FILAMENT` retracts 30 to 40 mm, which leaves the tip in the gears and
-  ends the unload in a unit fault. `oams_macros.cfg` ships
-  `_OAMS_TOOLHEAD_EJECT` (heat to the loaded lane's `filament_temp_c`, soften,
-  retract 100 mm in 25 mm moves; tune `variable_eject_distance` and friends);
-  set `toolhead_unload_macro: _OAMS_TOOLHEAD_EJECT` to use it.
+  ends the unload in a unit fault. The default, `_OAMS_TOOLHEAD_EJECT` in
+  `oams_macros.cfg`, heats to the loaded lane's `filament_temp_c`, softens the
+  tip and retracts 100 mm in 25 mm moves (tune `variable_eject_distance` and
+  friends), so the printer needs no `UNLOAD_FILAMENT` either.
 
 - `openams_config_path:` (default `oams.cfg` beside `printer.cfg`) is where group
   edits and calibration results are written. Set it when your `[oams]` and
@@ -275,7 +283,8 @@ The remaining options and the six policy switches are in
 Two printers, two toolchanges. Some of the work belongs to your machine, not
 to OpenAMS, so there are places to put it — in **your own file**, never in
 `oams_macros.cfg`, which is a link to the checkout and changes with every update. `oams.cfg` is as good a place as
-any, and it is yours.
+any, and it is yours. [How the macros run](macro-sequence.md) shows where each
+of these places sits in the toolchange.
 
 **The cutter.** Define `OAMS_CUT` and it makes the cut instead of the
 coordinates in `_oams_macro_variables`; the progress bar still says `cut`:

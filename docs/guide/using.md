@@ -31,16 +31,17 @@ OAMSM_UNLOAD_FROM_TOOLHEAD
 ```
 
 `OAMSM_LOAD_TO_TOOLHEAD` loads the group (its lane follows from the group), then
-runs your `toolhead_load_macro` (default `LOAD_FILAMENT`) to capture and prime
-it.
+runs your `toolhead_load_macro`. The default, `_OAMS_TOOLHEAD_LOAD` from
+`oams_macros.cfg`, heats to the loaded lane's temperature when the nozzle is
+colder and pushes the filament into the melt zone with the toolchange's own
+reload, from your lengths in `_oams_macro_variables`.
 
 `OAMSM_UNLOAD_FROM_TOOLHEAD` arms the MCU-owned reverse follower, runs your
-`toolhead_unload_macro` (default `UNLOAD_FILAMENT`), waits for its motion queue,
-then starts the autonomous rewind. The macro must heat and eject the filament
-past the extruder gears (about 100 mm); a stock 30 to 40 mm `UNLOAD_FILAMENT`
-leaves the tip in the gears and the unload ends in a unit fault. Set
-`toolhead_unload_macro: _OAMS_TOOLHEAD_EJECT` to use the macro shipped in
-`oams_macros.cfg`. On a multi-lane printer, add `FPS=<lane>`. A
+`toolhead_unload_macro`, waits for its motion queue, then starts the autonomous
+rewind. The macro must heat and eject the filament past the extruder gears
+(about 100 mm); a stock 30 to 40 mm `UNLOAD_FILAMENT` leaves the tip in the
+gears and the unload ends in a unit fault. The default, `_OAMS_TOOLHEAD_EJECT`
+from `oams_macros.cfg`, does that. On a multi-lane printer, add `FPS=<lane>`. A
 retract-macro failure disarms the reverse follower rather than rewinding against
 an unknown toolhead state.
 
@@ -48,7 +49,7 @@ an unknown toolhead state.
 custom macros. They move the AMS only and leave the extruder to you.
 
 If a load reaches the toolhead but the extruder macro fails, OpenAMS says so
-(`AMS load reached the toolhead, but LOAD_FILAMENT failed: <reason>. ...`) and does
+(`AMS load reached the toolhead, but _OAMS_TOOLHEAD_LOAD failed: <reason>. ...`) and does
 not unwind. Leaving the filament loaded with its follower armed is safer
 than a blind rewind.
 
@@ -62,11 +63,14 @@ T0
 T1
 ```
 
-Each `T<n>` calls `_TX GROUP=T<n>`, which runs the whole sequence: check the hotend
-can extrude, home, cut the old filament, retract, rewind, load the new spool,
-check the inlet, purge with `CLEAN_NOZZLE`, reload, check the outlet. On failure
-it stops the follower, `PAUSE`, and raises a G-code error, so an SD print ends
-through `on_error_gcode` instead of continuing without filament.
+Each `T<n>` calls `_TX GROUP=T<n>`, which runs the whole sequence: home if
+needed, heat, cut the old filament, retract, rewind it to its bay, feed the new
+spool to the extruder gears, check the inlet, reload it into the melt zone,
+check the outlet, then `CLEAN_NOZZLE`. On failure it stops the follower,
+`PAUSE`, and raises a G-code error, so an SD print ends through
+`on_error_gcode` instead of continuing without filament.
+[How the macros run](macro-sequence.md) draws every macro of it as a state
+machine and lists each command in order.
 
 Point the slicer at these names: set its toolchange G-code to `T` and the tool
 index. Its own multi-material moves (ramming, cooling moves, parking, loading,

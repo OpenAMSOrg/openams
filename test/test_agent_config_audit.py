@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -332,16 +333,35 @@ class MacroTest(ConfigAuditTest):
         self.assertEqual(codes_with(text, "E_MACRO_MISSING"), [])
         self.assertEqual(codes_with(text, "M_MACRO_UNVERIFIED"), [])
 
-    def test_missing_toolhead_macros_are_named(self):
-        # The sample leaves both callbacks at their defaults, and the idle
-        # printer registers neither LOAD_FILAMENT nor UNLOAD_FILAMENT.
+    def test_default_toolhead_macros_ship_with_the_macros(self):
+        # The sample leaves both callbacks at their defaults,
+        # _OAMS_TOOLHEAD_LOAD and _OAMS_TOOLHEAD_EJECT, which the included
+        # oams_macros.cfg defines: the printer needs no macro of its own.
         status, text = run("fresh_sample", "--commands", IDLE_HELP)
-        found = [line for line in text.splitlines()
+        self.assertNotIn("W_TOOLHEAD_MACRO", text)
+
+    def test_missing_toolhead_macros_are_named(self):
+        # Names that neither the config nor the running Klipper has.
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        shutil.copytree(case_dir("fresh_sample"), tmp, dirs_exist_ok=True)
+        path = os.path.join(tmp, "oams.cfg")
+        with open(path) as f:
+            text = f.read()
+        with open(path, "w") as f:
+            f.write(text.replace("[oams_manager]\n", "[oams_manager]\n"
+                                 "toolhead_load_macro: MY_LOAD\n"
+                                 "toolhead_unload_macro: MY_UNLOAD\n", 1))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            A.main(["--config-dir", tmp, "--commands", IDLE_HELP])
+        found = [line for line in out.getvalue().splitlines()
                  if line.startswith("WARN W_TOOLHEAD_MACRO")]
-        self.assertEqual(len(found), 2, text)
-        self.assertIn("toolhead_load_macro is LOAD_FILAMENT (the default)",
-                      found[0])
+        self.assertEqual(len(found), 2, out.getvalue())
+        self.assertIn("toolhead_load_macro is MY_LOAD,", found[0])
         self.assertIn("OAMSM_LOAD_TO_TOOLHEAD", found[0])
+        self.assertIn("_OAMS_TOOLHEAD_LOAD", found[0])
+        self.assertIn("toolhead_unload_macro is MY_UNLOAD,", found[1])
         self.assertIn("_OAMS_TOOLHEAD_EJECT", found[1])
 
     def test_toolhead_macros_are_not_checked_without_commands(self):

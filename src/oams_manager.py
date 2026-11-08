@@ -181,10 +181,14 @@ class OAMSManager(oams_ext.ManagerHooks):
         # UI-facing load/unload commands coordinate these printer-specific
         # extruder-only macros with the MCU-owned AMS motion. Keep them as bare
         # command names so arguments cannot accidentally inject another phase.
+        # Both default to the macros oams_macros.cfg ships: _OAMS_TOOLHEAD_LOAD
+        # (the toolchange's own reload) and _OAMS_TOOLHEAD_EJECT (heat, then
+        # eject past the gears; a stock 30-40 mm UNLOAD_FILAMENT leaves the tip
+        # in them), so a printer needs neither LOAD_FILAMENT nor UNLOAD_FILAMENT.
         self.toolhead_load_macro = self._macro_name(
-            config, "toolhead_load_macro", "LOAD_FILAMENT")
+            config, "toolhead_load_macro", "_OAMS_TOOLHEAD_LOAD")
         self.toolhead_unload_macro = self._macro_name(
-            config, "toolhead_unload_macro", "UNLOAD_FILAMENT")
+            config, "toolhead_unload_macro", "_OAMS_TOOLHEAD_EJECT")
         # File that runtime writeback (group edits, calibration results) is
         # written to — the OpenAMS config holding the [oams ...] and
         # [filament_group ...] sections. Defaults to oams.cfg next to the main

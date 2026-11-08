@@ -147,7 +147,8 @@ guard.
 ### `OAMSM_LOAD_TO_TOOLHEAD GROUP=<name>`
 `cmd_LOAD_TO_TOOLHEAD`, `oams_manager.py:772-786`. Runs
 `OAMSM_LOAD_FILAMENT` then the configured `toolhead_load_macro` (default
-`LOAD_FILAMENT`) followed by `M400`. On a macro failure the AMS load is
+`_OAMS_TOOLHEAD_LOAD`, the toolchange's reload, in `oams_macros.cfg`) followed
+by `M400`. On a macro failure the AMS load is
 **not** unwound (filament stays loaded, forward follower stays armed) —
 error text: `"AMS load reached the toolhead, but %s failed: %s. Filament
 remains loaded and forward following remains armed."`.

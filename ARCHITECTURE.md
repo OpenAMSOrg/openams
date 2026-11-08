@@ -251,7 +251,8 @@ Config-exposed (all defaulted, so none are required in the config):
 - `[oams] device_kind` — `auto` (default), `ams1`, `ams_ht`, or `ams2`.
 - `[oams_manager] toolhead_load_macro` / `toolhead_unload_macro` — bare names of
   printer-specific, extruder-only macros used by `OAMSM_LOAD_TO_TOOLHEAD` and
-  `OAMSM_UNLOAD_FROM_TOOLHEAD` (defaults: `LOAD_FILAMENT` / `UNLOAD_FILAMENT`).
+  `OAMSM_UNLOAD_FROM_TOOLHEAD` (defaults: `_OAMS_TOOLHEAD_LOAD` / `_OAMS_TOOLHEAD_EJECT`, both in
+  `oams_macros.cfg`).
   The unload macro must heat and eject the filament past the extruder gears
   (about 100 mm); `_OAMS_TOOLHEAD_EJECT` in `oams_macros.cfg` does. The
   manager waits for their queued motion. Reverse-follower cleanup is

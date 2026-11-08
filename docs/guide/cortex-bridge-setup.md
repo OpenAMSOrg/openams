@@ -397,50 +397,36 @@ printer, not yours. [Configure](configure.md#gcode_macro-_oams_macro_variables)
 explains each value, and how to replace the moves with your own `OAMS_CUT`
 macro.
 
-### The toolhead macros
+### The toolhead lengths
 
-OpenAMS asks your printer to grab the filament after a load
-(`toolhead_load_macro`, default `LOAD_FILAMENT`) and to eject it before an
-unload (`toolhead_unload_macro`, preset to `_OAMS_TOOLHEAD_EJECT`, which ships
-with OpenAMS and ejects the filament past the extruder gears). Your printer
-needs a `LOAD_FILAMENT` macro that only moves the extruder. Most printers
-already have one in `printer.cfg`; check what yours does.
+Under the cutter values, the same section has four lengths for your toolhead:
+`retract_length`, `extrusion_unload_length`, `extrusion_reload_length` and
+`hotend_meltzone_compensation`. A load stops the filament at the extruder
+gears; the extruder then pushes it `extrusion_reload_length` +
+`retract_length` + `hotend_meltzone_compensation` mm down into the melt zone.
+Every swap does this, and so does the first load below, so your printer needs
+no `LOAD_FILAMENT` macro of its own.
 
-*Why `LOAD_FILAMENT` is needed.* The AMS pushes the filament only as far as
-the extruder gears: there the buffer compresses and the AMS stops. The last
-stretch, from the gears through the hotend to the nozzle, is up to the
-extruder, and only your printer knows how long it is. So once the AMS has
-stopped, OpenAMS runs your `LOAD_FILAMENT`, and the AMS feeds along behind as
-the extruder pulls. It does this in `OAMSM_LOAD_TO_TOOLHEAD`, the load without
-the cutter that you use for the first load. Without the macro, that load fails
-with the filament left at the gears.
+The lengths in the file suit one toolhead (the Miro extruder), not yours. For
+starting values, find your toolhead, extruder, cutter and hotend in the list,
+then show that entry:
 
-*Why only extruder moves.* OpenAMS calls the macro in the middle of
-`OAMSM_LOAD_TO_TOOLHEAD` and waits for its moves to finish. All it needs there
-is the pull, so plain `G1 E` moves are enough. Everything else is done
-elsewhere: you heat the hotend before this load, and the toolchanges a print
-runs (`T0`, `T1`, ...) do their own cut, load and purge and never call
-`LOAD_FILAMENT`. A macro that heats to its own temperature, homes, parks or
-purges does work this load does not need; one that calls an `OAMSM_` command
-starts another AMS move in the middle of this one. A typical `LOAD_FILAMENT`:
-
-```ini
-[gcode_macro LOAD_FILAMENT]
-gcode:
-  M83            ; relative extrusion
-  G1 E30 F300    ; pull the tip from the gears down to the nozzle
-  G1 E15 F150    ; prime the nozzle, slower
-  M82            ; back to absolute extrusion
+```bash
+python3 ~/openams/tools/toolhead_defaults.py list
+python3 ~/openams/tools/toolhead_defaults.py show sb-cw2-filamatrix-dragonhf
 ```
 
-The lengths depend on your toolhead: the first move brings the tip from the
-gears to the nozzle, the second, slower one primes it. The hotend must be hot:
-if it is cold, Klipper refuses the move and OpenAMS stops with
-`AMS load reached the toolhead, but LOAD_FILAMENT failed`, leaving the
-filament at the gears. If your `LOAD_FILAMENT` does more than move the
-extruder, add an extruder-only macro under another name and set
-`toolhead_load_macro:` in `[oams_manager]` to it; see
+The first load is the test: raise `extrusion_reload_length` until the nozzle
+just oozes at the end of the reload, then take 1 mm off. Unloads are covered
+too: `toolhead_unload_macro` is `_OAMS_TOOLHEAD_EJECT`, which ships
+with OpenAMS and ejects the filament past the extruder gears before the AMS
+rewinds it. To use macros of your own instead, see
 [configure](configure.md#oams_manager).
+
+[How the macros run](macro-sequence.md) draws the whole toolchange as a state
+machine: every macro, in order, what it moves and which of these values sets
+it. It also lists the macros your printer provides: `CLEAN_NOZZLE` is the one
+every toolchange needs.
 
 When all three are set, restart Klipper (**FIRMWARE RESTART** in Mainsail).
 Use **FIRMWARE RESTART** after every change to `oams.cfg`, not **RESTART**:
@@ -510,8 +496,9 @@ your job is to watch the filament path.
    ```
 
    The filament travels to the buffer, then to the toolhead. When it reaches
-   the extruder the buffer compresses, the AMS stops, and your
-   `LOAD_FILAMENT` pulls it in.
+   the extruder the buffer compresses, the AMS stops, and the extruder pushes
+   it down into the melt zone by your reload length. Tune that length here
+   ([the toolhead lengths](#the-toolhead-lengths)).
 4. Unload it again:
 
    ```gcode
