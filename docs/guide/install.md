@@ -12,7 +12,9 @@ you already have. A Klipper extra is a Python file in `klippy/extras/`, so
 ## Requirements
 
 - Klipper and Moonraker installed, and a `printer_data/config` directory holding
-  `printer.cfg` and `moonraker.conf`.
+  `printer.cfg` and `moonraker.conf`. OpenAMS runs on current mainline Klipper
+  and on Kalico; gco-routines, which is optional, usually refuses Kalico
+  ([gco-routines](#gco-routines)).
 - An OpenAMS unit: a stock AMS on a Cortex Bridge (USB; see
   [Set up a Cortex Bridge printer](cortex-bridge-setup.md)), an AMS fitted with
   an OpenAMS 1 mainboard (STM32F072, usually on CAN), or an MMU running

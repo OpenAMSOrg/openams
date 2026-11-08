@@ -120,6 +120,7 @@ Prints one `KEY=value` per line, then any `STOP_REASON=` and `ASK=` lines, then
 | `mcu 'host': Unable to connect` | The Klipper user is not in group `tty`, so it cannot open `/tmp/klipper_host_mcu` | `sudo usermod -a -G tty <user>` and restart Klipper |
 | `Section '<x>' is not a valid config section` | The extra is not installed | Run `./install.sh` again |
 | `Unsupported Klipper GCodeDispatch baseline` | `[gco_routines]` is enabled on a Klipper gco-routines was not tested against, often right after a Klipper update | Comment out `[gco_routines]` and `[include oams_macros_ordered.cfg]`, or bring Klipper to a version it accepts ([gco-routines](install.md#gco-routines)) |
+| `Internal error during connect: 'MCU' object has no attribute 'register_serial_response'` | Kalico, or mainline Klipper from before 2026-02-26, with an OpenAMS from before 2026-11-08 | Update OpenAMS (`git -C ~/openams pull --ff-only`, then `./install.sh`), then `FIRMWARE_RESTART` |
 | `Unknown config object 'heaters'` | An OpenAMS from before 2026-10-18 reads `[hdc1080]` before any heater section, as it is when `[include oams.cfg]` sits above `[printer]` | Update OpenAMS; the include can stay where the installer put it |
 | `Option '<x>' in section '<y>' must be specified` | A required option is missing | Add it from [`oams_sample.cfg`](../../oams_sample.cfg) |
 | `bambu_lab_tag_processor key must contain exactly 16 hexadecimal bytes` | The tag key is missing or not 32 hex characters | Set a real key locally, never from a public repository |

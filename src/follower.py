@@ -39,6 +39,18 @@ from .oams_state import (
     FOLLOWER_FORWARD,
 )
 
+
+def _register_serial_response(mcu_obj, callback, msgformat, oid=None):
+    # Mainline Klipper's register_serial_response (2026-02-26), or the older
+    # register_response that Kalico still has; the same adapter as in oams.py.
+    register = getattr(mcu_obj, "register_serial_response", None)
+    if register is not None:
+        if oid is None:
+            return register(callback, msgformat)
+        return register(callback, msgformat, oid)
+    return mcu_obj.register_response(callback, msgformat.split()[0], oid)
+
+
 # Follower firmware protocol (see FOLLOWER_PROTOCOL.md). Gen echo and
 # firmware-owned liveness are mandatory from v1 — there is no legacy mode, so
 # a missing FOLLOWER_PROTOCOL_VERSION is a configuration error (wrong/plain
@@ -239,11 +251,13 @@ class Follower:
         self.runtime = None
         self.on_action_complete = None
 
-        self.mcu.register_serial_response(
+        _register_serial_response(
+            self.mcu,
             self._action_status_received,
             "follower_action_status oid=%c action=%c code=%c value=%u gen=%c",
             self.oid)
-        self.mcu.register_serial_response(
+        _register_serial_response(
+            self.mcu,
             self._stats_received,
             "follower_stats oid=%c pre=%c post=%c flags=%c step_count=%i"
             " velocity=%i", self.oid)

@@ -159,7 +159,7 @@ Read these keys. They decide later steps:
 | `PRINT_STATE` | `printing`, `paused` | STOP (rule 1). `standby`, `complete`, `cancelled`, `error`: go on |
 | `KLIPPER_SERVICES` | more than one | several printers on one host. ASK which one; then use `-s`, `-k`, `-c` in section 3 |
 | `KLIPPER_PATH`, `CONFIG_DIR` | not `~/klipper`, `~/printer_data/config` | pass `-k KLIPPER_PATH -c CONFIG_DIR` to `install.sh` |
-| `KLIPPER_FLAVOR` | `kalico` | supported; nothing changes. gco-routines may not be: read `GCO_BASELINE` |
+| `KLIPPER_FLAVOR` | `kalico` | supported, from OpenAMS 2026-11-08 on (older ones stop at connect with `'MCU' object has no attribute 'register_serial_response'`). gco-routines may not be: read `GCO_BASELINE` |
 | `KLIPPY_ENV_PYTHON` | below 3.9 | gco-routines will be skipped; add `--skip-gco-routines` |
 | `GCO_BASELINE` | `no` | gco-routines does not accept this Klipper. Install as usual: installing it changes nothing. It stays off (section 6.4); say so in the report |
 | `GCO_BASELINE` | `unknown` | `~/gco-routines` is not cloned yet. The installer prints the answer (section 3.2) |

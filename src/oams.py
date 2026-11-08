@@ -37,6 +37,36 @@ from .oams_state import (
     OAMS_ACTION_TIMEOUT,
 )
 
+# Mainline Klipper renamed MCU.register_response(callback, name, oid) to
+# register_serial_response(callback, msgformat, oid), and added
+# check_valid_response(msgformat), on 2026-02-26. Kalico, and mainline before
+# that date, have only the old names. These two call whichever the running
+# Klipper has. follower.py and external_irq.py carry the same register
+# adapter; a shared module would be linked into klippy/extras only by a fresh
+# ./install.sh, not by Moonraker's update.
+def register_serial_response(mcu_obj, callback, msgformat, oid=None):
+    register = getattr(mcu_obj, "register_serial_response", None)
+    if register is not None:
+        if oid is None:
+            return register(callback, msgformat)
+        return register(callback, msgformat, oid)
+    # The old API keys a handler on the message name alone.
+    return mcu_obj.register_response(callback, msgformat.split()[0], oid)
+
+
+def check_valid_response(mcu_obj, msgformat):
+    """True when the MCU's data dictionary has exactly this response."""
+    check = getattr(mcu_obj, "check_valid_response", None)
+    if callable(check):
+        return bool(check(msgformat))
+    # Kalico: try_lookup_command looks the format up in the same dictionary
+    # (responses included) and answers None when it is missing or differs.
+    lookup = getattr(mcu_obj, "try_lookup_command", None)
+    if callable(lookup):
+        return lookup(msgformat) is not None
+    return False
+
+
 # OAMS ptfe_length / encoder telemetry are in encoder clicks; this factor
 # converts clicks to filament millimetres. It is a property of the OAMS
 # hardware, so it lives here in the driver — the pure reducer reasons in mm
@@ -338,16 +368,16 @@ class OAMS(oams_ext.UnitHooks):
         self.runtime = None
         self.on_action_complete = None
 
-        self.mcu.register_serial_response(
+        self._register_response(
             self._action_status_received,
             "oams_action_status action=%c code=%c value=%u")
-        self.mcu.register_serial_response(
+        self._register_response(
             self._oams_cmd_stats,
             "oams_cmd_stats fps_value=%u hub_hes_value_0=%c hub_hes_value_1=%c"
             " hub_hes_value_2=%c hub_hes_value_3=%c f1s_hes_value_0=%c"
             " f1s_hes_value_1=%c f1s_hes_value_2=%c f1s_hes_value_3=%c"
             " encoder_clicks=%u")
-        self.mcu.register_serial_response(
+        self._register_response(
             self._oams_cmd_current_stats,
             "oams_cmd_current_status current_value=%u")
         self.mcu.register_config_callback(self._build_config)
@@ -1104,7 +1134,7 @@ class OAMS(oams_ext.UnitHooks):
                 self.oams_calibrate_ptfe_length4_cmd = ptfe4
                 self.oams_calibrate_hub_hes4_cmd = hub4
                 self.oams_cancel4_cmd = cancel4
-                self.mcu.register_serial_response(
+                self._register_response(
                     self._action_status4_received,
                     "oams_action_status4 action=%c code=%c value=%u gen=%u")
                 self._use_gen_protocol = True
@@ -1140,7 +1170,7 @@ class OAMS(oams_ext.UnitHooks):
             return
         # Only register the status2 handler once we know the firmware speaks it,
         # so old firmware never has a dangling response registration.
-        self.mcu.register_serial_response(
+        self._register_response(
             self._action_status2_received,
             "oams_action_status2 action=%c code=%c value=%u gen=%c")
         self._use_gen_protocol = True
@@ -1171,8 +1201,10 @@ class OAMS(oams_ext.UnitHooks):
     LINK_STATUS_RESPONSE = "ams_link_status reachable=%c"
 
     def _response_in_dictionary(self, response):
-        check = getattr(self.mcu, "check_valid_response", None)
-        return bool(check(response)) if callable(check) else False
+        return check_valid_response(self.mcu, response)
+
+    def _register_response(self, callback, response, oid=None):
+        return register_serial_response(self.mcu, callback, response, oid)
 
     #: The unsolicited completion messages and their handlers. Klipper logs
     #: a message with no handler ("got {...}") and drops it, so after a
@@ -1194,7 +1226,7 @@ class OAMS(oams_ext.UnitHooks):
             # finalized) for a response the dictionary lacks, so only the
             # variants the firmware advertises are registered.
             if self._response_in_dictionary(response):
-                self.mcu.register_serial_response(handler, response)
+                self._register_response(handler, response)
 
     # ------------------------------------------------- unit-decoded tray info
     # (C1 section 4.7.1: AMS_CAP_TRAY_INFO / AMS_CAP_TRAY_READ.)
@@ -1236,7 +1268,7 @@ class OAMS(oams_ext.UnitHooks):
             self.ams_tray_read_cmd = None
 
     def _register_tray_info_handler(self):
-        self.mcu.register_serial_response(
+        self._register_response(
             self._tray_info_received, self.TRAY_INFO_RESPONSE)
 
     def _register_tray_info_early(self):
@@ -1343,7 +1375,7 @@ class OAMS(oams_ext.UnitHooks):
             # A plain command and one persistent handler: the response comes
             # twice per write (admission, then completion), which a query
             # helper (one reply, then its handler removed) cannot take.
-            self.mcu.register_serial_response(
+            self._register_response(
                 self._tray_write_received, self.TRAY_WRITE_RESPONSE)
             self.ams_set_tray_info_cmd = self.mcu.lookup_command(
                 self.TRAY_WRITE_COMMAND)
@@ -1536,7 +1568,7 @@ class OAMS(oams_ext.UnitHooks):
         return bay in (self._tray_writes or {})
 
     def _register_link_status_handler(self):
-        self.mcu.register_serial_response(
+        self._register_response(
             self._link_status_received, self.LINK_STATUS_RESPONSE)
 
     def _register_link_status_early(self):
@@ -1709,7 +1741,7 @@ class OAMS(oams_ext.UnitHooks):
         for name, command, response, callback in specs:
             try:
                 handle = self.mcu.lookup_command(command)
-                self.mcu.register_serial_response(callback, response)
+                self._register_response(callback, response)
                 self._telemetry_commands[name] = handle
             except Exception:
                 logging.exception("OAMS[%s]: AMS HT %s telemetry unavailable",
@@ -1756,7 +1788,7 @@ class OAMS(oams_ext.UnitHooks):
         try:
             self._environment_cmd = self.mcu.lookup_command(
                 "ams_get_environment")
-            self.mcu.register_serial_response(
+            self._register_response(
                 self._environment_status_received,
                 "ams_environment rh_centipercent=%hu temperature_centic=%hi"
                 " valid=%c")

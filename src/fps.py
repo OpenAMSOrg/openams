@@ -11,6 +11,21 @@
 # defined (one per toolhead) using named sections [fps <name>]; a single unnamed
 # [fps] also works for the common one-lane case.
 
+import inspect
+
+
+def _adc_callback_takes_report_time(adc):
+    """True for the older MCU_adc API, setup_adc_callback(report_time,
+    callback), which Kalico still has. Mainline Klipper changed it to
+    setup_adc_callback(callback) on 2026-02-14 and kept the name
+    setup_adc_sample with new arguments, so the method names alone can't
+    tell the two apart."""
+    try:
+        parameters = inspect.signature(adc.setup_adc_callback).parameters
+    except (TypeError, ValueError):
+        return False
+    return len(parameters) >= 2
+
 
 class FPS:
     def __init__(self, config):
@@ -67,8 +82,8 @@ class FPS:
         if self._pin is not None:
             self.ppins = self.printer.lookup_object('pins')
             self.adc = self.ppins.setup_pin('adc', self._pin)
-            if hasattr(self.adc, 'setup_adc_sample'):
-                # Current mainline Klipper API:
+            if not _adc_callback_takes_report_time(self.adc):
+                # Mainline Klipper from 2026-02-14:
                 #   setup_adc_sample(report_time, sample_time, sample_count)
                 #   setup_adc_callback(callback)  # list of samples
                 self.adc.setup_adc_sample(
@@ -76,8 +91,14 @@ class FPS:
                     sample_count=self._sample_count)
                 self.adc.setup_adc_callback(self._adc_callback)
             else:
-                # Kalico / pre-2024 mainline MCU_adc API.
-                self.adc.setup_minmax(self._sample_time, self._sample_count)
+                # Kalico, and mainline before 2026-02-14: the report time
+                # goes with the callback, which gets one (time, value) pair.
+                # The sample setup is setup_adc_sample(sample_time,
+                # sample_count) from 2024-06, setup_minmax before that.
+                setup = getattr(self.adc, 'setup_adc_sample', None)
+                if setup is None:
+                    setup = self.adc.setup_minmax
+                setup(self._sample_time, self._sample_count)
                 self.adc.setup_adc_callback(
                     self._report_time, self._adc_callback_scalar)
 

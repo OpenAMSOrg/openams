@@ -13,6 +13,17 @@ import mcu
 _PIN_RE = re.compile(r'^(?:P)?([A-Za-z])(\d+)$')
 
 
+def _register_serial_response(mcu_obj, callback, msgformat, oid=None):
+    # Mainline Klipper's register_serial_response (2026-02-26), or the older
+    # register_response that Kalico still has; the same adapter as in oams.py.
+    register = getattr(mcu_obj, "register_serial_response", None)
+    if register is not None:
+        if oid is None:
+            return register(callback, msgformat)
+        return register(callback, msgformat, oid)
+    return mcu_obj.register_response(callback, msgformat.split()[0], oid)
+
+
 class ExternalIRQ:
     def __init__(self, config):
         self.printer = config.get_printer()
@@ -29,7 +40,8 @@ class ExternalIRQ:
         if sections is None:
             sections = {}            # (port_index, pin_number) -> section name
             self.mcu._openams_ext_irq_sections = sections
-            self.mcu.register_serial_response(
+            _register_serial_response(
+                self.mcu,
                 lambda params, s=sections: self._ext_irq_triggered(params, s),
                 "ext_irq_trigger port=%c pin=%c")
 
