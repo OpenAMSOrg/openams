@@ -293,6 +293,7 @@ ignores it:
 |---|---|
 | `ams_ht_dryer_start target_centic=%hu duration_s=%u hold_after=%c` | EXISTS, on a unit with a dryer |
 | `ams_ht_dryer_stop` | EXISTS, on a unit with a dryer |
+| `ams_dryer_vent_tuning rise_mgm3=%hu flat_mgm3=%hu hold_s=%hu min_open_s=%hu max_open_s=%hu min_interval_s=%hu max_interval_s=%hu cooldown_centic=%hu enable=%c` | EXISTS, on a unit with `AMS_CAP_DRYER_VENT_LOOP` |
 
 Both reply with `ams_ht_dryer_result result=%c` (§5.1). `target_centic` is in
 hundredths of a degree. The unit clamps the target to the range it publishes
@@ -316,6 +317,32 @@ offers `dryer_stop`. `dryer_start` is not offered while a cycle is in
 progress, and an `OAMS_DRYER_START` sent anyway reaches the unit, whose busy
 reply is reported as `a dryer cycle is already running (<state>, <n> s left);
 OAMS_DRYER_STOP first`.
+
+
+**The dryer vent loop (`AMS_CAP_DRYER_VENT_LOOP`, Cortex Bridge firmware 10).**
+On such a unit the vents follow the chamber's moisture during a dry: they open
+once the moisture has risen and stopped rising, close once it stops falling,
+open at most every `min_interval_s` and at least every `max_interval_s`, and
+the dry ends with a sealed cooldown (heater off, vents closed, state
+`cooldown`) until the chamber is below `cooldown_centic`. The host tunes it
+before each start:
+
+`ams_dryer_vent_tuning rise_mgm3=%hu flat_mgm3=%hu hold_s=%hu min_open_s=%hu
+max_open_s=%hu min_interval_s=%hu max_interval_s=%hu cooldown_centic=%hu
+enable=%c`, replying `ams_ht_dryer_result result=%c`: Accepted, or
+Unavailable on a unit without a dryer. A field of 0 keeps the unit's built-in
+value (rise: two RH steps at the target; flat: one RH step at the target per
+10 minutes; hold 120 s; min_open 90 s; max_open 600 s; min_interval 600 s;
+max_interval 3600 s; cooldown 4500). The unit clamps the others (min_open
+30-1800 s, max_open from min_open to 1800 s, intervals 300-14400 s with max
+at least min, cooldown 3500-6000). `enable=0` leaves the vents to the unit.
+The tuning applies at once and lasts until the unit is bound again. The host
+(`cmd_OAMS_DRYER_START`, `VENT=auto|unit`) sends it before each start, never
+while a cycle runs. During such a dry `ams_ht_dryer_status` reports
+`humidity_mgm3` (the absolute humidity the unit works out from its RH and
+chamber temperature), `vent_position` where the unit can read it, `purging=1`
+while the loop holds the vents open, and state 4 during the sealed cooldown;
+`remaining_s` is the requested time.
 
 ### 4.5 Vent
 
@@ -712,6 +739,7 @@ All of these are additive: **absent keeps today's behaviour**.
 |---|---|
 | `AMS_CAP_HOST_ARRIVAL_CONFIRM` | `1`: the unit has no input of its own that senses toolhead arrival, so a load finishes only when the host confirms arrival with `oams_cmd_load_arrived gen=%c` (§4.1). Absent or `0`: the unit senses arrival itself; the host sends nothing and does not look the command up. |
 | `AMS_CAP_PTFE_CALIBRATION` | `1`: PTFE path calibration by the unit's odometer (§4.3.1). Read after `AMS_HT_CAP_PTFE_CALIBRATION`, and over it. Absent: that constant decides, as before. |
+| `AMS_CAP_DRYER_VENT_LOOP` | `1`: the unit runs the dryer vent loop and accepts `ams_dryer_vent_tuning` (§4.4). Absent or `0`: the vents are the unit's own, and the host never sends the tuning. |
 | `AMS_CAP_ARRIVAL_DISTANCE` | `1`: a successful load's terminal `value` is the measured path in encoder clicks (§4.3.1). |
 | `AMS_CAP_OP_REASON` | `1`: a failed operation's terminal `value` is its reason, one of the published `AMS_REASON_*` constants (§4.3.1). |
 | `AMS_REASON_<NAME>` | The numeric value of each reason; published with `AMS_CAP_OP_REASON`. |
