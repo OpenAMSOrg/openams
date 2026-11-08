@@ -2666,6 +2666,16 @@ class OAMS(oams_ext.UnitHooks):
                     " first (%s)" % (
                         data.get("state_name"),
                         "" if left is None else ", %d s left" % left, exc))
+            if "busy" in str(exc):
+                # No cycle of ours: the unit itself is not idle. A stock AMS
+                # drops a start while it feeds, holds a loaded spool, shows a
+                # feed error or is still starting up (bridge firmware 12
+                # answers Busy instead of sending it).
+                raise gcmd.error(
+                    "%s is busy (feeding, holding a loaded spool, showing an "
+                    "error, or still starting up), so it would not start the "
+                    "dryer; try again once it is idle (%s)"
+                    % (self._unit_label(), exc))
             raise
         gcmd.respond_info(
             "%s: dryer started at %.1fC for %ds (hold_after=%d)%s"

@@ -100,11 +100,14 @@ RFID_TAG_ERROR_TEXT = (
 INFO_FIRMWARE_FAULTS = frozenset(("dryer_start_refused",))
 
 # `dryer_start_refused`: the unit acknowledged a dryer start and kept
-# reporting "off". Its heater never ran. An AMS 2 Pro does this while
-# filament is loaded; a start is normally refused up front instead.
+# reporting "off", or (bridge firmware 12) the bridge saw filament in the hub
+# and did not send it. Its heater never ran. An AMS 2 Pro refuses while
+# filament is past its feeder (in the hub) or loaded; filament resting at the
+# feeders is fine.
 DRYER_START_REFUSED_TEXT = (
     "The dryer did not start. This unit does not dry while filament is "
-    "loaded: unload it, clear the fault, then start the dryer again.")
+    "loaded or past its feeder, in the hub: unload it back to the feeder, "
+    "clear the fault, then start the dryer again.")
 
 # Lane messages that leave a lane fault entry (C2 §5.7, the lane `pause` row).
 LANE_FAILURE_MESSAGES = frozenset((

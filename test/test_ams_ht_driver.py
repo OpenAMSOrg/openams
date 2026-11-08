@@ -233,6 +233,13 @@ class DryerControlTests(unittest.TestCase):
             driver.ams_ht_dryer_start_cmd.sent, [[6550, 7200, 1]])
         self.assertIn("65.5C", gcmd.responses[0])
 
+    def test_a_busy_unit_says_so_when_no_cycle_runs(self):
+        # The unit is not idle (feeding, a loaded spool, an error, starting
+        # up): Busy with no cycle of ours running is about the unit itself.
+        driver = make_driver(result=1)
+        with self.assertRaisesRegex(RuntimeError, "is busy \\(feeding"):
+            driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 55}))
+
     def test_firmware_rejection_is_an_error(self):
         driver = make_driver(result=4)
         with self.assertRaisesRegex(RuntimeError, "faulted"):
