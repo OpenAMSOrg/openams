@@ -248,6 +248,15 @@ def next_step(facts: dict) -> str:
     if missing:
         return ("%d AMS online but not in your config. Run "
                 "`cortex-bridge.py config --write`." % len(missing))
+    # Bridge firmware 9 and later: the relay's roster can still list an AMS
+    # the bridge no longer hears (unplugged, switched off, its own mains out).
+    silent = silent_units(facts)
+    if silent:
+        uid, quiet_s = sorted(silent.items())[0]
+        return ("AMS %s has not answered the bridge for %s. Check its power "
+                "(an AMS HT has its own) and its cables; it comes back by "
+                "itself once it answers, then run FIRMWARE_RESTART." % (
+                    uid, _duration(quiet_s)))
     # Bridge firmware 9 and later: another AMS may be connected but have no
     # index yet, while the others run.
     reading = (facts.get("snapshot") or {}).get("reading") or {}
@@ -300,11 +309,15 @@ def status_lines(facts: dict) -> list:
         (" (%s)" % relay.get("detail")) if relay.get("detail") else ""))
     units = relay.get("units", [])
     configured = set(facts["configured"])
+    silent = silent_units(facts)
     if units:
         lines.append("  AMS units:")
         for unit in units:
+            state = "online" if unit.get("online") else "offline"
+            if unit["uid"] in silent:
+                state = "silent"
             lines.append("    %s  %-7s  %s  %s" % (
-                unit["uid"], "online" if unit.get("online") else "offline",
+                unit["uid"], state,
                 unit["path"], "configured" if unit["uid"] in configured
                 else "NOT in config"))
     else:
@@ -329,6 +342,31 @@ ALL_CONNECTED = "Everything is connected."
 SUPPORT_HINT = ("If that does not fix it, `cortex-bridge.py support` writes a "
                 "report for support. It stays on this printer until you send "
                 "it.")
+
+
+def silent_units(facts) -> dict:
+    """{uid: seconds since its last answer} for each admitted AMS the
+    bridge's snapshot (firmware 9 or later) shows not answering, while the
+    relay may still list it online."""
+    snapshot = (facts.get("snapshot") or {}).get("snapshot") or {}
+    uptime = (snapshot.get("system") or {}).get("uptime_ms")
+    out = {}
+    for unit in snapshot.get("units") or []:
+        if not isinstance(unit, dict) or unit.get("link") != "silent":
+            continue
+        last = unit.get("last_answer_ms")
+        quiet = (uptime - last) / 1000.0 if isinstance(uptime, int) and \
+            isinstance(last, int) and uptime >= last else None
+        out[str(unit.get("uid"))] = quiet
+    return out
+
+
+def _duration(seconds) -> str:
+    if seconds is None:
+        return "a while"
+    if seconds < 90:
+        return "%d s" % seconds
+    return "%d min" % round(seconds / 60.0)
 
 
 def status_snapshot(args):

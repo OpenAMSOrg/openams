@@ -396,10 +396,37 @@ class CommandLineTests(unittest.TestCase):
             ({"snapshot": {"reading": {"class": "none", "summary": "x",
                                        "action": ""}}},
              "Everything is connected"),
+            # The relay still lists it online; the bridge no longer hears it.
+            ({"snapshot": {"reading": {"class": "none", "summary": "x",
+                                       "action": ""},
+                           "snapshot": {"system": {"uptime_ms": 3043170},
+                                        "units": [{
+                                            "uid": AMS2["uid"],
+                                            "link": "silent",
+                                            "last_answer_ms": 1604919}]}}},
+             "AMS %s has not answered the bridge for 24 min" % AMS2["uid"]),
         )
         for overrides, expected in cases:
             self.assertIn(expected, cli.next_step(self.facts(**overrides)),
                           overrides)
+
+    def test_a_silent_unit_shows_as_silent(self):
+        facts = self.facts(snapshot={"snapshot": {
+            "system": {"uptime_ms": 100000},
+            "units": [{"uid": AMS2["uid"], "link": "silent",
+                       "last_answer_ms": 40000},
+                      {"uid": HT["uid"], "link": "online",
+                       "last_answer_ms": 99900}]}})
+        self.assertEqual(cli.silent_units(facts), {AMS2["uid"]: 60.0})
+        facts.update(usb=[BRIDGE_ON_USB], relay_service="active",
+                     klipper_service="active",
+                     installed_firmware={"latest": None,
+                                         "verdict": "nothing-bundled",
+                                         "installed": 11})
+        facts["relay"]["units"][0]["path"] = "/dev/oams/" + AMS2["uid"]
+        lines = "\n".join(cli.status_lines(facts))
+        self.assertIn("%s  silent " % AMS2["uid"], lines)
+        self.assertEqual(cli.silent_units(self.facts()), {})
 
     def test_update_installs_directly_when_no_relay_runs(self):
         import contextlib
