@@ -344,6 +344,12 @@ chamber temperature), `vent_position` where the unit can read it, `purging=1`
 while the loop holds the vents open, and state 4 during the sealed cooldown;
 `remaining_s` is the requested time.
 
+Observed on hardware: the AMS acts on the open request only when its chamber
+temperature is within about 1 °C of the target, and once open it keeps the
+vents open until the dry ends; releasing the request does not close them.
+With firmware 10 the loop therefore opens the vents once per dry. Closing
+them mid-dry is planned for firmware 11.
+
 ### 4.5 Vent
 
 The host sends no vent command. A unit with a dryer reports its vent position

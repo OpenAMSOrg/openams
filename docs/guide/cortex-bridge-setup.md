@@ -541,21 +541,24 @@ An AMS 2 Pro or AMS HT dries from Mainsail's panel or with
 `OAMS_DRYER_START OAMS=<n> TARGET=<C> DURATION=<s>`. The AMS HT needs its own
 power adapter for the heater.
 
-With bridge firmware 10 or later, the bridge also decides when the vents open.
-It does this from the moisture in the chamber, the absolute humidity it works
-out from the AMS's humidity and temperature readings:
+With older bridge firmware the vents stay closed for the whole dry, so the
+moisture the filament gives off has nowhere to go. With bridge firmware 10 or
+later, the bridge opens them. It does this from the moisture in the chamber,
+the absolute humidity it works out from the AMS's humidity and temperature
+readings:
 
-- With the vents closed, once the moisture has risen and levelled off, it
-  opens them.
-- Once the moisture stops falling, it closes them again.
-- It opens them at most once every 10 minutes, and at least once an hour.
-- When the dry time is up, the heater stops and the vents stay closed until
-  the chamber is below 45 °C.
+- Once the chamber is at temperature and the moisture has risen and stopped
+  rising, the bridge opens the vents. If that hasn't happened within an hour,
+  it opens them anyway.
+- The AMS then keeps them open until the dry ends, as it does on a Bambu
+  printer. Closing them in between comes with a later bridge firmware.
+- When the dry time is up, the heater stops and the vents close until the
+  chamber is below 45 °C.
 
 The bridge does this by itself, so a dry finishes the same way when Klipper
-restarts. Mainsail's panel shows the vent position and the humidity.
-`VENT=unit` on `OAMS_DRYER_START` leaves the vents to the AMS. The numbers can
-be changed with the `dryer_vent_*` options in `[oams <name>]`; see
+restarts. Mainsail's panel shows the humidity. `VENT=unit` on
+`OAMS_DRYER_START` leaves the vents to the AMS: closed for the whole dry. The
+numbers can be changed with the `dryer_vent_*` options in `[oams <name>]`; see
 [the reference](reference.md#oams-name).
 
 ## Keep it up to date
