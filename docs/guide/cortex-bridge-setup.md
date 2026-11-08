@@ -548,9 +548,13 @@ The relay keeps a short support log, `cortex-bridge.jsonl`, under Mainsail's
 python3 ~/openams/tools/cortex-bridge.py support
 ```
 
-It writes `cortex-bridge-support-<date>.txt` next to the other logs, with the
-bridge's state, the relay's log and the service status. It contains no
-passwords or keys.
+It writes `cortex-bridge-support-<date>.txt` next to the other logs: the
+bridge's state and firmware, the relay, Klipper's state, the OpenAMS sections
+of your config, the installer's last output and the end of the logs.
+Passwords, keys, addresses, names, AMS serial numbers, tag data and spool
+details are removed before it is written, and writing it sends nothing.
+[The support report](support-report.md) lists what is in it and how to send
+it.
 
 For OpenAMS itself, [troubleshooting](troubleshooting.md) matches Klipper's
 error messages to their causes.

@@ -193,7 +193,8 @@ job.
 
 To send support everything they need, run
 `python3 ~/openams/tools/cortex-bridge.py support`; the report includes the
-version the bridge reported and the result of the last update.
+version the bridge reported and the result of the last update
+([the support report](support-report.md)).
 
 ## Where to go next
 

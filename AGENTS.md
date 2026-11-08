@@ -189,6 +189,11 @@ Each of these settled many support threads. They're consistent with
 - **Cortex Bridge (0AMS only):**
   - `cortex-bridge.py status` names the first thing to fix, and
     `cortex-bridge.py support` writes the report to attach.
+  - With bridge firmware 9 or later, when no AMS answers, both read the
+    bridge's own snapshot of the AMS line and name what it saw: a silent data
+    pair, bytes that never decode (cable or orientation), an AMS refused (with
+    the reason), or an AMS Klipper never uses. The relay never asks older
+    firmware: it would drop every AMS for a moment.
   - A load that stops just short of the toolhead, with a message that the
     reading stayed below `arrival_threshold`, needs that threshold lowered
     under the peak the message names. Look at the path first if the peak is
@@ -262,6 +267,9 @@ point to the test that finds it.
 
 **What to ask for:**
 
+- on a Cortex Bridge, the report from `cortex-bridge.py support` first: it
+  holds the status, versions, config sections and log tails below, with
+  private details removed ([docs/guide/support-report.md](docs/guide/support-report.md));
 - `klippy.log` from the failing attempt;
 - `oams.cfg`, and whether `oams_macros.cfg` was edited;
 - photos of the whole path, and the tube's ID;

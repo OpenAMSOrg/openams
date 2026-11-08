@@ -574,6 +574,116 @@ class SessionTests(unittest.TestCase):
                           retries[0]["reason"]),
                          (1, 3, "receiver-rejected"))
 
+    # -- the support snapshot ------------------------------------------------
+
+    def ask_snapshot(self):
+        """Ask the relay for the snapshot from another thread, as
+        `cortex-bridge.py support` does; returns (thread, holder)."""
+        holder = {}
+
+        def ask():
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.settimeout(15)
+                client.connect(str(self.run_dir / "control.sock"))
+                client.sendall(b'{"method": "support_snapshot"}\n')
+                holder["reply"] = json.loads(client.makefile().readline())
+        thread = threading.Thread(target=ask, daemon=True)
+        thread.start()
+        return thread, holder
+
+    def snapshot_reply(self):
+        thread, holder = self.ask_snapshot()
+        thread.join(10)
+        return holder["reply"]
+
+    def assert_nothing_sent(self, seconds=1.5):
+        """No message reaches the bridge but identity requests: above all,
+        never a SUPPORT_REQUEST."""
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            try:
+                message = self.read_one_message(
+                    timeout=max(0.1, deadline - time.monotonic()))
+            except socket.timeout:
+                return
+            self.assertEqual(message.kind, MessageType.IDENTITY_REQUEST)
+
+    def snapshot_records(self):
+        return [json.loads(line) for line in
+                self.log_file.read_text().splitlines()
+                if '"bridge_snapshot"' in line]
+
+    def test_firmware_8_is_never_sent_a_snapshot_request(self):
+        """Firmware 7 and 8 drop every AMS on a type-8 message."""
+        self.start_session()
+        self.answer_identity(version=8)
+        self.wait_for(lambda: self.firmware().get("version") == 8)
+        reply = self.snapshot_reply()
+        self.assertFalse(reply["ok"])
+        self.assertEqual(reply["error"], "unsupported-firmware")
+        self.assertEqual(reply["minimum_firmware"], 9)
+        self.assertIn("firmware 8", reply["message"])
+        self.assert_nothing_sent()
+        self.session_still_up()
+        self.assertEqual(self.snapshot_records(), [])
+
+    def test_an_unidentified_bridge_is_never_asked(self):
+        self.start_session()
+        reply = self.snapshot_reply()        # before the identity answers
+        self.assertEqual(reply["error"], "firmware-unknown")
+        self.assert_nothing_sent()
+
+    def test_a_lab_bridge_is_never_asked(self):
+        self.use_manufacturer("OpenAMS")
+        self.start_session()
+        reply = self.snapshot_reply()
+        self.assertEqual(reply["error"], "unsupported-firmware")
+        self.assert_nothing_sent()
+
+    def test_firmware_9_answers_with_the_snapshot_after_a_retry(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from test_cortex_bridge_snapshot import SILENT_LINE, SILENT_LINE_BODY
+        self.start_session()
+        self.answer_identity(version=9)
+        self.wait_for(lambda: self.firmware().get("version") == 9)
+        thread, holder = self.ask_snapshot()
+        first = self.read_bridge_message(kind=MessageType.SUPPORT_REQUEST)
+        first_at = time.monotonic()
+        self.assertEqual(len(first.payload), 4)
+        self.send_from_bridge(Message(MessageType.SUPPORT_REPORT,
+                                      first.payload + b"\x01"))
+        second = self.read_bridge_message(kind=MessageType.SUPPORT_REQUEST)
+        self.assertGreaterEqual(time.monotonic() - first_at, 1.0,
+                                "a rate-limited request waits")
+        self.assertNotEqual(second.payload, first.payload)
+        # An answer to another token is not the answer.
+        self.send_from_bridge(Message(MessageType.SUPPORT_REPORT,
+                                      b"\xff\xff\xff\xff\x00" +
+                                      SILENT_LINE_BODY))
+        self.send_from_bridge(Message(MessageType.SUPPORT_REPORT,
+                                      second.payload + b"\x00" +
+                                      SILENT_LINE_BODY))
+        thread.join(10)
+        reply = holder["reply"]
+        self.assertTrue(reply["ok"], reply)
+        self.assertEqual(reply["event"], "support_snapshot")
+        self.assertEqual(reply["snapshot"], SILENT_LINE)
+        import base64
+        self.assertEqual(base64.b64decode(reply["raw"]), SILENT_LINE_BODY)
+        self.session_still_up()
+        self.wait_for(self.snapshot_records)
+        self.assertEqual(self.snapshot_records()[0]["result"], "ok")
+
+    def test_a_session_that_ends_answers_the_waiting_request(self):
+        self.start_session()
+        self.answer_identity(version=9)
+        self.wait_for(lambda: self.firmware().get("version") == 9)
+        thread, holder = self.ask_snapshot()
+        self.read_bridge_message(kind=MessageType.SUPPORT_REQUEST)
+        self.bridge_side.close()
+        thread.join(10)
+        self.assertEqual(holder["reply"]["error"], "not-connected")
+
     def test_waiting_is_logged_once_per_reason(self):
         args = relay.parser().parse_args([
             "--pty-dir", str(self.pty_dir), "--run-dir", "",

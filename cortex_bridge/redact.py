@@ -12,26 +12,30 @@ Everything in it passes through one ``Redactor`` first, which replaces:
   secret files, wherever it appears;
 - SSH private and public keys;
 - Wi-Fi network names and passphrases;
-- IP addresses (except loopback and 0.0.0.0) and MAC addresses, with
+- IP addresses (except loopback, 0.0.0.0 and anything in 0.0.0.0/8, which is
+  how an AMS version such as 0.0.6.49 reads) and MAC addresses, with
   placeholders numbered in order of appearance, so the same address reads the
   same throughout one report (``<lan-ip-1>``);
 - host names (this computer's, any ``*.local`` name, and any URL host that is
   not a public project site) with ``<host>`` or ``<host-N>``;
 - user names in home paths and on their own, with ``<user>``;
 - e-mail addresses;
-- AMS identifiers (the 12-digit unit IDs behind ``/dev/oams/`` and any AMS
-  serial number) with a salted short hash, ``ams-1a2b3c4d`` or
-  ``sn-1a2b3c4d``: the salt stays on the printer, so two reports from the same
-  printer name the same unit the same way, and nobody else can reverse it;
+- AMS serial numbers, with a salted short hash, ``sn-1a2b3c4d``: the salt
+  stays on the printer, so two reports from the same printer name the same
+  unit the same way, and nobody else can reverse it;
 - RFID tag UIDs and tag payloads;
 - Spoolman spool contents, except the IDs.
 
-The bridge's own USB serial number (``CB...``) is kept: support needs it to
-identify the bridge, and ``cortex-bridge.py status`` already shows it.
+Kept as they are (the owner's decisions of 2026-11-08): the bridge's own USB
+serial number (``CB...``), which support needs to identify the bridge; the
+AMS unit IDs (the 12 hex digits of the roster and of ``/dev/oams/<uid>``),
+which ``cortex-bridge.py status`` prints; the 4-character AMS tag suffix
+(``N573``); and the four version bytes an AMS reports.
 
-``find_leaks`` scans finished text for anything that still looks private;
-the report builder removes any line it names, and the tests assert it finds
-nothing in a redacted realistic report.
+``find_leaks`` is the last check: it runs these same rules over each line of
+finished text and names every line they would still change, so it is
+exactly as strong as the redaction. The report builder removes any line it
+names, and ``--submit --file`` refuses a file it finds anything in.
 """
 
 from __future__ import annotations
@@ -51,20 +55,41 @@ REDACTED = "<redacted>"
 # Patterns
 # ---------------------------------------------------------------------------
 
-# Words that make an option or field a secret, wherever they appear in its
-# name (moonraker_api_key, mqtt_password, bot_token, wifi_ssid...).
-_SECRET_WORDS = (
-    r"password|passwd|passphrase|secret|token|api[ _-]?key|apikey|"
-    r"access[ _-]?key|private[_-]?key|client[_-]?secret|psk|ssid|cookie|"
-    r"session[_-]?id|webhook|credential|auth[_-]?key|bearer"
+# A key is a secret when its last word is one of these: moonraker_api_key,
+# mqtt_password, bot_token, wifi_ssid. Not "webhooks", "tokens" or
+# "secrets_path", whose last word is something else.
+_SECRET_TAIL = (
+    r"password|passwd|passphrase|secret|token|apikey|psk|ssid|cookie|"
+    r"credentials?|bearer|(?:api|access|private|auth)[ _-]?key|"
+    r"client[_-]?secret|session[_-]?id"
 )
-_SECRET_NAME_RE = re.compile(r"(?i)(%s)" % _SECRET_WORDS)
-# A value: quoted, or one bare word (never a JSON object or list opening).
-_VALUE = r"(?P<value>\"[^\"\n]*\"|'[^'\n]*'|(?![{\[])[^\s,;}\])]+)"
+_SECRET_NAME = r"(?:[A-Za-z0-9]+[_.-])*(?:%s)" % _SECRET_TAIL
+_SECRET_NAME_RE = re.compile(r"(?i)^%s$" % _SECRET_NAME)
+# A secret's value: a quoted string (escaped quotes included); for a quoted
+# (JSON) key, the bare value up to the next "," "}" or "]"; for a bare key
+# (config files, log lines), everything to the end of the line, so a
+# passphrase of several words goes whole. Never a JSON object or list.
+_SECRET_VALUE = (
+    r"(?P<value>\"(?:[^\"\\\n]|\\.)*\"|'(?:[^'\\\n]|\\.|'')*'|"
+    r"(?(q)(?![{\[])[^\s,}\]]+(?:[ \t]+[^\s,}\]]+)*|(?![{\[])\S[^\n]*))")
 _SECRET_KV = re.compile(
-    r"(?i)(?P<q>[\"']?)(?<![\w.-])(?P<name>[A-Za-z0-9_.-]*?(?:%s)"
-    r"[A-Za-z0-9_.-]*)(?P=q)(?P<sep>[ \t]*[:=][ \t]*)%s"
-    % (_SECRET_WORDS, _VALUE))
+    r"(?i)(?:(?P<q>[\"']))?(?<![\w.-])(?P<name>%s)(?![A-Za-z0-9_.-])"
+    r"(?(q)(?P=q))(?P<sep>[ \t]*[:=][ \t]*)%s" % (_SECRET_NAME,
+                                                   _SECRET_VALUE))
+# Credentials on a command line, as a config's shell command carries them
+# into klippy.log: -u/--user user:pass, and --password, --token, --api-key and
+# the like. A bare -p is left alone (it is a port as often as a password).
+_CLI_USER = re.compile(
+    r"(?<!\S)(?P<flag>-u|--user|--proxy-user)(?P<sep>[ \t]+|=)"
+    r"(?P<value>\"[^\"\n]*:[^\"\n]*\"|'[^'\n]*:[^'\n]*'|[^\s:\"']+:\S+)")
+_CLI_SECRET = re.compile(
+    r"(?i)(?<!\S)(?P<flag>--?[a-z-]*(?:password|passwd|pass|token|secret|"
+    r"api-?key|apikey|auth))(?P<sep>[ \t]+|=)"
+    r"(?P<value>\"[^\"\n]*\"|'[^'\n]*'|(?![-<])\S+)")
+# user:password@host outside a URL (rsync, a pasted remote).
+_USERPASS_AT = re.compile(
+    r"(?<![\w/:@.<-])(?P<user>[A-Za-z0-9._-]+):(?P<pw>[^\s:@/<>]+)@"
+    r"(?=[A-Za-z0-9\[])")
 # An option named exactly "key" at the start of a line: the Bambu tag key in
 # a config file, and in the copy of the config Klipper writes to klippy.log.
 _KEY_OPTION = re.compile(
@@ -106,21 +131,36 @@ _EMAIL = re.compile(r"(?<![\w.+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+"
 
 _TAG_KV = re.compile(
     r"(?i)(?P<q>[\"']?)\b(?P<name>(?:tag|tray|card|nfc|rfid)[_ -]?"
-    r"(?:uid|uuid|data|payload|blocks?|keys?)|block[_ -]?data|"
+    r"(?:uids?|uuids?|data|payload|blocks?|keys?)|block[_ -]?data|"
     r"sector[_ -]?data|payload)(?P=q)(?P<sep>[ \t]*[:=][ \t]*)"
     r"(?P<value>\"[^\"\n]*\"|'[^'\n]*'|\[[^\]\n]*\]|"
     r"[0-9A-Fa-f]{2}(?:[ :-]?[0-9A-Fa-f]{2})+|(?![{\[])[^\s,;}\])]+)")
+# "uid" with a hex value: an AMS unit ID (12 digits, kept) or a tag UID.
 _UID_KV = re.compile(
     r"(?i)(?P<q>[\"']?)\b(?P<name>uid)(?P=q)(?P<sep>[ \t]*[:=][ \t]*)"
     r"(?P<vq>[\"']?)(?P<value>[0-9A-Fa-f]{2}(?:[ :-]?[0-9A-Fa-f]{2})+)"
     r"(?P=vq)(?![\w])")
-_NODE_KV = re.compile(r"(?P<pre>\"node\"[ \t]*:[ \t]*\")(?P<value>"
-                      r"[0-9A-Fa-f]{12})(?=\")")
-_OAMS_PATH = re.compile(r"(?P<pre>/dev/oams/)(?P<value>[0-9A-Fa-f]{12})\b")
+# A tag UID a reader logs in free text: "MFRC522 <name> card 04a1b2c3d4e5f6"
+# (src/mfrc522.py), 4, 7 or 10 bytes after "card", "tag" or "uid". A bare
+# 8-digit hex word anywhere else (a commit) is left alone.
+_TAG_WORD_UID = re.compile(
+    r"(?i)\b(?P<pre>(?:card|tag|uid)[ \t]*[:=]?[ \t]*)"
+    r"(?P<value>[0-9a-f]{20}|[0-9a-f]{14}|[0-9a-f]{8})(?![0-9a-z])")
+# A tag's data block, as OAMSM_RFID_READ answers it ("BLOCK=0102...").
+_TAG_BLOCK = re.compile(r"(?i)\b(?P<pre>block[ \t]*[:=][ \t]*)"
+                        r"(?P<value>[0-9a-f]{8,})(?![0-9a-z])")
+_AMS_UID = re.compile(r"^[0-9A-Fa-f]{12}$")
 _SERIAL_KV = re.compile(
     r"(?i)(?P<q>[\"']?)\b(?P<name>(?:ams[_ -]?)?(?:serial(?:[_ -]?"
     r"(?:number|no|num))?|sn))(?P=q)(?P<sep>[ \t]*[:=][ \t]*)"
     r"(?P<vq>[\"']?)(?P<value>[A-Za-z0-9]{6,32})(?P=vq)(?![\w/.-])")
+# An AMS serial in free text: the 24 hex digits of the unit identity
+# (src/oams.py) after "serial" or "identity", and the identity reply as
+# Klipper's message dumps print it ("uid0=... uid1=... uid2=...").
+_SERIAL_WORD = re.compile(
+    r"(?i)\b(?P<pre>(?:serial|identity)\b[^\n]{0,40}?)(?<![0-9A-Za-z])"
+    r"(?P<value>[0-9A-Fa-f]{24})(?![0-9A-Za-z])")
+_IDENTITY_REPLY = re.compile(r"\buid0=(\d+)[ ,]+uid1=(\d+)[ ,]+uid2=(\d+)")
 BRIDGE_SERIAL = re.compile(r"^CB[0-9A-Fa-f]{6,}$")
 
 _HEX32 = re.compile(r"\b[0-9a-fA-F]{32}\b")
@@ -138,8 +178,8 @@ _JOURNAL_HOST = re.compile(
 _HOST_KV = re.compile(
     r"(?i)(?P<q>[\"']?)\b(?P<name>host[_ ]?name|node[_ ]?name|fqdn)(?P=q)"
     r"(?P<sep>[ \t]*[:=][ \t]*)(?P<vq>[\"']?)(?P<value>[A-Za-z0-9][\w.-]*)")
-_AT_HOST = re.compile(r"(?<=[A-Za-z0-9_>])@(?P<host>[A-Za-z0-9][\w-]*)"
-                      r"(?=[\s:/]|$)", re.M)
+_AT_HOST = re.compile(r"(?<=[A-Za-z0-9_>])@(?P<host>[A-Za-z0-9]"
+                      r"(?:[\w-]|\.(?=[\w-]))*)(?=[\s:/]|$)", re.M)
 _HOME = re.compile(r"(?<![\w/])/home/(?P<user>[A-Za-z0-9._-]+)")
 _TILDE_USER = re.compile(r"(?<![\w~])~(?P<user>[a-z_][a-z0-9_-]{1,31})"
                          r"(?=/)")
@@ -170,8 +210,21 @@ COMMON_HOSTNAMES = frozenset((
     "moonraker", "mainsail", "fluidd", "printer", "voron", "ratos", "octopi",
     "pi", "debian", "ubuntu", "armbian", "orangepi", "bigtreetech", "biqu",
     "mks", "kalico", "openams", "ams", "host", "server", "linux", "cb1",
-    "cb2", "manta", "rpi", "sonic", "rock", "radxa",
+    "cb2", "manta", "rpi", "sonic", "rock", "radxa", "oams", "bridge",
+    "cortex",
 ))
+
+
+def distinctive_hostname(name: str) -> bool:
+    """Whether a host name can be replaced wherever it appears as a word.
+    Only a name no ordinary word could be: with a digit, "-", "_" or ".",
+    or of 10 letters or more, and not a common one. Any other (a printer
+    called "oams" or "garage") is replaced only where it is plainly a host
+    name: a journal prefix, user@host, "hostname: x", a URL, name.local."""
+    name = name.lower()
+    if name in COMMON_HOSTNAMES or len(name) < 3:
+        return False
+    return bool(re.search(r"[\d_.-]", name)) or len(name) >= 10
 # User names too common to be private, and too common as words to replace
 # outside a home path.
 COMMON_USERS = frozenset((
@@ -197,8 +250,9 @@ def _requote(original: str, replacement: str) -> str:
 
 
 def _private_address(text: str):
-    """The address in ``text`` when it identifies a machine (not loopback,
-    0.0.0.0 or a netmask), else None."""
+    """The address in ``text`` when it identifies a machine, else None. Not
+    loopback, 0.0.0.0, a netmask, or 0.x.x.x: no machine has one, and the
+    version bytes an AMS reports read that way (0.0.6.49)."""
     bare = text.split("%", 1)[0]
     try:
         address = ipaddress.ip_address(bare)
@@ -206,7 +260,8 @@ def _private_address(text: str):
         return None
     if address.is_loopback or address.is_unspecified:
         return None
-    if address.version == 4 and bare.startswith("255."):
+    if address.version == 4 and (bare.startswith("255.") or
+                                 int(address) >> 24 == 0):
         return None
     return address
 
@@ -277,7 +332,7 @@ def secrets_in_ini(text: str) -> set:
             continue
         name = match.group("name")
         value = match.group("value").split(" #", 1)[0].strip()
-        if (name.lower() == "key" or _SECRET_NAME_RE.search(name)) and \
+        if (name.lower() == "key" or _SECRET_NAME_RE.match(name)) and \
                 _usable_secret(value):
             found.add(_strip_quotes(value))
     return found
@@ -353,7 +408,7 @@ class Redactor:
     """One report's redaction: placeholders stay the same throughout it."""
 
     def __init__(self, *, salt: bytes, hostnames=(), usernames=(),
-                 secrets=(), bridge_serials=(), ams_ids=()):
+                 secrets=(), bridge_serials=()):
         if not salt:
             raise ValueError("a salt is required")
         self.salt = bytes(salt)
@@ -365,21 +420,28 @@ class Redactor:
                               key=len, reverse=True)
         self.bridge_serials = {s.strip() for s in bridge_serials
                                if s and s.strip()}
-        self.ams_ids = {i.strip().lower() for i in ams_ids
-                        if i and re.fullmatch(r"[0-9A-Fa-f]{12}", i.strip())}
         self._maps = {}
         self.counts = {}
         for index, user in enumerate(self.usernames):
             self._maps.setdefault("user", {})[user] = \
                 "<user>" if index == 0 else "<user-%d>" % (index + 1)
-        self._known_ids = self._word_pattern(sorted(self.ams_ids))
         self._known_secrets = [re.compile(re.escape(s)) for s in self.secrets]
         self._distinct_hosts = self._word_pattern(
-            [h for h in self.hostnames
-             if h not in COMMON_HOSTNAMES and len(h) >= 3], re.I)
+            [h for h in self.hostnames if distinctive_hostname(h)], re.I)
         self._distinct_users = self._word_pattern(
             [u for u in self.usernames
              if u.lower() not in COMMON_USERS and len(u) >= 3])
+        self._checker = None
+
+    def _probe(self) -> "Redactor":
+        """A redactor with the same settings and its own placeholders and
+        counts, for the last check."""
+        if self._checker is None:
+            self._checker = Redactor(
+                salt=self.salt, hostnames=self.hostnames,
+                usernames=self.usernames, secrets=self.secrets,
+                bridge_serials=self.bridge_serials)
+        return self._checker
 
     @staticmethod
     def _word_pattern(words, flags=0):
@@ -405,11 +467,6 @@ class Redactor:
     def _digest(self, value: str) -> str:
         return hmac.new(self.salt, value.strip().lower().encode("utf-8"),
                         hashlib.sha256).hexdigest()[:8]
-
-    def ams_id(self, uid: str) -> str:
-        """An AMS unit ID (12 hex digits) as ``ams-xxxxxxxx``."""
-        self._count("ams ids")
-        return "ams-" + self._digest("uid:" + uid)
 
     def serial_hash(self, serial: str) -> str:
         """An AMS serial number as ``sn-xxxxxxxx``."""
@@ -510,7 +567,7 @@ class Redactor:
         path_part = "/".join(segments)
         if question:
             def param(match):
-                if _SECRET_NAME_RE.search(match.group("name")) or \
+                if _SECRET_NAME_RE.match(match.group("name")) or \
                         match.group("name").lower() in (
                             "key", "sig", "signature", "auth", "code",
                             "access_token", "pass", "pw"):
@@ -529,6 +586,7 @@ class Redactor:
         text = self._scrub_known(text)
         text = self._secrets_and_keys(text)
         text = _URL.sub(self.url, text)
+        text = _USERPASS_AT.sub(self._userpass, text)
         text = _EMAIL.sub(self._email, text)
         text = self._key_values(text)
         text = self._spool_lines(text)
@@ -563,6 +621,8 @@ class Redactor:
         # Headers first, so a header's token is removed with its scheme.
         text = _AUTH_HEADER.sub(self._auth, text)
         text = self._sub_count(_BEARER, r"\1 " + REDACTED, text, "secrets")
+        text = _CLI_USER.sub(self._cli, text)
+        text = _CLI_SECRET.sub(self._cli, text)
         for pattern in _CREDENTIALS:
             text = self._sub_count(pattern, "<redacted token>", text,
                                    "secrets")
@@ -583,6 +643,16 @@ class Redactor:
             return match.group(0)            # already a placeholder
         self._count("secrets")
         return match.group("name") + match.group("sep") + REDACTED
+
+    def _cli(self, match) -> str:
+        if _strip_quotes(match.group("value")).startswith("<"):
+            return match.group(0)
+        self._count("secrets")
+        return match.group("flag") + match.group("sep") + REDACTED
+
+    def _userpass(self, match) -> str:
+        self._count("secrets")
+        return REDACTED + "@"
 
     def _email(self, match) -> str:
         if match.group(0).startswith("git@"):
@@ -624,29 +694,40 @@ class Redactor:
         return match.group("pre") + "\"%s\"" % REDACTED
 
     def _ams(self, text: str) -> str:
-        if self._known_ids is not None:
-            text = self._known_ids.sub(lambda m: self.ams_id(m.group(0)), text)
-        text = _OAMS_PATH.sub(
-            lambda m: m.group("pre") + self.ams_id(m.group("value")), text)
-        text = _NODE_KV.sub(
-            lambda m: m.group("pre") + self.ams_id(m.group("value")), text)
+        # AMS unit IDs stay as they are; tag UIDs and AMS serials do not.
         text = _UID_KV.sub(self._uid, text)
+        text = _TAG_WORD_UID.sub(self._tag_value, text)
+        text = _TAG_BLOCK.sub(self._tag_value, text)
+        text = _IDENTITY_REPLY.sub(self._identity_reply, text)
         text = _SERIAL_KV.sub(self._serial, text)
+        text = _SERIAL_WORD.sub(self._serial, text)
         return text
+
+    def _tag_value(self, match) -> str:
+        self._count("tag data")
+        return match.group("pre") + "<tag>"
+
+    def _identity_reply(self, match) -> str:
+        # The serial as src/oams.py makes it: three little-endian words.
+        try:
+            raw = b"".join(int(word).to_bytes(4, "little")
+                           for word in match.groups())
+        except OverflowError:
+            raw = " ".join(match.groups()).encode("ascii")
+        return "serial=" + self.serial_hash(raw.hex().upper())
 
     def _uid(self, match) -> str:
         value = match.group("value")
-        compact = re.sub(r"[ :-]", "", value)
+        if _AMS_UID.match(value):
+            return match.group(0)            # an AMS unit ID, kept
         head = match.group(0)[:match.start("value") - match.start(0)]
         tail = match.group(0)[match.end("value") - match.start(0):]
-        if len(compact) == 12 and compact == value:
-            return head + self.ams_id(value) + tail
         self._count("tag data")
         return head + "<tag>" + tail
 
     def _serial(self, match) -> str:
         value = match.group("value")
-        if self.is_bridge_serial(value) or value.isdigit():
+        if self.is_bridge_serial(value):
             return match.group(0)
         head = match.group(0)[:match.start("value") - match.start(0)]
         tail = match.group(0)[match.end("value") - match.start(0):]
@@ -712,19 +793,18 @@ class Redactor:
             return value
         if not value:
             return value
-        if lowered == "key" or _SECRET_NAME_RE.search(lowered):
+        if lowered == "key" or _SECRET_NAME_RE.match(lowered):
             if value.startswith("<"):
                 return value
             self._count("secrets")
             return REDACTED
         if lowered in ("hostname", "host_name", "fqdn", "nodename"):
             return self.host(value)
-        if lowered in ("uid", "node") and \
-                re.fullmatch(r"[0-9A-Fa-f]{12}", value):
-            return self.ams_id(value)
+        if lowered in ("uid", "node") and _AMS_UID.match(value):
+            return value                     # an AMS unit ID, kept
         if re.fullmatch(r"(?:ams_?)?(?:serial(?:_?(?:number|no))?|sn)",
                         lowered) and re.fullmatch(r"[A-Za-z0-9]{6,32}", value) \
-                and not self.is_bridge_serial(value) and not value.isdigit():
+                and not self.is_bridge_serial(value):
             return self.serial_hash(value)
         if re.fullmatch(r"(?:tag|tray|card|nfc|rfid)_?(?:uid|uuid|data|"
                         r"payload|blocks?)|payload", lowered):
@@ -758,48 +838,44 @@ class Redactor:
     # -- the last check ----------------------------------------------------------
 
     def find_leaks(self, text: str) -> list:
-        """(check, line number, masked text) for anything in ``text`` that
-        still looks private. Empty for a properly redacted report."""
-        checks = [
-            ("private-key", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY")),
-            ("ssh-key", re.compile(r"\b(?:ssh-(?:rsa|ed25519|dss)|"
-                                   r"ecdsa-sha2-nistp\d+)[ \t]+AAAA")),
-            ("hex-secret", _HEX32),
-            ("mac-address", _MAC),
-            ("e-mail", _EMAIL),
-            ("home-user", re.compile(r"/home/(?!<)[A-Za-z0-9._-]+")),
-            ("ams-id", _OAMS_PATH),
-        ] + [("credential", pattern) for pattern in _CREDENTIALS]
-        if self._known_ids is not None:
-            checks.append(("ams-id", self._known_ids))
-        if self._distinct_hosts is not None:
-            checks.append(("hostname", self._distinct_hosts))
-        if self._distinct_users is not None:
-            checks.append(("username", self._distinct_users))
+        """(kinds, line number, masked text) for each line of ``text`` that
+        the redaction rules would still change: the last check is exactly as
+        strong as the redaction itself. ``kinds`` names what the rules would
+        remove ("secrets", "ip addresses", ...). Empty for a properly
+        redacted report."""
+        probe = self._probe()
         findings = []
         for number, line in enumerate(text.splitlines(), 1):
-            for name, pattern in checks:
-                for match in pattern.finditer(line):
-                    if name == "e-mail" and match.group(0).startswith("git@"):
-                        continue
-                    findings.append((name, number, mask(match.group(0))))
-            for match in _SECRET_KV.finditer(line):
-                if not _strip_quotes(match.group("value")).startswith("<"):
-                    findings.append(("secret-value", number,
-                                     mask(match.group(0))))
-            for match in _IPV4.finditer(line):
-                if _private_address(match.group(0)) is not None:
-                    findings.append(("ip-address", number,
-                                     mask(match.group(0))))
-            for secret in self.secrets:
-                if secret in line:
-                    findings.append(("known-secret", number, mask(secret)))
+            before = dict(probe.counts)
+            changed = probe.redact_text(line)
+            if changed == line:
+                continue
+            kinds = sorted(kind for kind, count in probe.counts.items()
+                           if count > before.get(kind, 0)) or ["changed"]
+            findings.append((", ".join(kinds), number,
+                             mask(_first_difference(line, changed))))
         return findings
+
+
+def _first_difference(original: str, changed: str) -> str:
+    """The word of ``original`` where ``changed`` starts to differ."""
+    index = 0
+    limit = min(len(original), len(changed))
+    while index < limit and original[index] == changed[index]:
+        index += 1
+    start = index
+    while start > 0 and not original[start - 1].isspace():
+        start -= 1
+    end = index
+    while end < len(original) and not original[end].isspace() and \
+            end - start < 40:
+        end += 1
+    return original[start:end] or original[start:start + 40]
 
 
 __all__ = [
     "BRIDGE_SERIAL", "COMMON_HOSTNAMES", "COMMON_USERS", "PUBLIC_HOSTS",
     "REDACTED", "Redactor", "collect_secrets", "default_salt_path",
-    "load_or_create_salt", "mask", "secrets_in_ini",
+    "distinctive_hostname", "load_or_create_salt", "mask", "secrets_in_ini",
     "secrets_in_secrets_file",
 ]

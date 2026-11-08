@@ -10,8 +10,8 @@ Machine > Log files). It holds, in this order:
 - the OpenAMS version and commit, Python and the operating system;
 - the bridge: USB state, the relay service and its status file, the firmware
   version against the newest bundled one, the configured AMS units;
-- the bridge's own diagnostic snapshot, when the relay and the bridge
-  firmware offer one (``bridge_support_snapshot``), or why not;
+- the bridge's own diagnostic snapshot (bridge firmware 9 and later), with a
+  plain reading of it, or why there is none (``bridge_support_snapshot``);
 - Klipper and Moonraker: state, message and versions;
 - the OpenAMS sections of the config ([mcu] for each AMS, [oams], [fps],
   [oams_manager], [filament_group]), the section names of every config file,
@@ -43,6 +43,7 @@ import urllib.error
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from cortex_bridge import bridge_snapshot  # noqa: E402
 from cortex_bridge import cli  # noqa: E402
 from cortex_bridge import redact  # noqa: E402
 
@@ -71,34 +72,29 @@ CONFIG_FILES_MAX = 80
 KLIPPER_BACKUP = re.compile(r"-\d{8}_\d{6}\.cfg$")
 
 # ---------------------------------------------------------------------------
-# The bridge's own diagnostic snapshot (placeholder)
+# The bridge's own diagnostic snapshot
 # ---------------------------------------------------------------------------
 
-# PLACEHOLDER until the bridge firmware's support snapshot ships. The relay
-# is expected to answer this control-socket method by asking the bridge, on
-# its bridge-level control channel, for its counters (discovery, bus), last
-# refusal reasons, per-slot state, master role, power and versions. Its
-# fields are not settled, so the report carries the snapshot as an opaque
-# object, redacted field by field (see docs/contracts/support_report.md).
-SNAPSHOT_METHOD = "support_snapshot"
-SNAPSHOT_TIMEOUT = 10.0
+# The relay asks the bridge (firmware 9 and later, see
+# cortex_bridge.bridge_snapshot). The bridge answers each request within its
+# 1 s reply window; with the 1 s interval and two retries the relay answers
+# within bridge_snapshot.WORST_CASE_S (6.2 s). The client waits a little
+# longer than that.
+SNAPSHOT_METHOD = bridge_snapshot.SNAPSHOT_METHOD
+SNAPSHOT_TIMEOUT = bridge_snapshot.WORST_CASE_S + 3.0
 
 
 def _unavailable(reason: str, text: str) -> dict:
     return {"available": False, "reason": reason,
-            "text": "unavailable: " + text, "snapshot": None}
+            "text": "unavailable: " + text, "snapshot": None, "reading": None}
 
 
 def bridge_support_snapshot(run_dir: Path, *, request=None,
                             timeout: float = SNAPSHOT_TIMEOUT) -> dict:
     """The bridge's diagnostic snapshot through the relay, or why there is
-    none. Always returns ``available``, ``reason``, ``text`` and
-    ``snapshot`` (the bridge's object, or None).
-
-    Today's relay answers ``unknown-method``; a relay that knows the method
-    but talks to older bridge firmware is expected to answer
-    ``{"ok": false, "error": "unsupported-firmware", "minimum_firmware": N}``
-    (``minimum_firmware`` is a proposal, see the contract note)."""
+    none. Always returns ``available``, ``reason``, ``text``, ``snapshot``
+    (only the fields ``bridge_snapshot.allowlisted`` keeps, or None) and
+    ``reading`` (``bridge_snapshot.classify``, or None)."""
     request = request or cli.control_request
     try:
         reply = request({"method": SNAPSHOT_METHOD}, run_dir=Path(run_dir),
@@ -113,24 +109,45 @@ def bridge_support_snapshot(run_dir: Path, *, request=None,
     if not isinstance(reply, dict) or not reply:
         return _unavailable("no-reply", "the relay sent no answer")
     if reply.get("ok") and isinstance(reply.get("snapshot"), dict):
+        snapshot = bridge_snapshot.allowlisted(reply["snapshot"])
         return {"available": True, "reason": "", "text": "",
-                "snapshot": reply["snapshot"]}
+                "snapshot": snapshot,
+                "reading": bridge_snapshot.classify(snapshot)}
     error = str(reply.get("error") or "")
     if error == "unknown-method":
         return _unavailable(
             "relay-without-snapshot",
-            "this OpenAMS relay does not ask the bridge for a snapshot yet")
+            "this OpenAMS relay does not ask the bridge for a snapshot "
+            "(update OpenAMS)")
     if error == "unsupported-firmware":
         minimum = reply.get("minimum_firmware")
         return _unavailable(
-            "firmware-too-old",
-            "bridge firmware older than %s" % minimum
-            if isinstance(minimum, int) else
-            "the bridge firmware does not offer a snapshot")
+            "firmware-too-old", str(reply.get("message") or "") or
+            ("bridge firmware older than %s" % minimum
+             if isinstance(minimum, int) else
+             "the bridge firmware does not offer a snapshot"))
     if reply.get("ok"):
         return _unavailable("malformed", "the relay's answer had no snapshot")
     return _unavailable(error or "refused",
                         str(reply.get("message") or error or "refused"))
+
+
+def snapshot_text(result: dict, redactor: redact.Redactor) -> str:
+    """The snapshot section: the plain reading first, then the fields."""
+    lines = []
+    reading = result.get("reading")
+    if result.get("available") and reading:
+        lines.append("Reading: " + reading["summary"])
+        if reading.get("action"):
+            lines.append("What to do: " + reading["action"])
+    else:
+        lines.append(result.get("text") or "unavailable")
+    lines.append("")
+    # In the wire's order (system, line, master, ...), not sorted.
+    lines.append(json.dumps(redactor.redact_data(
+        {key: result.get(key) for key in
+         ("available", "reason", "reading", "snapshot")}), indent=1))
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -412,12 +429,6 @@ class Report:
         return ", ".join(parts) or "nothing private was found"
 
 
-def _uids(facts: dict) -> list:
-    relay = facts.get("relay") or {}
-    uids = [unit.get("uid", "") for unit in relay.get("units") or []]
-    return uids + list(facts.get("configured") or [])
-
-
 def _bridge_serials(facts: dict) -> list:
     serials = [device.get("serial", "") for device in facts.get("usb") or []]
     bridge = (facts.get("relay") or {}).get("bridge") or {}
@@ -432,16 +443,11 @@ def _log_section(lines, count: int, missing: str) -> tuple:
 
 
 def make_redactor(sources: Sources, facts: dict) -> redact.Redactor:
-    support_uids = []
-    lines = read_tail(sources.support_log, 512 * 1024) or []
-    for line in lines:
-        support_uids += re.findall(r"\"node\"\s*:\s*\"([0-9a-f]{12})\"", line)
     return redact.Redactor(
         salt=sources.salt(), hostnames=sources.hostnames(),
         usernames=sources.usernames(),
         secrets=set(sources.secrets()) | set(sources.wifi_networks()),
-        bridge_serials=_bridge_serials(facts),
-        ams_ids=_uids(facts) + support_uids)
+        bridge_serials=_bridge_serials(facts))
 
 
 def build(sources: Sources, *, now=None) -> Report:
@@ -449,6 +455,8 @@ def build(sources: Sources, *, now=None) -> Report:
     now = now or datetime.datetime.now(datetime.timezone.utc)
     facts = sources.facts()
     redactor = make_redactor(sources, facts)
+    snapshot = sources.snapshot()
+    facts["snapshot"] = snapshot              # the next step can name it
     step = cli.next_step(facts)
     sections = []
 
@@ -462,7 +470,7 @@ def build(sources: Sources, *, now=None) -> Report:
     add("bridge", {key: facts.get(key) for key in (
         "usb", "relay_service", "relay", "installed_firmware",
         "bundled_firmware", "configured")})
-    add("bridge snapshot", sources.snapshot())
+    add("bridge snapshot", snapshot_text(snapshot, redactor))
     klipper = sources.klipper()
     klipper["service"] = facts.get("klipper_service")
     add("klipper", klipper)

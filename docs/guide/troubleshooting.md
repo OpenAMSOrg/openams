@@ -13,7 +13,8 @@ you touching the printer.
 status` instead: it checks USB, the relay and each AMS, and names the first
 thing to fix. The bridge's own table of symptoms and fixes is in
 [Set up a Cortex Bridge printer](cortex-bridge-setup.md#troubleshooting), and
-`cortex-bridge.py support` writes a report to attach to a support request.
+`cortex-bridge.py support` writes a report to attach to a support request,
+with private details removed ([the support report](support-report.md)).
 
 ## The three read-only checks
 

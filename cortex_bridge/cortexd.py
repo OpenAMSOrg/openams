@@ -10,6 +10,9 @@ The same stream carries one more exchange: the host may ask the bridge's
 production firmware who it is (IDENTITY_REQUEST) and gets an IDENTITY_REPORT
 back. This module only frames those messages and hands each report to
 ``CortexCore.identity_handler``; ``cortex_bridge.bridge_info`` reads it.
+Firmware 9 and later also answer a SUPPORT_REQUEST with a SUPPORT_REPORT (the
+support snapshot), handed to ``CortexCore.support_handler``;
+``cortex_bridge.bridge_snapshot`` reads it and decides when to ask.
 """
 
 from __future__ import annotations
@@ -42,8 +45,14 @@ IDENTITY_FAILURE_PAYLOAD_SIZE = IDENTITY_TOKEN_SIZE + 1
 # longer report from a later firmware can never break the AMS traffic; the
 # reader decides whether it understands the contents.
 IDENTITY_REPORT_MAX_PAYLOAD = 512
+# The support snapshot exchange (production firmware 9 and later): a 4-byte
+# token out; token, status and, on success, a body of at most 507 bytes back.
+SUPPORT_TOKEN_SIZE = 4
+SUPPORT_REQUEST_PAYLOAD_SIZE = SUPPORT_TOKEN_SIZE
+SUPPORT_REPORT_MIN_PAYLOAD = SUPPORT_TOKEN_SIZE + 1
+SUPPORT_REPORT_MAX_PAYLOAD = 512
 MAX_PAYLOAD = max(ROSTER_PAYLOAD_SIZE, NODE_DATA_PAYLOAD_SIZE,
-                  IDENTITY_REPORT_MAX_PAYLOAD)
+                  IDENTITY_REPORT_MAX_PAYLOAD, SUPPORT_REPORT_MAX_PAYLOAD)
 MAX_MESSAGE = HEADER_SIZE + MAX_PAYLOAD
 NODE_FLAG_ONLINE = 0x01
 PTY_READ_SIZE = 512
@@ -75,11 +84,14 @@ class MessageType(IntEnum):
     NODE_DATA = 3
     IDENTITY_REQUEST = 4
     IDENTITY_REPORT = 5
+    SUPPORT_REQUEST = 8
+    SUPPORT_REPORT = 9
 
 
-HOST_MESSAGES = (MessageType.HOST_DATA, MessageType.IDENTITY_REQUEST)
+HOST_MESSAGES = (MessageType.HOST_DATA, MessageType.IDENTITY_REQUEST,
+                 MessageType.SUPPORT_REQUEST)
 BRIDGE_MESSAGES = (MessageType.ROSTER, MessageType.NODE_DATA,
-                   MessageType.IDENTITY_REPORT)
+                   MessageType.IDENTITY_REPORT, MessageType.SUPPORT_REPORT)
 
 
 class Direction(IntEnum):
@@ -165,6 +177,15 @@ def _validate_message(message: Message, direction: Direction) -> None:
     elif message.kind == MessageType.IDENTITY_REPORT:
         if len(payload) < IDENTITY_FAILURE_PAYLOAD_SIZE:
             raise ProtocolError("invalid identity report")
+    elif message.kind == MessageType.SUPPORT_REQUEST:
+        if len(payload) != SUPPORT_REQUEST_PAYLOAD_SIZE:
+            raise ProtocolError("invalid support request")
+    elif message.kind == MessageType.SUPPORT_REPORT:
+        # Only the framing is checked here; a report whose status and body
+        # disagree is the reader's problem, never the AMS traffic's.
+        if not SUPPORT_REPORT_MIN_PAYLOAD <= len(payload) <= \
+                SUPPORT_REPORT_MAX_PAYLOAD:
+            raise ProtocolError("invalid support report")
     elif message.kind == MessageType.HOST_DATA:
         if len(payload) <= UID_SIZE or not _valid_uid(payload[:UID_SIZE]):
             raise ProtocolError("invalid host-data UID or payload")
@@ -493,6 +514,9 @@ class CortexCore:
         # it is None (nobody asked).
         self.identity_handler: Callable[[bytes], None] | None = None
         self.identity_handler_errors = 0
+        # The same for each SUPPORT_REPORT payload (the support snapshot).
+        self.support_handler: Callable[[bytes], None] | None = None
+        self.support_handler_errors = 0
         self.bridge_to_host_messages = 0
         self.bridge_to_host_bytes = 0
         self.host_to_bridge_messages = 0
@@ -585,6 +609,14 @@ class CortexCore:
                     self.identity_handler(message.payload)
                 except Exception:  # noqa: BLE001 - see above
                     self.identity_handler_errors += 1
+            return
+        if message.kind == MessageType.SUPPORT_REPORT:
+            # Informational like the identity: never routed, never fatal.
+            if self.support_handler is not None:
+                try:
+                    self.support_handler(message.payload)
+                except Exception:  # noqa: BLE001 - see above
+                    self.support_handler_errors += 1
             return
         if message.kind == MessageType.ROSTER:
             generation, statuses = parse_roster(message)
@@ -899,6 +931,8 @@ class CortexDaemon:
 __all__ = [
     "BRIDGE_MESSAGES", "HOST_MESSAGES", "IDENTITY_FAILURE_PAYLOAD_SIZE",
     "IDENTITY_REQUEST_PAYLOAD_SIZE", "IDENTITY_TOKEN_SIZE",
+    "SUPPORT_REPORT_MAX_PAYLOAD", "SUPPORT_REPORT_MIN_PAYLOAD",
+    "SUPPORT_REQUEST_PAYLOAD_SIZE", "SUPPORT_TOKEN_SIZE",
     "CleartextMuxTransport", "RuntimeTransport", "CortexCore",
     "CortexDaemon", "Direction",
     "KlipperFrameDecoder", "Message", "MessageType", "NodeEndpoint",

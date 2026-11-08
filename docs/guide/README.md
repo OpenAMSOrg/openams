@@ -54,6 +54,7 @@ Nothing in a slicer profile or a macro has to know what is behind the unit.
 | [Set up a Cortex Bridge printer](cortex-bridge-setup.md) | You have a Cortex Bridge and a stock AMS: wiring, install, config and the first load, step by step. |
 | [The Cortex Bridge board](cortex-bridge-hardware.md) | You want the bridge's connectors, pinouts and LEDs. |
 | [Update the Cortex Bridge firmware](cortex-bridge-update.md) | A new bridge firmware version shipped with OpenAMS. |
+| [The Cortex Bridge support report](support-report.md) | You need help with a Cortex Bridge printer: one file with what support needs, private details removed. |
 | [Install](install.md) | You are setting up a printer, or moving from `klipper_openams`. |
 | [Configure](configure.md) | OpenAMS is installed and you are editing `oams.cfg`. |
 | [Using OpenAMS](using.md) | It runs, and you want to load, unload, toolchange, edit groups or calibrate. |

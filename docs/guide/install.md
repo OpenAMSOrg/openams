@@ -108,6 +108,11 @@ is the customer guide; this is what it changes:
 | `[update_manager openams]` | `managed_services` gains `cortex-bridge`, so an update restarts the relay |
 | `oams.cfg` | On a printer without one: copied from [`oams_cortex_bridge_sample.cfg`](../../oams_cortex_bridge_sample.cfg), then the connected AMS units are added by `tools/cortex-bridge.py config --write` |
 
+On every printer, the installer also keeps its last run's output in
+`~/printer_data/logs/openams-install.log` (replaced on each run), so that
+[the support report](support-report.md) can include it. `OPENAMS_INSTALL_LOG`
+names another file.
+
 The relay's Python is the one Klipper runs with, which already has pyserial;
 without it the installer installs `python3-serial` and uses the system Python.
 If another relay service such as `cortex-gateway` is installed, the installer

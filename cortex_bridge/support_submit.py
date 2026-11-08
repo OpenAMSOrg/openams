@@ -94,9 +94,33 @@ def _is_local(host: str) -> bool:
         return False
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Follow no redirect. urllib would turn a redirected POST into a GET
+    without the report and then call the final answer a success; here a 3xx
+    stays an error the sender reports."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def no_redirect_opener():
+    return urllib.request.build_opener(_NoRedirect()).open
+
+
+def _redirect_host(exc) -> str:
+    location = ""
+    headers = getattr(exc, "headers", None) or getattr(exc, "hdrs", None)
+    if headers is not None:
+        location = headers.get("Location") or headers.get("URI") or ""
+    return urllib.parse.urlsplit(location).hostname or location or \
+        "an unnamed place"
+
+
 class HttpsPost:
     """POST the report file as text/plain. Plain http only to this computer
     (for a local test server): a report never crosses a network unencrypted.
+    A redirect is refused, not followed: the report goes to the configured
+    address or nowhere.
     """
 
     def __init__(self, url: str, *, opener=None, timeout: float = SEND_TIMEOUT):
@@ -109,7 +133,7 @@ class HttpsPost:
             raise SendError("the destination URL must not carry a user name "
                             "or password")
         self.url = url
-        self.opener = opener or urllib.request.urlopen
+        self.opener = opener or no_redirect_opener()
         self.timeout = timeout
 
     def send(self, data: bytes) -> str:
@@ -120,9 +144,19 @@ class HttpsPost:
             with self.opener(request, timeout=self.timeout) as reply:
                 status = getattr(reply, "status", None) or reply.getcode()
                 body = reply.read(REPLY_LIMIT).decode("utf-8", "replace")
+                if 300 <= int(status) < 400:
+                    raise SendError(self._redirected(status, reply))
         except urllib.error.HTTPError as exc:
+            try:
+                exc.close()
+            except Exception:  # noqa: BLE001 - only releasing the socket
+                pass
+            if 300 <= exc.code < 400:
+                raise SendError(self._redirected(exc.code, exc))
             raise SendError("the destination refused the report (HTTP %d)"
                             % exc.code)
+        except SendError:
+            raise
         except (OSError, urllib.error.URLError, ValueError) as exc:
             raise SendError("the destination could not be reached (%s)" %
                             getattr(exc, "reason", exc))
@@ -130,6 +164,12 @@ class HttpsPost:
             raise SendError("the destination answered HTTP %s" % status)
         return body.strip().splitlines()[0][:200] if body.strip() else \
             "HTTP %s" % status
+
+    @staticmethod
+    def _redirected(status, source) -> str:
+        return ("the destination answered with a redirect (HTTP %s) to %s; "
+                "it was not followed and nothing more was sent. Check the "
+                "destination address" % (status, _redirect_host(source)))
 
 
 SENDERS = {"https": HttpsPost, "http": HttpsPost}

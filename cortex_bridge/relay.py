@@ -45,7 +45,8 @@ from cortex_bridge.cortexd import (  # noqa: E402
     ROSTER_PAYLOAD_SIZE,
     VERSION as RUNTIME_MUX_VERSION,
 )
-from cortex_bridge import bridge_info, update_messages  # noqa: E402
+from cortex_bridge import bridge_info, bridge_snapshot  # noqa: E402
+from cortex_bridge import update_messages  # noqa: E402
 from cortex_bridge.support_log import GatewaySupportLog  # noqa: E402
 
 DAEMON_VERSION = 2
@@ -269,9 +270,10 @@ class StatusFile:
 class ControlServer:
     """A Unix socket taking one JSON request per connection.
 
-    Requests: {"method": "status"} and {"method": "update", "file": PATH}.
-    Replies are JSON lines; an update streams progress lines and ends with a
-    line whose "event" is "result".
+    Requests: {"method": "status"}, {"method": "update", "file": PATH} and
+    {"method": "support_snapshot"}. Replies are JSON lines; an update streams
+    progress lines and ends with a line whose "event" is "result"; a support
+    snapshot is one line whose "event" is "support_snapshot".
     """
 
     def __init__(self, path: Path | None):
@@ -377,6 +379,11 @@ class Relay:
         self.ready_sent = False
         self.last_reason = None
         self.bridge = None
+        # The support snapshot being asked for, the control connections
+        # waiting for it, and when a request last went to the bridge.
+        self.snapshot_query = None
+        self.snapshot_waiters = []
+        self.snapshot_sent_at = None
 
     # -- lifecycle --------------------------------------------------------
 
@@ -480,11 +487,66 @@ class Relay:
             prepared = self.prepare_update(connection, request)
             if prepared is not None:
                 raise UpdateRequested(connection, request, prepared)
+        elif method == bridge_snapshot.SNAPSHOT_METHOD:
+            self.request_snapshot(connection, running=running)
         else:
             send_line(connection, {"event": "result", "ok": False,
                                    "error": "unknown-method",
                                    "message": "unknown method %r" % method})
             connection.close()
+
+    # -- the support snapshot ----------------------------------------------
+
+    def request_snapshot(self, connection, *, running: bool) -> None:
+        """Answer {"method": "support_snapshot"}: ask the bridge, or say why
+        not. Only a bridge the gate allows is ever sent the request; any
+        other would drop its AMS units on it."""
+        if not running or self.core is None:
+            self._answer(connection, bridge_snapshot.failure(
+                "not-connected", "no bridge session is running"))
+            return
+        allowed, error, message = bridge_snapshot.gate(
+            self.bridge, self.status.state.get("firmware"))
+        if not allowed:
+            extra = {"minimum_firmware": bridge_snapshot.MINIMUM_FIRMWARE} \
+                if error == "unsupported-firmware" else {}
+            self._answer(connection, bridge_snapshot.failure(
+                error, message, **extra))
+            return
+        self.snapshot_waiters.append(connection)
+        if self.snapshot_query is None:
+            not_before = 0.0 if self.snapshot_sent_at is None else \
+                self.snapshot_sent_at + bridge_snapshot.MIN_INTERVAL_S
+            self.snapshot_query = bridge_snapshot.SnapshotQuery(
+                time.monotonic(), not_before=not_before)
+
+    def drive_snapshot(self, daemon, now: float) -> None:
+        query = self.snapshot_query
+        if query is None:
+            return
+        request = query.due(now)
+        if request is not None:
+            daemon.send_request(request)
+            self.snapshot_sent_at = now
+        if query.finished:
+            self.finish_snapshot(query.reply)
+
+    def accept_snapshot(self, payload: bytes) -> None:
+        if self.snapshot_query is not None:
+            self.snapshot_query.accept(payload, time.monotonic())
+
+    def finish_snapshot(self, reply: dict) -> None:
+        self.log.record("bridge_snapshot", result="ok" if reply.get("ok")
+                        else reply.get("error") or "failed")
+        waiters, self.snapshot_waiters = self.snapshot_waiters, []
+        self.snapshot_query = None
+        for connection in waiters:
+            self._answer(connection, reply)
+
+    @staticmethod
+    def _answer(connection, reply: dict) -> None:
+        send_line(connection, reply)
+        connection.close()
 
     # -- one USB session --------------------------------------------------
 
@@ -542,6 +604,7 @@ class Relay:
             query = bridge_info.IdentityQuery(time.monotonic())
             self.core.identity_handler = \
                 lambda payload: query.accept(payload, time.monotonic())
+            self.core.support_handler = self.accept_snapshot
         reported = query.firmware if query is not None else None
         summary_at = time.monotonic() + SUMMARY_INTERVAL
         status_at = 0.0
@@ -572,9 +635,15 @@ class Relay:
                     self.log.record("traffic_summary",
                                     **self.core.support_snapshot())
                     summary_at = now + SUMMARY_INTERVAL
+                self.drive_snapshot(daemon, now)
                 self.serve_control(running=True)
         finally:
             self.core.identity_handler = None
+            self.core.support_handler = None
+            if self.snapshot_query is not None:
+                self.finish_snapshot(bridge_snapshot.failure(
+                    "not-connected", "the bridge session ended before it "
+                    "answered"))
             self.log.record("traffic_summary", **self.core.support_snapshot())
             daemon.detach()
             self.status.set(units=self.units())

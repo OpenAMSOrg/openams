@@ -1,0 +1,418 @@
+{
+ "note": "Support snapshot golden vectors (format 1) from the bridge firmware's encoder, simulator build; token 01020304, status 0. reading is the class bridge_snapshot.classify must give.",
+ "cases": [
+  {
+   "name": "silent_line",
+   "reading": "silent-line",
+   "body_hex": "0101190000000900002af81800007f007701000100000fa0000002120230000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000031c00000095000000000000005200000000000000000000000000000095043300000000000000000000000000ff000000000000ff000000000000000000000000180000000000000000000000000000000000051600000001000000000000000000000000000000000000",
+   "message_hex": "040900be01020304000101190000000900002af81800007f007701000100000fa0000002120230000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000031c00000095000000000000005200000000000000000000000000000095043300000000000000000000000000ff000000000000ff000000000000000000000000180000000000000000000000000000000000051600000001000000000000000000000000000000000000",
+   "decoded": {
+    "format": 1,
+    "system": {
+     "app_version": 9,
+     "uptime_ms": 11000,
+     "reset_flags": 24,
+     "boot_status": 0,
+     "genuine_status": 0,
+     "image": {
+      "tx": true,
+      "motion": true,
+      "dryer": true,
+      "tray_info": true,
+      "tag_read": true,
+      "diagnostics": true,
+      "production": true,
+      "application": false
+     },
+     "min_evidence": "hypothesis",
+     "policy": {
+      "requested": {
+       "master": true,
+       "motion": true,
+       "dryer": true
+      },
+      "effective": {
+       "master": true,
+       "motion": true,
+       "dryer": true
+      }
+     },
+     "role": {
+      "master": true,
+      "foreign_master": false,
+      "tx_fault": false,
+      "awaiting": false
+     },
+     "master_acquisitions": 1,
+     "master_since_ms": 4000,
+     "max_pass_gap_us": 530
+    },
+    "line": {
+     "bytes": 0,
+     "parity_errors": 0,
+     "framing_errors": 0,
+     "noise_errors": 0,
+     "overruns": 0,
+     "messages": 0,
+     "check_errors": 0,
+     "malformed": 0,
+     "skipped_bytes": 0,
+     "first_rx_ms": null,
+     "last_rx_ms": null,
+     "last_answer_ms": null
+    },
+    "master": {
+     "requests": 149,
+     "answers": 0,
+     "unanswered": 82,
+     "send_failures": 0,
+     "foreign_requests": 0,
+     "unmatched_answers": 0,
+     "sent_messages": 149
+    },
+    "discovery": {
+     "announces": 0,
+     "first_announce_ms": null,
+     "last_announce_ms": null,
+     "last_announce_marker": null,
+     "last_announce_tag_family": "none",
+     "offers": 0,
+     "offer_giveups": 0,
+     "last_offer_index": null,
+     "last_offer_basis": "none",
+     "last_offer_ms": null,
+     "identity_conflicts": 0,
+     "candidates_dropped": 0,
+     "index_polls": 24,
+     "refused_unsupported_family": 0,
+     "refused_index_mismatch": 0,
+     "refused_over_capacity": 0,
+     "refused_duplicate_identity": 0,
+     "refused_tag_model_mismatch": 0,
+     "admitted": 0,
+     "candidates": 0,
+     "omitted": 0,
+     "last_announce_tag_suffix": null
+    },
+    "host": {
+     "usb_sessions": 1,
+     "protocol_faults": 0,
+     "recoveries": 0,
+     "host_messages": 0,
+     "host_dropped": 0,
+     "host_stale": 0,
+     "update_refused": 0,
+     "attach_refused": 0,
+     "roster_rejected": 0
+    },
+    "units": [],
+    "candidates": [],
+    "refusals": []
+   }
+  },
+  {
+   "name": "refused_at_ht_index",
+   "reading": "refused",
+   "body_hex": "01011900000009000032c81800007f007701000100000fa000000212023000000412000000000000000000000000000000000000001000000000000000000000000000000fa200002db500002db5031c000000c4000000100000005e000000000000000000000000000000c404330000000100000fa200000fa2fe00000000010000800500000fa2000000000000001e000000010000000000000001004e373030051600000001000000000000000000000000000000000000111d800402000203000d1d150003000f000200000fa300002db5004e373030200d0000106980020203004e373030",
+   "message_hex": "040900ec010203040001011900000009000032c81800007f007701000100000fa000000212023000000412000000000000000000000000000000000000001000000000000000000000000000000fa200002db500002db5031c000000c4000000100000005e000000000000000000000000000000c404330000000100000fa200000fa2fe00000000010000800500000fa2000000000000001e000000010000000000000001004e373030051600000001000000000000000000000000000000000000111d800402000203000d1d150003000f000200000fa300002db5004e373030200d0000106980020203004e373030",
+   "decoded": {
+    "format": 1,
+    "system": {
+     "app_version": 9,
+     "uptime_ms": 13000,
+     "reset_flags": 24,
+     "boot_status": 0,
+     "genuine_status": 0,
+     "image": {
+      "tx": true,
+      "motion": true,
+      "dryer": true,
+      "tray_info": true,
+      "tag_read": true,
+      "diagnostics": true,
+      "production": true,
+      "application": false
+     },
+     "min_evidence": "hypothesis",
+     "policy": {
+      "requested": {
+       "master": true,
+       "motion": true,
+       "dryer": true
+      },
+      "effective": {
+       "master": true,
+       "motion": true,
+       "dryer": true
+      }
+     },
+     "role": {
+      "master": true,
+      "foreign_master": false,
+      "tx_fault": false,
+      "awaiting": false
+     },
+     "master_acquisitions": 1,
+     "master_since_ms": 4000,
+     "max_pass_gap_us": 530
+    },
+    "line": {
+     "bytes": 1042,
+     "parity_errors": 0,
+     "framing_errors": 0,
+     "noise_errors": 0,
+     "overruns": 0,
+     "messages": 16,
+     "check_errors": 0,
+     "malformed": 0,
+     "skipped_bytes": 0,
+     "first_rx_ms": 4002,
+     "last_rx_ms": 11701,
+     "last_answer_ms": 11701
+    },
+    "master": {
+     "requests": 196,
+     "answers": 16,
+     "unanswered": 94,
+     "send_failures": 0,
+     "foreign_requests": 0,
+     "unmatched_answers": 0,
+     "sent_messages": 196
+    },
+    "discovery": {
+     "announces": 1,
+     "first_announce_ms": 4002,
+     "last_announce_ms": 4002,
+     "last_announce_marker": "ams_ht",
+     "last_announce_tag_family": "unknown",
+     "offers": 1,
+     "offer_giveups": 0,
+     "last_offer_index": 128,
+     "last_offer_basis": "marker_ht",
+     "last_offer_ms": 4002,
+     "identity_conflicts": 0,
+     "candidates_dropped": 0,
+     "index_polls": 30,
+     "refused_unsupported_family": 0,
+     "refused_index_mismatch": 1,
+     "refused_over_capacity": 0,
+     "refused_duplicate_identity": 0,
+     "refused_tag_model_mismatch": 0,
+     "admitted": 0,
+     "candidates": 1,
+     "omitted": 0,
+     "last_announce_tag_suffix": "N700"
+    },
+    "host": {
+     "usb_sessions": 1,
+     "protocol_faults": 0,
+     "recoveries": 0,
+     "host_messages": 0,
+     "host_dropped": 0,
+     "host_stale": 0,
+     "update_refused": 0,
+     "attach_refused": 0,
+     "roster_rejected": 0
+    },
+    "units": [],
+    "candidates": [
+     {
+      "index": 128,
+      "link": "refused",
+      "refusal": "index_mismatch",
+      "waiting": "none",
+      "family": "ams2pro",
+      "model_class": "supported",
+      "tag_family": "unknown",
+      "flags": {
+       "model": true,
+       "identity": false,
+       "status": true,
+       "announce": true,
+       "conflict": false,
+       "fresh": false,
+       "synthetic": false
+      },
+      "ams_version": [
+       29,
+       21,
+       0,
+       3
+      ],
+      "answers": 15,
+      "timeouts": 2,
+      "first_seen_ms": 4003,
+      "last_answer_ms": 11701,
+      "ams_error": 0,
+      "tag_suffix": "N700"
+     }
+    ],
+    "refusals": [
+     {
+      "at_ms": 4201,
+      "index": 128,
+      "reason": "index_mismatch",
+      "family": "ams2pro",
+      "model_class": "supported",
+      "tag_family": "unknown",
+      "tag_suffix": "N700"
+     }
+    ]
+   }
+  },
+  {
+   "name": "admitted_not_configured",
+   "reading": "unused-by-klipper",
+   "body_hex": "01011900000009000023281800007f007701000100000fa0000002b2023000000ced000000000000000000000000000000000000003800000000000000000000000000000fa2000022ef000022ef031c0000009c00000038000000340000000000000000000000000000009c043300000000000000000000000000ff000000000000ff000000000000000000000000110000000000000000000001010000000000051600000001000000000000000000000000000000000000103800151a58f193490002021d15000300380000000022ef0000010f010000ffffffff0f00000000ffff00000000ffff0000000000004e353733",
+   "message_hex": "040900f8010203040001011900000009000023281800007f007701000100000fa0000002b2023000000ced000000000000000000000000000000000000003800000000000000000000000000000fa2000022ef000022ef031c0000009c00000038000000340000000000000000000000000000009c043300000000000000000000000000ff000000000000ff000000000000000000000000110000000000000000000001010000000000051600000001000000000000000000000000000000000000103800151a58f193490002021d15000300380000000022ef0000010f010000ffffffff0f00000000ffff00000000ffff0000000000004e353733",
+   "decoded": {
+    "format": 1,
+    "system": {
+     "app_version": 9,
+     "uptime_ms": 9000,
+     "reset_flags": 24,
+     "boot_status": 0,
+     "genuine_status": 0,
+     "image": {
+      "tx": true,
+      "motion": true,
+      "dryer": true,
+      "tray_info": true,
+      "tag_read": true,
+      "diagnostics": true,
+      "production": true,
+      "application": false
+     },
+     "min_evidence": "hypothesis",
+     "policy": {
+      "requested": {
+       "master": true,
+       "motion": true,
+       "dryer": true
+      },
+      "effective": {
+       "master": true,
+       "motion": true,
+       "dryer": true
+      }
+     },
+     "role": {
+      "master": true,
+      "foreign_master": false,
+      "tx_fault": false,
+      "awaiting": false
+     },
+     "master_acquisitions": 1,
+     "master_since_ms": 4000,
+     "max_pass_gap_us": 690
+    },
+    "line": {
+     "bytes": 3309,
+     "parity_errors": 0,
+     "framing_errors": 0,
+     "noise_errors": 0,
+     "overruns": 0,
+     "messages": 56,
+     "check_errors": 0,
+     "malformed": 0,
+     "skipped_bytes": 0,
+     "first_rx_ms": 4002,
+     "last_rx_ms": 8943,
+     "last_answer_ms": 8943
+    },
+    "master": {
+     "requests": 156,
+     "answers": 56,
+     "unanswered": 52,
+     "send_failures": 0,
+     "foreign_requests": 0,
+     "unmatched_answers": 0,
+     "sent_messages": 156
+    },
+    "discovery": {
+     "announces": 0,
+     "first_announce_ms": null,
+     "last_announce_ms": null,
+     "last_announce_marker": null,
+     "last_announce_tag_family": "none",
+     "offers": 0,
+     "offer_giveups": 0,
+     "last_offer_index": null,
+     "last_offer_basis": "none",
+     "last_offer_ms": null,
+     "identity_conflicts": 0,
+     "candidates_dropped": 0,
+     "index_polls": 17,
+     "refused_unsupported_family": 0,
+     "refused_index_mismatch": 0,
+     "refused_over_capacity": 0,
+     "refused_duplicate_identity": 0,
+     "refused_tag_model_mismatch": 0,
+     "admitted": 1,
+     "candidates": 1,
+     "omitted": 0,
+     "last_announce_tag_suffix": null
+    },
+    "host": {
+     "usb_sessions": 1,
+     "protocol_faults": 0,
+     "recoveries": 0,
+     "host_messages": 0,
+     "host_dropped": 0,
+     "host_stale": 0,
+     "update_refused": 0,
+     "attach_refused": 0,
+     "roster_rejected": 0
+    },
+    "units": [
+     {
+      "slot": 0,
+      "uid": "151a58f19349",
+      "index": 0,
+      "link": "online",
+      "family": "ams2pro",
+      "ams_version": [
+       29,
+       21,
+       0,
+       3
+      ],
+      "answers": 56,
+      "timeouts": 0,
+      "last_answer_ms": 8943,
+      "ams_error": 0,
+      "motion_error": 0,
+      "ams_state": "idle",
+      "spools_present": 15,
+      "host": {
+       "attached": true,
+       "configured": false,
+       "heard": false,
+       "latch": "none"
+      },
+      "configurations": 0,
+      "host_quiet_ms": null,
+      "operation": {
+       "active": false,
+       "kind": null
+      },
+      "stage": "none",
+      "fault_severity": "none",
+      "fault_code": 0,
+      "fault_bay": null,
+      "loaded_bay": null,
+      "path_mm": 0,
+      "failures": 0,
+      "last_failure_kind": null,
+      "last_failure_outcome": null,
+      "last_failure_detail": 0,
+      "last_failure_ms": null,
+      "tag_suffix": "N573"
+     }
+    ],
+    "candidates": [],
+    "refusals": []
+   }
+  }
+ ]
+}

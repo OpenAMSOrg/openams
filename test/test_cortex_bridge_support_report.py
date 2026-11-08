@@ -57,6 +57,9 @@ PRIVATE_KEY = "-----BEGIN " + "OPENSSH PRIVATE" + " KEY-----\n" + \
     "-----END " + "OPENSSH PRIVATE" + " KEY-----"
 AMS_SERIAL = "19C06A4B2700123"
 TAG_UID = "04A1B2C3D4E5F6"
+LOGGED_TAG_UID = "04c1d2e3f4a5b6"      # as src/mfrc522.py logs a card
+CURL_PASSWORD = "Cu" + "rlPass" + "-77"
+UNIT_IDENTITY = "0F1E2D3C" + "4B5A6978" + "8796A5B4"
 EMAIL = "someone" + "@" + "example.com"
 
 PRIVATE = {
@@ -80,11 +83,12 @@ PRIVATE = {
     "an IPv6 address": "fe80::dea6",
     "a custom domain": "printer.example.net",
     "an mDNS name": "spoolhost.local",
-    "the AMS unit ID": UID,
-    "an old AMS unit ID": OLD_UID,
     "an AMS serial": AMS_SERIAL,
     "a tag UID": TAG_UID,
     "an e-mail address": EMAIL,
+    "a tag UID a reader logged": LOGGED_TAG_UID,
+    "a password on a command line": CURL_PASSWORD,
+    "an AMS identity in free text": UNIT_IDENTITY,
     "a spool's name": "Galaxy Black",
     "a spool's vendor": "Prusament",
     "a spool's lot": "LOT-998877",
@@ -179,6 +183,9 @@ max_extrude_only_distance: 300
 
 [gcode_shell_command backup_cfg]
 command: curl -s -H "Authorization: Bearer {jwt}" https://printer.example.net/up?token=abcdef0123456789
+
+[gcode_shell_command push_cfg]
+command: curl -u admin:{curl} https://printer.example.net/push
 """
 
 KLIPPY_LOG = """\
@@ -203,8 +210,13 @@ key = {key}
 
 [gcode_shell_command backup_cfg]
 command = curl -s -H "Authorization: Bearer {jwt}" https://printer.example.net/up?token=abcdef0123456789
+
+[gcode_shell_command push_cfg]
+command = curl -u admin:{curl} https://printer.example.net/push
 =======================
 {stats}mfrc522: read tag_uid={tag_uid} payload=0102030405060708090a0b0c0d0e0f10
+MFRC522 mfrc522 oams1_0 card {logged_tag}
+OAMS[1]: unit identity {identity}
 webhooks client 547884: New connection from 192.168.1.50
 Spoolman: active spool {{"id": 7, "filament": {{"id": 3, "name": "Galaxy Black PETG", "vendor": {{"id": 2, "name": "Prusament"}}}}, "lot_nr": "LOT-998877", "comment": "bought at the shop", "remaining_weight": 812.5}}
 Config error
@@ -213,7 +225,8 @@ Traceback (most recent call last):
     self._read_config()
 configparser.Error: No [fps] section found; OpenAMS requires at least one FPS lane.
 """.format(home=HOME, uid=UID, old_uid=OLD_UID, key=TAG_KEY, jwt=JWT,
-           tag_uid=TAG_UID,
+           tag_uid=TAG_UID, curl=CURL_PASSWORD, logged_tag=LOGGED_TAG_UID,
+           identity=UNIT_IDENTITY,
            stats="".join("Stats %d.1: gcodein=0 mcu: mcu_awake=0.001\n" % n
                          for n in range(20, 60)))
 
@@ -232,9 +245,11 @@ password = {mqtt}
 2026-11-08 10:00:03,000 [openams_spoolman.py:_sync()] - Spoolman spool 7: {{"id": 7, "filament": {{"id": 3, "name": "Galaxy Black PETG"}}, "location": "Garage shelf"}}
 2026-11-08 10:00:04,000 [notifier.py:notify()] - sent to {discord}
 2026-11-08 10:00:05,000 [authorization.py:check()] - login from {email} via {host}.local
+2026-11-08 10:00:05,500 [openams_bridge.py:_info()] - ams_serial: {ams_serial} tag suffix N573 firmware 00.00.06.49 (0.0.6.49)
 2026-11-08 10:00:06,000 [klippy_connection.py:_check_ready()] - Klipper error: No [fps] section found; OpenAMS requires at least one FPS lane.
 """.format(host=HOSTNAME, mqtt=MQTT_PASSWORD, ssid=WIFI_SSID,
-           api_key=MOONRAKER_API_KEY, discord=DISCORD_HOOK, email=EMAIL)
+           api_key=MOONRAKER_API_KEY, discord=DISCORD_HOOK, email=EMAIL,
+           ams_serial=AMS_SERIAL)
 
 INSTALL_LOG = """\
 Klipper installation found at {home}/klipper
@@ -380,7 +395,8 @@ def build_printer(root: Path) -> None:
     (root / "run").mkdir()
     (config / "moonraker.conf").write_text(MOONRAKER_CONF)
     (config / "oams.cfg").write_text(OAMS_CFG)
-    (config / "printer.cfg").write_text(PRINTER_CFG.format(jwt=JWT))
+    (config / "printer.cfg").write_text(PRINTER_CFG.format(
+        jwt=JWT, curl=CURL_PASSWORD))
     (config / "printer-20261101_120000.cfg").write_text(
         "[old_backup_section]\n")
     (root / "printer_data/moonraker.secrets").write_text(SECRETS_FILE)
@@ -462,7 +478,7 @@ class ReportContentsTests(Fixture):
         self.assertIn("Unsupported Klipper GCodeDispatch baseline", text)
         # the snapshot is absent, and says why
         self.assertIn("this OpenAMS relay does not ask the bridge for a "
-                      "snapshot yet", text)
+                      "snapshot", text)
 
     def test_the_bridge_serial_and_public_project_urls_are_kept(self):
         self.assertIn(BRIDGE_SERIAL, self.text)
@@ -471,22 +487,25 @@ class ReportContentsTests(Fixture):
         self.assertIn('command = curl -s -H "Authorization: <redacted>" '
                       'https://<host-', self.text)
 
-    def test_an_ams_reads_the_same_everywhere_in_one_report(self):
-        redactor = redact.Redactor(salt=SALT)
-        name = redactor.ams_id(UID)
-        self.assertIn("serial: /dev/oams/%s" % name, self.text)   # oams.cfg
-        self.assertIn('"configured": [\n  "%s"' % name, self.text)
-        old = redactor.ams_id(OLD_UID)
-        self.assertIn("/dev/oams/%s" % old, self.text)            # klippy
-        self.assertIn('"node": "%s"' % old,
-                      self.text.replace('"node":"', '"node": "'))
+    def test_ams_unit_ids_appear_as_they_are(self):
+        """The owner's decision: the roster UID `status` prints is kept."""
+        self.assertIn("serial: /dev/oams/%s" % UID, self.text)    # oams.cfg
+        self.assertIn('"configured": [\n  "%s"' % UID, self.text)
+        self.assertIn("/dev/oams/%s" % OLD_UID, self.text)        # klippy
+        self.assertIn('"node":"%s"' % OLD_UID, self.text)         # relay log
 
-    def test_two_reports_from_one_printer_name_a_unit_alike(self):
+    def test_ams_serials_hash_alike_in_two_reports_from_one_printer(self):
+        name = redact.Redactor(salt=SALT).serial_hash(AMS_SERIAL)
+        self.assertIn("ams_serial: %s" % name, self.text)
         again = support_report.build(self.sources()).text
         other = support_report.build(self.sources(salt=b"another salt!!!!"))
-        name = redact.Redactor(salt=SALT).ams_id(UID)
         self.assertIn(name, again)
         self.assertNotIn(name, other.text)
+        self.assertNotIn(AMS_SERIAL, other.text)
+
+    def test_the_tag_suffix_and_ams_version_stay(self):
+        self.assertIn("tag suffix N573 firmware 00.00.06.49 (0.0.6.49)",
+                      self.text)
 
     def test_spools_keep_only_their_ids(self):
         self.assertIn('"id": 7', self.text)
@@ -519,7 +538,7 @@ class ReportContentsTests(Fixture):
 
     def test_the_removed_summary_counts_by_kind(self):
         footer = self.text.rsplit("== removed", 1)[1]
-        for kind in ("secrets", "ip addresses", "ams ids", "spool details",
+        for kind in ("secrets", "ip addresses", "ams serials", "spool details",
                      "tag data", "host names", "user names"):
             self.assertIn(kind, footer)
 
@@ -529,7 +548,7 @@ class ReportContentsTests(Fixture):
             "fine\nhere is leftover-secret-1 again\nfine\n", redactor)
         self.assertEqual(removed, 1)
         self.assertNotIn("leftover-secret-1", text)
-        self.assertIn("<line removed by the last check: known-secret>", text)
+        self.assertIn("<line removed by the last check: secrets>", text)
 
 
 # ---------------------------------------------------------------------------
@@ -539,7 +558,7 @@ class ReportContentsTests(Fixture):
 class RedactorTests(unittest.TestCase):
     def redactor(self, **kwargs):
         options = dict(salt=SALT, hostnames=[HOSTNAME], usernames=[USERNAME],
-                       bridge_serials=[BRIDGE_SERIAL], ams_ids=[UID])
+                       bridge_serials=[BRIDGE_SERIAL])
         options.update(kwargs)
         return redact.Redactor(**options)
 
@@ -597,13 +616,13 @@ class RedactorTests(unittest.TestCase):
         kept = "https://github.com/OpenAMSOrg/openams/blob/main/README.md"
         self.assertEqual(redactor.redact_text(kept), kept)
 
-    def test_ams_ids_hash_with_the_salt(self):
-        first = self.redactor().redact_text("/dev/oams/" + UID)
-        again = self.redactor().redact_text("/dev/oams/" + UID)
-        other = self.redactor(salt=b"x" * 16).redact_text("/dev/oams/" + UID)
-        self.assertEqual(first, again)
-        self.assertNotEqual(first, other)
-        self.assertRegex(first, r"^/dev/oams/ams-[0-9a-f]{8}$")
+    def test_ams_unit_ids_stay_and_tag_uids_go(self):
+        redactor = self.redactor()
+        text = "/dev/oams/%s uid=%s uid: 04 A1 B2 C3 tag_suffix=N573 " \
+            "ams_version=[0, 0, 6, 49]" % (UID, UID)
+        self.assertEqual(redactor.redact_text(text),
+                         "/dev/oams/%s uid=%s uid: <tag> tag_suffix=N573 "
+                         "ams_version=[0, 0, 6, 49]" % (UID, UID))
 
     def test_ams_serials_hash_but_the_bridge_serial_stays(self):
         redactor = self.redactor()
@@ -623,7 +642,7 @@ class RedactorTests(unittest.TestCase):
                                                                "name": "x"}},
             "path": HOME + "/openams", "ok": True, "count": 3})
         self.assertEqual(data["hostname"], "<host>")
-        self.assertTrue(data["uid"].startswith("ams-"))
+        self.assertEqual(data["uid"], UID)
         self.assertTrue(data["serial"].startswith("sn-"))
         self.assertEqual(data["bridge"]["serial"], BRIDGE_SERIAL)
         self.assertEqual(data["tag_uid"], "<tag>")
@@ -649,21 +668,134 @@ class RedactorTests(unittest.TestCase):
         self.assertEqual(text, "Nov 08 09:59:50 <host> python3[812]: "
                          "~/klipper/klippy started")
 
-    def test_find_leaks_catches_what_it_should(self):
+    def test_the_last_check_is_the_redaction_itself(self):
+        """Finding 8: find_leaks flags exactly the lines redact_text would
+        change, naming what it would remove, and masks what it shows."""
         redactor = self.redactor(secrets=[MQTT_PASSWORD])
-        planted = "\n".join((
+        planted = (
             "ok line", "addr 192.168.1.9", "mac dc:a6:32:12:34:56",
             HOME + "/x", "token: abcdefghi", MQTT_PASSWORD, "at " + HOSTNAME,
-            "/dev/oams/" + UID, GITHUB_TOKEN, TAG_KEY, EMAIL,
-            "-----BEGIN " + "RSA PRIVATE KEY-----"))
-        checks = {check for check, _, _ in redactor.find_leaks(planted)}
-        self.assertEqual(checks, {
-            "ip-address", "mac-address", "home-user", "username",
-            "secret-value", "known-secret", "hostname", "ams-id",
-            "credential", "hex-secret", "e-mail", "private-key"})
-        findings = redactor.find_leaks(planted)
+            GITHUB_TOKEN, TAG_KEY, EMAIL,
+            "-----BEGIN " + "RSA PRIVATE KEY-----",
+            "MFRC522 mfrc522 oams1_0 card 04a1b2c3d4e5f6",
+            "command = curl -u admin:" + MQTT_PASSWORD[:4] + "x1 "
+            "https://github.com/a",
+            "kept: v2.6.0-41-gf8343016 at head f8343016 /dev/oams/" + UID)
+        findings = redactor.find_leaks("\n".join(planted))
+        flagged = {number for _, number, _ in findings}
+        for number, line in enumerate(planted, 1):
+            self.assertEqual(number in flagged,
+                             self.redactor(secrets=[MQTT_PASSWORD])
+                             .redact_text(line) != line, line)
+        self.assertEqual(flagged, set(range(2, 14)))
+        kinds = dict((number, kind) for kind, number, _ in findings)
+        self.assertEqual(kinds[2], "ip addresses")
+        self.assertEqual(kinds[12], "tag data")
+        self.assertEqual(kinds[13], "secrets")
         self.assertNotIn(MQTT_PASSWORD, repr(findings),
                          "findings are masked")
+        self.assertEqual(redactor.counts, {}, "checking counts nothing")
+
+    def test_tag_uids_in_free_text(self):
+        """Finding 1: every format the host code logs a tag in."""
+        redactor = self.redactor()
+        cases = {
+            # src/mfrc522.py: logging.info("MFRC522 %s card %s", ...)
+            "MFRC522 mfrc522 oams1_0 card 04a1b2c3d4e5f6":
+                "MFRC522 mfrc522 oams1_0 card <tag>",
+            "MFRC522 r card 04a1b2c3": "MFRC522 r card <tag>",
+            "MFRC522 r card 04a1b2c3d4e5f6a7b8c9": "MFRC522 r card <tag>",
+            # src/mfrc522.py: the OAMSM_RFID_READ answer
+            "OAMSM_RFID_READ OAMS=1 RFID_CARD=0 STATUS=PRESENT UID=04A1B2C3 "
+            "BLOCK=0102030405060708090A0B0C0D0E0F10 VERSION=0x92":
+                "OAMSM_RFID_READ OAMS=1 RFID_CARD=0 STATUS=PRESENT UID=<tag> "
+                "BLOCK=<tag> VERSION=0x92",
+            # Spoolman's extra field (moonraker/openams_spoolman)
+            '"card_uids": "04a1b2c3"': '"card_uids": "<tag>"',
+            '{"tray_uid": "0f0e0d0c0b0a09080706050403020100"}':
+                '{"tray_uid": "<tag>"}',
+        }
+        for given, expected in cases.items():
+            self.assertEqual(redactor.redact_text(given), expected, given)
+        kept = ("Git version: 'v0.12.0-396-g8a2e0e8b' describe "
+                "v2.6.0-41-gf8343016, head f8343016, uid=%s" % UID)
+        self.assertEqual(redactor.redact_text(kept), kept)
+
+    def test_credentials_on_command_lines(self):
+        """Finding 2: what a shell command in klippy.log's config dump
+        carries."""
+        redactor = self.redactor()
+        cases = {
+            "command = curl -u admin:S3cretPass https://x.example.net/a":
+                "command = curl -u <redacted> https://<host-1>/a",
+            "curl --user admin:S3cretPass -X POST":
+                "curl --user <redacted> -X POST",
+            "curl --user=admin:S3cretPass": "curl --user=<redacted>",
+            "tool --password hunter22 --verbose":
+                "tool --password <redacted> --verbose",
+            "tool --token abc123 --api-key=xyz789 --http-password 'a b'":
+                "tool --token <redacted> --api-key=<redacted> "
+                "--http-password <redacted>",
+            "rsync -a backup:S3cret@nas.example.net:/x /y":
+                "rsync -a <redacted>@<host-2>:/x /y",
+        }
+        for given, expected in cases.items():
+            self.assertEqual(redactor.redact_text(given), expected, given)
+        kept = ("moonraker -p 7125 -u /tmp/sock; systemctl --user status "
+                "klipper; docker login --password-stdin")
+        self.assertEqual(redactor.redact_text(kept), kept)
+
+    def test_secret_values_go_whole(self):
+        """Finding 3: a value of several words, and escaped quotes."""
+        redactor = self.redactor()
+        cases = {
+            "password: my pass word": "password: <redacted>",
+            "wpa_passphrase = two words here  ": "wpa_passphrase = <redacted>",
+            '{"password": "pa\\"ss", "x": 1}':
+                '{"password": "<redacted>", "x": 1}',
+            '{"password": 12345, "x": 1}': '{"password": <redacted>, "x": 1}',
+            # Split so the public export's leak scan never sees the shape.
+            "api_key=" + "'it''s'": "api_key=" + "'<redacted>'",
+        }
+        for given, expected in cases.items():
+            self.assertEqual(redactor.redact_text(given), expected, given)
+
+    def test_serials_of_digits_and_in_free_text_are_hashed(self):
+        """Finding 4: all-digit serials, and the 24-hex unit identity."""
+        redactor = self.redactor()
+        identity = "0F1E2D3C4B5A69788796A5B4"
+        hashed = redactor.serial_hash(identity)
+        self.assertRegex(redactor.redact_text('"serial": "123456789012"'),
+                         r'^"serial": "sn-[0-9a-f]{8}"$')
+        self.assertEqual(redactor.redact_text(
+            "OAMS[1]: unit serial %s" % identity),
+            "OAMS[1]: unit serial %s" % hashed)
+        self.assertEqual(redactor.redact_text(
+            '"identity": {"serial": "%s"}' % identity),
+            '"identity": {"serial": "%s"}' % hashed)
+        words = [int.from_bytes(bytes.fromhex(identity)[i:i + 4], "little")
+                 for i in (0, 4, 8)]
+        self.assertEqual(redactor.redact_text(
+            "Receive: ams_identity uid0=%d uid1=%d uid2=%d" % tuple(words)),
+            "Receive: ams_identity serial=%s" % hashed)
+        self.assertEqual(redactor.redact_text(
+            "serial: " + BRIDGE_SERIAL), "serial: " + BRIDGE_SERIAL)
+
+    def test_ordinary_words_are_not_taken_for_secrets_or_hosts(self):
+        """Finding 6."""
+        redactor = self.redactor(hostnames=["oams"])
+        kept = ("webhooks: Error processing data\n"
+                "tokens=5 secrets_path: ~/printer_data/moonraker.secrets\n"
+                "[oams ams2pro] serial: /dev/oams/%s oams.cfg OAMS[1]" % UID)
+        self.assertEqual(redactor.redact_text(kept), kept)
+        self.assertEqual(redactor.redact_text(
+            "Nov 08 09:59:50 oams python3[1]: up\npi@oams:~ $ ping "
+            "oams.local"),
+            "Nov 08 09:59:50 <host> python3[1]: up\npi@<host>:~ $ ping "
+            "<host>")
+        self.assertFalse(redact.distinctive_hostname("garage"))
+        self.assertTrue(redact.distinctive_hostname("voron-garage"))
+        self.assertTrue(redact.distinctive_hostname("printer24"))
 
 
 class CollectSecretsTests(Fixture):
@@ -728,8 +860,8 @@ class SnapshotTests(Fixture):
         self.assertEqual(self.snapshot({"ok": True})["reason"], "malformed")
         self.assertEqual(self.snapshot({})["reason"], "no-reply")
 
-    def test_todays_relay_answers_and_the_report_degrades(self):
-        """The relay as it is today, on a real control socket."""
+    def test_a_relay_without_a_bridge_session_says_so(self):
+        """The relay itself, on a real control socket, between sessions."""
         run_dir = self.root / "relayrun"
         args = relay.parser().parse_args([
             "--pty-dir", str(self.root / "pty"), "--run-dir", str(run_dir),
@@ -751,22 +883,58 @@ class SnapshotTests(Fixture):
         finally:
             stop.set()
             thread.join(5)
-        self.assertEqual(result["reason"], "relay-without-snapshot")
+        self.assertEqual(result["reason"], "not-connected")
+        self.assertIn("no bridge session", result["text"])
 
-    def test_a_snapshot_is_carried_redacted(self):
-        reply = {"ok": True, "snapshot": {
-            "firmware": {"version": 9}, "counters": {"discovery": 3},
-            "slots": [{"slot": 0, "uid": UID, "serial": AMS_SERIAL,
-                       "tag_uid": TAG_UID}],
-            "bridge": {"serial": BRIDGE_SERIAL}}}
+    def vector(self, name):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from test_cortex_bridge_snapshot import VECTORS
+        return VECTORS[name]["decoded"]
+
+    def snapshot_section(self, decoded):
+        reply = {"event": "support_snapshot", "ok": True,
+                 "snapshot": decoded, "raw": "AQ=="}
         report = support_report.build(self.sources(snapshot_reply=reply))
-        section = report.text.split("== bridge snapshot", 1)[1] \
+        return report, report.text.split("== bridge snapshot", 1)[1] \
             .split("\n== ", 1)[0]
-        self.assertIn('"available": true', section)
-        self.assertIn('"discovery": 3', section)
-        self.assertIn(BRIDGE_SERIAL, section)
-        for private in (UID, AMS_SERIAL, TAG_UID):
-            self.assertNotIn(private, section)
+
+    def test_the_report_reads_the_snapshot_first(self):
+        report, section = self.snapshot_section(self.vector("silent_line"))
+        first = section.splitlines()[1]
+        self.assertTrue(first.startswith("Reading: The bridge sends on the "
+                                         "AMS data line and nothing comes "
+                                         "back."), first)
+        self.assertIn("What to do: The data pair is open", section)
+        self.assertIn('"class": "silent-line"', section)
+        self.assertIn('"sent_messages": 149', section)
+        self.assertNotIn('"raw"', section, "the raw body is not carried")
+        self.assertIn("Next step: No AMS answers. The bridge reports: The "
+                      "bridge sends on the AMS data line", report.text)
+
+    def test_a_refusal_names_the_reason_and_the_suffix(self):
+        _, section = self.snapshot_section(
+            self.vector("refused_at_ht_index"))
+        self.assertIn("Reading: An AMS (tag suffix N700, not one this "
+                      "firmware recognises) answers but the bridge refuses "
+                      "it: it holds an AMS index that does not fit its "
+                      "model", section)
+        self.assertIn('"ams_version": [\n', section)
+        self.assertIn('"last_offer_basis": "marker_ht"', section)
+
+    def test_only_allowlisted_fields_reach_the_report(self):
+        decoded = self.vector("admitted_not_configured")
+        decoded = dict(decoded, serial=AMS_SERIAL, bridge={
+            "serial": BRIDGE_SERIAL})
+        decoded["units"] = [dict(decoded["units"][0], tag_uid=TAG_UID,
+                                 ams_serial=AMS_SERIAL)]
+        _, section = self.snapshot_section(decoded)
+        self.assertIn('"uid": "151a58f19349"', section)
+        self.assertIn('"tag_suffix": "N573"', section)
+        self.assertRegex(section, r'"ams_version": \[\n +29,')
+        for dropped in (AMS_SERIAL, TAG_UID, BRIDGE_SERIAL, '"bridge"'):
+            self.assertNotIn(dropped, section)
+        self.assertIn("Reading: The bridge offers AMS 151a58f19349 but "
+                      "Klipper does not use it.", section)
 
 
 # ---------------------------------------------------------------------------
@@ -887,6 +1055,66 @@ class SubmitTests(Fixture):
         self.assertTrue(self.report.exists())
         self.assertIn("could not be reached", self.out[-1])
 
+    def test_a_redirect_is_a_failure_that_names_its_target(self):
+        """Finding 5: a 3xx is never reported as sent."""
+        import email.message
+        import urllib.error
+
+        def redirecting(request, timeout=None):
+            headers = email.message.Message()
+            headers["Location"] = "https://elsewhere.example.org/drop"
+            raise urllib.error.HTTPError(request.full_url, 302, "Found",
+                                         headers, None)
+        code = support_submit.submit(
+            self.report, self.destination(), ask=lambda prompt: "y",
+            out=self.out.append, interactive=True, opener=redirecting)
+        self.assertEqual(code, 1)
+        self.assertIn("redirect (HTTP 302) to elsewhere.example.org",
+                      self.out[-1])
+        self.assertNotIn("Sent.", "\n".join(self.out))
+
+    def test_the_default_sender_does_not_follow_a_redirect(self):
+        """Against a server on this computer: it answers the POST with a
+        302, and no second request (urllib's body-less GET) reaches it."""
+        import http.server
+        seen = []
+
+        class Redirecting(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen.append(("POST", self.path))
+                self.rfile.read(int(self.headers["Content-Length"]))
+                self.send_response(302)
+                self.send_header("Location", "http://127.0.0.1:%d/other"
+                                 % self.server.server_port)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def do_GET(self):
+                seen.append(("GET", self.path))
+                self.send_response(200)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"ok")
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Redirecting)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            code = support_submit.submit(
+                self.report, self.destination(
+                    "http://127.0.0.1:%d/reports" % server.server_port),
+                ask=lambda prompt: "y", out=self.out.append,
+                interactive=True)
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertEqual(code, 1)
+        self.assertEqual(seen, [("POST", "/reports")])
+        self.assertIn("redirect (HTTP 302) to 127.0.0.1", self.out[-1])
+
 
 # ---------------------------------------------------------------------------
 # The command
@@ -965,22 +1193,45 @@ class CommandTests(Fixture):
         self.assertIn("still has something that looks private", out)
         self.assertNotIn(MQTT_PASSWORD, out)
 
-    def test_status_offers_the_report_when_something_is_wrong(self):
+    def run_status(self, facts, snapshot=None):
+        asked = []
+
+        def fake_snapshot(args):
+            asked.append(True)
+            return snapshot or support_report._unavailable(
+                "firmware-too-old", "bridge firmware 2 has no support "
+                "snapshot")
         output = io.StringIO()
-        with mock.patch.object(cli, "gather", lambda args: facts_no_ams()), \
+        with mock.patch.object(cli, "gather", lambda args: facts), \
+                mock.patch.object(cli, "status_snapshot", fake_snapshot), \
                 contextlib.redirect_stdout(output):
             cli.cmd_status(types.SimpleNamespace(json=False))
-        self.assertIn("No AMS answers", output.getvalue())
-        self.assertIn(cli.SUPPORT_HINT, output.getvalue())
+        return output.getvalue(), bool(asked)
+
+    def test_status_offers_the_report_when_something_is_wrong(self):
+        text, asked = self.run_status(facts_no_ams())
+        self.assertTrue(asked, "no AMS online: the snapshot is asked for")
+        self.assertIn("No AMS answers. Check 24 V", text)
+        self.assertIn(cli.SUPPORT_HINT, text)
         connected = facts_no_ams()
         connected["relay"]["units"] = [{"uid": UID, "online": True,
                                         "path": "/dev/oams/" + UID}]
-        output = io.StringIO()
-        with mock.patch.object(cli, "gather", lambda args: connected), \
-                contextlib.redirect_stdout(output):
-            cli.cmd_status(types.SimpleNamespace(json=False))
-        self.assertIn(cli.ALL_CONNECTED, output.getvalue())
-        self.assertNotIn(cli.SUPPORT_HINT, output.getvalue())
+        text, asked = self.run_status(connected)
+        self.assertFalse(asked, "an AMS is online: nothing is asked")
+        self.assertIn(cli.ALL_CONNECTED, text)
+        self.assertNotIn(cli.SUPPORT_HINT, text)
+
+    def test_status_names_what_the_bridge_saw(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from test_cortex_bridge_snapshot import VECTORS
+        snapshot = support_report.bridge_support_snapshot(
+            self.root / "run", request=lambda request, **kw: {
+                "event": "support_snapshot", "ok": True,
+                "snapshot": VECTORS["silent_line"]["decoded"], "raw": ""})
+        text, _ = self.run_status(facts_no_ams(), snapshot)
+        self.assertIn("No AMS answers. The bridge reports: The bridge sends "
+                      "on the AMS data line and nothing comes back. The data "
+                      "pair is open", text)
 
 
 if __name__ == "__main__":

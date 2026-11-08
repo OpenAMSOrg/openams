@@ -22,6 +22,12 @@ that closed each gap.
 | **C4** | [`C4_spool_linking.md`](C4_spool_linking.md) | Moonraker `openams_spoolman` component ↔ host ↔ Spoolman | **v1 (2026-09-28)** — all gaps resolved; `spool_hint` deferred to D6 |
 | **C5** | [`C5_klipper_mmu_wire.md`](C5_klipper_mmu_wire.md) | Klipper-MMU MCU firmware ↔ its host (`klipper_mmu/host/wire.py`) | public, wire-level; **v1 (2026-09-29)** — §3 enum tables are checked against `wire.py` by `test/test_contract_c5_sync.py`; §7 maps every op, state, stage, admission, fault and result to C1/C2, and lists what has no counterpart, with the four ops C3 §2 has since mapped |
 
+A related note, not a numbered contract:
+[`support_report.md`](support_report.md) describes the Cortex Bridge support
+report's format, its redaction rules, the placeholder interface for the
+bridge's diagnostic snapshot, and the opt-in sender, with the owner's open
+decisions.
+
 Schemas for C2 and C4 are in `schemas/`, examples in `examples/`;
 `python3 docs/contracts/check_examples.py` validates them. C5 has no schema —
 it is a wire contract, and its enumerations live in the tables its sync test

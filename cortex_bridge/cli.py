@@ -235,6 +235,11 @@ def next_step(facts: dict) -> str:
         return "Start the relay: sudo systemctl start cortex-bridge"
     units = online_units(relay)
     if not units:
+        # Bridge firmware 9 and later say what they saw on the AMS line.
+        reading = (facts.get("snapshot") or {}).get("reading") or {}
+        if reading.get("class") not in (None, "none"):
+            return ("No AMS answers. The bridge reports: %s %s" % (
+                reading["summary"], reading.get("action") or "")).strip()
         return ("No AMS answers. Check 24 V at PWR IN (red LED on), the "
                 "4-pin BUFFER cable, and the 6-pin cable from the AMS to the "
                 "buffer.")
@@ -318,8 +323,19 @@ SUPPORT_HINT = ("If that does not fix it, `cortex-bridge.py support` writes a "
                 "it.")
 
 
+def status_snapshot(args):
+    """The bridge's snapshot, asked only when the relay runs and no AMS is
+    online (the relay answers at once when the bridge has none)."""
+    from cortex_bridge import support_report
+    return support_report.bridge_support_snapshot(
+        Path(getattr(args, "run_dir", RUN_DIR)))
+
+
 def cmd_status(args) -> int:
     facts = gather(args)
+    if facts["relay_service"] == "active" and \
+            not online_units(facts["relay"]):
+        facts["snapshot"] = status_snapshot(args)
     if args.json:
         print(json.dumps(facts, indent=1, sort_keys=True))
         return 0

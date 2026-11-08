@@ -54,6 +54,8 @@ _EVENT_FIELDS = {
     "update_phase": frozenset(("phase",)),
     "update_retry": frozenset(("attempt", "attempts", "reason")),
     "update_result": frozenset(("firmware_version", "result", "reason")),
+    # A support snapshot was asked for: "ok" or the failure's code.
+    "bridge_snapshot": frozenset(("result",)),
 }
 
 _CODE_FIELDS = frozenset((
