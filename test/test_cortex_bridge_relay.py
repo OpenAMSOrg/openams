@@ -540,6 +540,40 @@ class SessionTests(unittest.TestCase):
         self.assertTrue(result["action"])
         self.assertEqual(self.status()["update"]["summary"], result["summary"])
 
+    def test_a_repeated_update_is_logged_and_still_installs(self):
+        """The updater repeats an update the bridge turned down while
+        writing it; the relay logs each repeat to the support log (a schema
+        record with a reason code, never free text) and carries on."""
+        self.start_session()
+        self.answer_identity(version=4)
+        self.wait_for(lambda: self.firmware().get("version") == 4)
+
+        class ReceiverRejected(Exception):
+            pass
+
+        calls = []
+        fake = self.fake_updater(7, calls)
+
+        def with_retry(data, on_retry=None, **kwargs):
+            on_retry(1, 3, ReceiverRejected("turned down at 40 %: see "
+                                            "/dev/ttyACM9"))
+            return fake.update_bridge(data, **kwargs)
+        fake.update_bridge_with_retry = with_retry
+        package = Path(self.tmp.name) / "bridge-7.oac2"
+        package.write_bytes(b"OAC2-test")
+        lines = self.run_update(fake, package)
+        self.assertTrue(lines[-1]["ok"], lines[-1])
+        self.assertEqual([line["event"] for line in lines
+                          if line["event"] == "retry"], ["retry"])
+        self.assertEqual(len(calls), 1)
+        records = [json.loads(line) for line in
+                   self.log_file.read_text().splitlines()]
+        retries = [r for r in records if r["record"] == "update_retry"]
+        self.assertEqual(len(retries), 1)
+        self.assertEqual((retries[0]["attempt"], retries[0]["attempts"],
+                          retries[0]["reason"]),
+                         (1, 3, "receiver-rejected"))
+
     def test_waiting_is_logged_once_per_reason(self):
         args = relay.parser().parse_args([
             "--pty-dir", str(self.pty_dir), "--run-dir", "",

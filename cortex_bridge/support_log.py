@@ -52,6 +52,7 @@ _EVENT_FIELDS = {
     )),
     "update_start": frozenset(("firmware_version", "source")),
     "update_phase": frozenset(("phase",)),
+    "update_retry": frozenset(("attempt", "attempts", "reason")),
     "update_result": frozenset(("firmware_version", "result", "reason")),
 }
 

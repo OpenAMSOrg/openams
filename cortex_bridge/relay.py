@@ -671,8 +671,11 @@ class Relay:
             serial_number = (self.bridge or {}).get("serial") or None
 
             def repeating(attempt, attempts, error):
+                # A reason code, as the schema allows: the error's text may
+                # name devices or paths the support log never carries.
                 self.log.record("update_retry", attempt=attempt,
-                                attempts=attempts, reason=str(error)[:200])
+                                attempts=attempts,
+                                reason=_reason_code(error.__class__.__name__))
                 self.status.set(detail="the bridge did not accept the update "
                                 "this time; repeating it (attempt %d of %d)"
                                 % (attempt + 1, attempts))
