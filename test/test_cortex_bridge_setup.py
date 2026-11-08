@@ -405,6 +405,15 @@ class CommandLineTests(unittest.TestCase):
                                             "link": "silent",
                                             "last_answer_ms": 1604919}]}}},
              "AMS %s has not answered the bridge for 24 min" % AMS2["uid"]),
+            # A silent AMS that isn't configured (moved to another printer)
+            # is neither "not in your config" nor a problem here.
+            ({"relay": {"units": [{"uid": AMS2["uid"], "online": True},
+                                  {"uid": HT["uid"], "online": True}]},
+              "snapshot": {"snapshot": {"system": {"uptime_ms": 100000},
+                                        "units": [{"uid": HT["uid"],
+                                                   "link": "silent",
+                                                   "last_answer_ms": 1000}]}}},
+             "Everything is connected"),
         )
         for overrides, expected in cases:
             self.assertIn(expected, cli.next_step(self.facts(**overrides)),

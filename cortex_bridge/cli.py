@@ -243,14 +243,18 @@ def next_step(facts: dict) -> str:
         return ("No AMS answers. Check 24 V at PWR IN (red LED on), the "
                 "4-pin BUFFER cable, and the 6-pin cable from the AMS to the "
                 "buffer.")
+    # Bridge firmware 9 and later: the relay's roster can still list an AMS
+    # the bridge no longer hears (unplugged, switched off, its own mains out,
+    # moved to another printer). Only a configured one needs the user.
+    silent = silent_units(facts)
     missing = [unit for unit in units
-               if unit["uid"] not in facts["configured"]]
+               if unit["uid"] not in facts["configured"]
+               and unit["uid"] not in silent]
     if missing:
         return ("%d AMS online but not in your config. Run "
                 "`cortex-bridge.py config --write`." % len(missing))
-    # Bridge firmware 9 and later: the relay's roster can still list an AMS
-    # the bridge no longer hears (unplugged, switched off, its own mains out).
-    silent = silent_units(facts)
+    silent = {uid: quiet for uid, quiet in silent.items()
+              if uid in set(facts["configured"])}
     if silent:
         uid, quiet_s = sorted(silent.items())[0]
         return ("AMS %s has not answered the bridge for %s. Check its power "
@@ -435,6 +439,14 @@ def cmd_config(args) -> int:
 
     run_dir = Path(args.run_dir)
     units = wait_for_units(run_dir, args.wait)
+    # An AMS the bridge no longer hears is left out (bridge firmware 9 and
+    # later say so in their snapshot); the relay's roster may still list it.
+    silent = silent_units({"snapshot": status_snapshot(args)}) if units \
+        else {}
+    for unit in [u for u in units if u["uid"] in silent]:
+        print("  %s: left out, the bridge has not heard it for %s"
+              % (unit["uid"], _duration(silent[unit["uid"]])))
+    units = [u for u in units if u["uid"] not in silent]
     if not units:
         print("No AMS is online behind the bridge. Run `cortex-bridge.py "
               "status` to see why.", file=sys.stderr)
