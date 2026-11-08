@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 12,
+   "file": "bridge-12.oac2",
+   "sha256": "823c35acfa560c65e68551e74e596e55f35739344698de2ee9bcdccbc5fd7156",
+   "released": "2026-11-08",
+   "notes": "An AMS 2 Pro is only asked to dry when it is idle with no filament in its hub, and a dry it does not start is reported within 10 s instead of going unnoticed."
+  },
+  {
    "version": 11,
    "file": "bridge-11.oac2",
    "sha256": "11dc9eb70e0b87b9092b1d9c8b88e59ff24419c44f5dda130688c89c7314bf7f",
