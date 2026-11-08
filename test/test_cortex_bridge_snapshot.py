@@ -462,6 +462,41 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(reading["class"], "garbled-line")
         self.assertIn("orientation", reading["action"])
 
+    def test_an_ams_left_without_an_index_while_another_runs(self):
+        # voron350, 2026-11-08: an AMS 1 runs, an AMS HT plugged in after
+        # 12.8 h announces 374 times and is never offered an index.
+        stuck = dict(announces=374, first_announce_ms=45926933,
+                     last_announce_ms=46153145, last_announce_marker=0xFE,
+                     last_announce_tag_family=3, admitted=1, candidates=1,
+                     last_announce_tag_suffix=b"N460")
+        system = encode_system(uptime_ms=46153700)
+        line = encode_line(bytes=22524383, messages=397270,
+                           last_answer_ms=46153719)
+        reading = self.reading(line=line, system=system,
+                               discovery=encode_discovery(**stuck))
+        self.assertEqual(reading["class"], "no-index-offered")
+        self.assertIn("AMS HT, tag suffix N460", reading["summary"])
+        self.assertIn("36 minutes", reading["action"])
+        self.assertIn("FIRMWARE_RESTART", reading["action"])
+        offered = dict(stuck, offers=12, last_offer_index=0x80,
+                       last_offer_basis=1, last_offer_ms=46153000)
+        reading = self.reading(line=line, system=system,
+                               discovery=encode_discovery(**offered))
+        self.assertEqual(reading["class"], "index-not-taken")
+        self.assertIn("index 128 12 times", reading["summary"])
+        # Announces that stopped long ago (the AMS was admitted) are history.
+        quiet = dict(stuck, last_announce_ms=46100000)
+        reading = self.reading(line=line, system=system,
+                               discovery=encode_discovery(**quiet))
+        self.assertNotIn(reading["class"],
+                         ("no-index-offered", "index-not-taken"))
+        # A few announces are a unit being admitted right now.
+        brief = dict(stuck, announces=4)
+        reading = self.reading(line=line, system=system,
+                               discovery=encode_discovery(**brief))
+        self.assertNotIn(reading["class"],
+                         ("no-index-offered", "index-not-taken"))
+
     def test_an_ams_that_announces_and_is_refused(self):
         reading = self.reading(
             encode_candidate(), encode_refusal(),

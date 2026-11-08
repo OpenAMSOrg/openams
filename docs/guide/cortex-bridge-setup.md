@@ -561,6 +561,7 @@ names the first thing to fix.
 | `Start the relay` | The `cortex-bridge` service is stopped or failed | `sudo systemctl start cortex-bridge`, then `status` again. |
 | `No AMS answers` | The bridge is running but sees no AMS | Update the bridge firmware (`cortex-bridge.py update`): an older bridge may not recognise a newer AMS. Then check the red LED, and that the 4-pin BUFFER cable and the 6-pin AMS cable are fully seated at both ends. Power the AMS off and on. |
 | `... AMS online but not in your config` | A new AMS was connected | `cortex-bridge.py config --write` |
+| `An AMS (...) keeps announcing itself, but the bridge has not offered it an index` (its LED blinks red) | Bridge firmware 9 can take up to 36 minutes to give a newly connected AMS its index once the bridge has been running a while | Switch the printer off (the bridge's 24 V and USB) for 10 seconds, then run **FIRMWARE RESTART** once Klipper is up, and `cortex-bridge.py config --write` if the AMS is new. Or wait: it is added by itself within 36 minutes. |
 | `The bridge is waiting for firmware` | A firmware update was interrupted | `cortex-bridge.py update`; see [the update guide](cortex-bridge-update.md). |
 | `Firmware: installed version unknown: ...` | The bridge has not said which version it runs; the rest of the line says why | See [the update guide](cortex-bridge-update.md#when-the-version-is-unknown). |
 | `The bridge reports a fault` | The bridge's own self-test failed | Unplug USB for 10 s; if it stays, write a support report (below). |

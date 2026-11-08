@@ -248,6 +248,11 @@ def next_step(facts: dict) -> str:
     if missing:
         return ("%d AMS online but not in your config. Run "
                 "`cortex-bridge.py config --write`." % len(missing))
+    # Bridge firmware 9 and later: another AMS may be connected but have no
+    # index yet, while the others run.
+    reading = (facts.get("snapshot") or {}).get("reading") or {}
+    if reading.get("class") in ("no-index-offered", "index-not-taken"):
+        return ("%s %s" % (reading["summary"], reading["action"])).strip()
     return ALL_CONNECTED
 
 
@@ -327,8 +332,10 @@ SUPPORT_HINT = ("If that does not fix it, `cortex-bridge.py support` writes a "
 
 
 def status_snapshot(args):
-    """The bridge's snapshot, asked only when the relay runs and no AMS is
-    online (the relay answers at once when the bridge has none)."""
+    """The bridge's snapshot, asked whenever the relay runs: it names an AMS
+    that answers nothing, and one that is connected but has no index while
+    others run. The relay answers at once for a bridge that has none (older
+    than firmware 9)."""
     from cortex_bridge import support_report
     return support_report.bridge_support_snapshot(
         Path(getattr(args, "run_dir", RUN_DIR)))
@@ -336,8 +343,7 @@ def status_snapshot(args):
 
 def cmd_status(args) -> int:
     facts = gather(args)
-    if facts["relay_service"] == "active" and \
-            not online_units(facts["relay"]):
+    if facts["relay_service"] == "active":
         facts["snapshot"] = status_snapshot(args)
     if args.json:
         print(json.dumps(facts, indent=1, sort_keys=True))

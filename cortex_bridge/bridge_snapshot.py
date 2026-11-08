@@ -88,6 +88,9 @@ EVIDENCE = ("hypothesis", "observed", "qualified")
 SEVERITY = ("none", "info", "pause", "stop")
 LATCH = ("none", "emergency", "watchdog")
 MARKERS = {0xFF: "ams", 0xFE: "ams_ht"}
+# Family ids and announce markers in a sentence.
+FAMILY_TEXT = {"ams1": "AMS 1", "ams2pro": "AMS 2 Pro", "ams_ht": "AMS HT",
+               "ams": "AMS 1 or AMS 2 Pro"}
 
 IMAGE_BITS = ("tx", "motion", "dryer", "tray_info", "tag_read",
               "diagnostics", "production", "application")
@@ -592,6 +595,61 @@ def feed_failure_lines(snapshot) -> list:
     return lines
 
 
+# An AMS with no index answers the bridge's roll call about twice a second
+# until it is given one, normally within a second or two. One still answering
+# at the snapshot (within ANNOUNCE_RECENT_MS) after ANNOUNCE_STUCK of them is
+# stuck, even while other units run.
+ANNOUNCE_RECENT_MS = 10000
+ANNOUNCE_STUCK = 30
+
+
+def _announcing_without_index(snap) -> dict:
+    """An AMS that keeps announcing itself without getting an index, or {}.
+    Bridge firmware 9 can leave a newly connected AMS without an offer for up
+    to 36 minutes once it has run a while (an offer deadline that only moves
+    when an offer is made, compared in a timer that wraps every 71.6 min)."""
+    last = _get(snap, "discovery", "last_announce_ms", default=None)
+    uptime = _get(snap, "system", "uptime_ms", default=None)
+    if not isinstance(last, int) or not isinstance(uptime, int) or \
+            uptime - last > ANNOUNCE_RECENT_MS or \
+            _get(snap, "discovery", "announces") < ANNOUNCE_STUCK:
+        return {}
+    family = _get(snap, "discovery", "last_announce_tag_family",
+                  default=None)
+    if family in (None, "unknown"):
+        family = _get(snap, "discovery", "last_announce_marker",
+                      default=None)
+    suffix = _get(snap, "discovery", "last_announce_tag_suffix",
+                  default=None)
+    details = [FAMILY_TEXT.get(family, "")] if family else []
+    if suffix:
+        details.append("tag suffix %s" % suffix)
+    who = "An AMS" + (" (%s)" % ", ".join(d for d in details if d)
+                      if any(details) else "")
+    offers = _get(snap, "discovery", "offers")
+    if not offers:
+        return {"class": "no-index-offered",
+                "summary": "%s keeps announcing itself, but the bridge has "
+                           "not offered it an index, so it can't be used "
+                           "(its LED blinks)." % who,
+                "action": "Bridge firmware 9 can take up to 36 minutes to "
+                          "offer one when it has been running a while. To "
+                          "add it now, switch the printer off (the bridge's "
+                          "24 V and USB) for 10 seconds, then run "
+                          "FIRMWARE_RESTART once Klipper is up.",
+                "tag_suffix": suffix}
+    index = _get(snap, "discovery", "last_offer_index", default=None)
+    return {"class": "index-not-taken",
+            "summary": "%s keeps announcing itself although the bridge "
+                       "offered it %s %d time%s." % (
+                           who, "index %s" % index if index is not None
+                           else "an index", offers,
+                           "" if offers == 1 else "s"),
+            "action": "Power the AMS off and on; if it stays, send this "
+                      "report to support.",
+            "tag_suffix": suffix}
+
+
 def _classify(snapshot) -> dict:
     snap = snapshot or {}
     boot = _get(snap, "system", "boot_status")
@@ -663,6 +721,9 @@ def _classify(snapshot) -> dict:
                 "action": "Power the AMS off and on; if it stays, send this "
                           "report to support.",
                 "waiting": step}
+    announcing = _announcing_without_index(snap)
+    if announcing:
+        return announcing
     for unit in snap.get("units") or []:
         host = unit.get("host") or {}
         if not host.get("configured") or not host.get("heard"):

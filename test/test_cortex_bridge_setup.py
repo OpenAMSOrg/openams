@@ -388,6 +388,14 @@ class CommandLineTests(unittest.TestCase):
             ({"relay": {"units": []}}, "24 V"),
             ({"configured": []}, "config --write"),
             ({}, "Everything is connected"),
+            ({"snapshot": {"reading": {
+                "class": "no-index-offered",
+                "summary": "An AMS (AMS HT) keeps announcing itself.",
+                "action": "Switch the printer off."}}},
+             "An AMS (AMS HT) keeps announcing itself. Switch the printer"),
+            ({"snapshot": {"reading": {"class": "none", "summary": "x",
+                                       "action": ""}}},
+             "Everything is connected"),
         )
         for overrides, expected in cases:
             self.assertIn(expected, cli.next_step(self.facts(**overrides)),

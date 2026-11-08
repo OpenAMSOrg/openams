@@ -1292,7 +1292,9 @@ class CommandTests(Fixture):
         connected["relay"]["units"] = [{"uid": UID, "online": True,
                                         "path": "/dev/oams/" + UID}]
         text, asked = self.run_status(connected)
-        self.assertFalse(asked, "an AMS is online: nothing is asked")
+        # Asked even with an AMS online: another may be connected with no
+        # index yet. Nothing found there is still all connected.
+        self.assertTrue(asked, "the snapshot is asked for with an AMS online")
         self.assertIn(cli.ALL_CONNECTED, text)
         self.assertNotIn(cli.SUPPORT_HINT, text)
 
