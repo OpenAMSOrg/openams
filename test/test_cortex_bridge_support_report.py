@@ -435,6 +435,29 @@ class Fixture(unittest.TestCase):
 # The report
 # ---------------------------------------------------------------------------
 
+class StatusUpdateLineTests(unittest.TestCase):
+    def line(self, update):
+        facts = facts_no_ams()
+        facts["relay"] = dict(facts["relay"], update=update)
+        return [l for l in cli.status_lines(facts)
+                if l.startswith("  Last update:")]
+
+    def test_a_message_that_repeats_the_state_is_shown_once(self):
+        # Seen on hardware after a bridge-9 install, 2026-11-07.
+        self.assertEqual(
+            self.line({"result": "installed",
+                       "message": "installed version 9"}),
+            ["  Last update: installed version 9"])
+
+    def test_a_different_message_keeps_the_state(self):
+        self.assertEqual(
+            self.line({"phase": "writing", "message": "42%"}),
+            ["  Last update: writing 42%"])
+
+    def test_no_update_no_line(self):
+        self.assertEqual(self.line(None), [])
+
+
 class OpenAMSVersionTests(unittest.TestCase):
     """The openams section reads the checkout's git state."""
 

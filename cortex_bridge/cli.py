@@ -310,9 +310,12 @@ def status_lines(facts: dict) -> list:
         facts["installed_firmware"], firmware))
     update = relay.get("update")
     if update:
-        lines.append("  Last update: %s %s" % (
-            update.get("result") or update.get("phase"),
-            update.get("message") or ""))
+        state = update.get("result") or update.get("phase") or ""
+        message = update.get("message") or ""
+        # The message usually repeats the state ("installed version 9").
+        if not message.startswith(state):
+            message = ("%s %s" % (state, message)).strip()
+        lines.append("  Last update: %s" % message)
     lines.append("  Klipper:     %s" % facts["klipper_service"])
     return lines
 
