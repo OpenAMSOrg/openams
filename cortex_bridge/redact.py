@@ -798,6 +798,8 @@ class Redactor:
                 return value
             self._count("secrets")
             return REDACTED
+        if lowered == "reply" and DRYER_REPLY_RE.fullmatch(value):
+            return value      # the AMS's dryer status bytes (owner's decision)
         if lowered in ("hostname", "host_name", "fqdn", "nodename"):
             return self.host(value)
         if lowered in ("uid", "node") and _AMS_UID.match(value):
@@ -846,6 +848,8 @@ class Redactor:
         probe = self._probe()
         findings = []
         for number, line in enumerate(text.splitlines(), 1):
+            if DRYER_REPLY_LINE_RE.fullmatch(line):
+                continue
             before = dict(probe.counts)
             changed = probe.redact_text(line)
             if changed == line:
@@ -855,6 +859,15 @@ class Redactor:
             findings.append((", ".join(kinds), number,
                              mask(_first_difference(line, changed))))
         return findings
+
+
+# The bridge snapshot's dryer row carries the AMS's dryer status answer as 110
+# lowercase hex digits: temperatures, flags and vent and fan states, no
+# identifiers. The owner allowed it in reports (2026-11-08), so a field named
+# "reply" in exactly that form, and its line in the report's JSON, are kept;
+# every other long hex string is still a secret.
+DRYER_REPLY_RE = re.compile(r"[0-9a-f]{110}")
+DRYER_REPLY_LINE_RE = re.compile(r'\s*"reply": "[0-9a-f]{110}",?\s*')
 
 
 def _first_difference(original: str, changed: str) -> str:

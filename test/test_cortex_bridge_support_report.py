@@ -637,6 +637,27 @@ class RedactorTests(unittest.TestCase):
                          "<ip-1> e 127.0.0.1 f 0.0.0.0 g 255.255.255.0 h "
                          "<lan-ip-3>/24 i http://127.0.0.1:7125/printer/info")
 
+    def test_the_dryer_reply_is_kept_and_other_long_hex_is_not(self):
+        # The snapshot's dryer row carries the AMS's dryer status answer as
+        # 110 hex digits; the owner allowed it in reports (2026-11-08).
+        reply = "00e8030000370000646443004343004e4e" + "0" * 76
+        self.assertEqual(len(reply), 110)
+        redactor = self.redactor()
+        data = {"dryers": [{"reply": reply, "reply_length": 55}],
+                "other": reply, "reply_key": "ab" * 32}
+        out = redactor.redact_data(data)
+        self.assertEqual(out["dryers"][0]["reply"], reply)
+        self.assertEqual(out["other"], "<redacted hex>")
+        self.assertEqual(out["reply_key"], "<redacted hex>")
+        # Only exactly 110 lowercase hex digits under "reply".
+        for bad in (reply.upper(), reply[:108], reply + "00"):
+            self.assertNotEqual(redactor.redact_data({"reply": bad})["reply"],
+                                bad)
+        # The last check leaves the reply's line alone.
+        text = json.dumps({"dryers": [{"reply": reply}]}, indent=1)
+        self.assertEqual(redactor.find_leaks(text), [])
+        self.assertTrue(redactor.find_leaks('  "other": "%s",' % reply))
+
     def test_versions_and_times_are_not_addresses(self):
         redactor = self.redactor()
         text = "v0.12.0-396 at 10:00:01,123 python 3.11.2 2026-11-08"
