@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 9,
+   "file": "bridge-9.oac2",
+   "sha256": "bbd5d7495df08b576bb00a8cbea18d46f245449c41eaefca093dd9d6e8b995ac",
+   "released": "2026-11-07",
+   "notes": "When no AMS answers, status and the support report say why: a silent cable, data that can't be read, or an AMS turned away, with the reason."
+  },
+  {
    "version": 8,
    "file": "bridge-8.oac2",
    "sha256": "baad5fcbb47faca3e9ebf7f19625c421acadb2acd4583215f27037d4d1077511",
