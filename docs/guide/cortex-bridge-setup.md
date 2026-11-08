@@ -209,7 +209,7 @@ Cortex Bridge relay installed [OK]
 Looking for AMS units behind the bridge (up to 45 s)...
   0a1b2c3d4e5f  AMS 2 Pro, 4 bays
 Added ams2 to /home/pi/printer_data/config/oams.cfg.
-Next: measure each AMS's filament path and set ptfe_length (`cortex-bridge.py ptfe <millimetres>`).
+Next: once Klipper is ready, let each AMS measure its filament path, with someone watching: `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` for each bay you use (oams_idx is in oams.cfg, bays count from 0).
 ...
 Starting Klipper... [OK]
 Waiting for Klipper (up to 60 s)...
@@ -403,8 +403,43 @@ OpenAMS asks your printer to grab the filament after a load
 (`toolhead_load_macro`, default `LOAD_FILAMENT`) and to eject it before an
 unload (`toolhead_unload_macro`, preset to `_OAMS_TOOLHEAD_EJECT`, which ships
 with OpenAMS and ejects the filament past the extruder gears). Your printer
-needs a `LOAD_FILAMENT` macro that only moves the extruder. If it has none, or
-yours does more than that, see
+needs a `LOAD_FILAMENT` macro that only moves the extruder. Most printers
+already have one in `printer.cfg`; check what yours does.
+
+*Why `LOAD_FILAMENT` is needed.* The AMS pushes the filament only as far as
+the extruder gears: there the buffer compresses and the AMS stops. The last
+stretch, from the gears through the hotend to the nozzle, is up to the
+extruder, and only your printer knows how long it is. So once the AMS has
+stopped, OpenAMS runs your `LOAD_FILAMENT`, and the AMS feeds along behind as
+the extruder pulls. It does this in `OAMSM_LOAD_TO_TOOLHEAD`, the load without
+the cutter that you use for the first load. Without the macro, that load fails
+with the filament left at the gears.
+
+*Why only extruder moves.* OpenAMS calls the macro in the middle of
+`OAMSM_LOAD_TO_TOOLHEAD` and waits for its moves to finish. All it needs there
+is the pull, so plain `G1 E` moves are enough. Everything else is done
+elsewhere: you heat the hotend before this load, and the toolchanges a print
+runs (`T0`, `T1`, ...) do their own cut, load and purge and never call
+`LOAD_FILAMENT`. A macro that heats to its own temperature, homes, parks or
+purges does work this load does not need; one that calls an `OAMSM_` command
+starts another AMS move in the middle of this one. A typical `LOAD_FILAMENT`:
+
+```ini
+[gcode_macro LOAD_FILAMENT]
+gcode:
+  M83            ; relative extrusion
+  G1 E30 F300    ; pull the tip from the gears down to the nozzle
+  G1 E15 F150    ; prime the nozzle, slower
+  M82            ; back to absolute extrusion
+```
+
+The lengths depend on your toolhead: the first move brings the tip from the
+gears to the nozzle, the second, slower one primes it. The hotend must be hot:
+if it is cold, Klipper refuses the move and OpenAMS stops with
+`AMS load reached the toolhead, but LOAD_FILAMENT failed`, leaving the
+filament at the gears. If your `LOAD_FILAMENT` does more than move the
+extruder, add an extruder-only macro under another name and set
+`toolhead_load_macro:` in `[oams_manager]` to it; see
 [configure](configure.md#oams_manager).
 
 When all three are set, restart Klipper (**FIRMWARE RESTART** in Mainsail).

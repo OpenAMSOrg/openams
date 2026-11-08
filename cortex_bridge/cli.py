@@ -466,9 +466,24 @@ def _write_config(args, units, target, identify) -> int:
         print("%s %s%s." % (
             "Added %s to" % ", ".join(names) if names else "Updated",
             target, " (old file kept as %s)" % backup.name if backup else ""))
-        print("Next: measure each AMS's filament path and set ptfe_length "
-              "(`cortex-bridge.py ptfe <millimetres>`).")
+        print(next_step_after_config(described))
     return 0
+
+
+def next_step_after_config(described: list) -> str:
+    """What to do about ptfe_length once the units are in oams.cfg. An AMS on
+    bridge firmware 8 or later measures its own path; older firmware needs the
+    path measured by hand and converted."""
+    # One bridge runs one firmware, so one AMS that measures means they all
+    # can (an AMS that could not be identified has no answer).
+    if any(unit.get("ptfe_calibration") for unit in described):
+        return ("Next: once Klipper is ready, let each AMS measure its "
+                "filament path, with someone watching: "
+                "`OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` for each "
+                "bay you use (oams_idx is in oams.cfg, bays count from 0).")
+    return ("Next: measure each AMS's filament path and set ptfe_length "
+            "(`cortex-bridge.py ptfe <millimetres>`), or update the bridge "
+            "firmware (`cortex-bridge.py update`) and let the AMS measure it.")
 
 
 # ---------------------------------------------------------------------------

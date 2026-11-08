@@ -219,4 +219,19 @@ def describe_unit(path: str) -> dict:
         "bays": bays,
         "name": FAMILY_NAMES.get(family, "unknown AMS"),
         "version": str(dictionary.get("version", "")),
+        "ptfe_calibration": measures_own_path(constants),
     }
+
+
+def measures_own_path(constants: dict) -> bool:
+    """True when the AMS measures its filament path itself
+    (OAMS_CALIBRATE_PTFE_LENGTH; bridge firmware 8 or later). The same rule as
+    the plugin's src/ams_family.py: AMS_CAP_PTFE_CALIBRATION wins over the
+    older AMS_HT_CAP_PTFE_CALIBRATION, and absent means no."""
+    for name in ("AMS_CAP_PTFE_CALIBRATION", "AMS_HT_CAP_PTFE_CALIBRATION"):
+        if name in constants:
+            try:
+                return bool(int(constants[name]))
+            except (TypeError, ValueError):
+                return False
+    return False

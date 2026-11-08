@@ -78,8 +78,13 @@ def render_unit(unit: dict, name: str, oams_idx: int) -> str:
         "# Filament path from this AMS to the extruder gears, in encoder",
         "# clicks (millimetres x %.2f). Loads are refused while it is 0." %
         CLICKS_PER_MM,
+    ] + ([
+        "# Leave it at 0 and let the AMS measure each bay, with someone",
+        "# watching: OAMS_CALIBRATE_PTFE_LENGTH OAMS=%d SPOOL=<bay>" % oams_idx,
+    ] if unit.get("ptfe_calibration") else [
         "# Measure the path, then: python3 ~/openams/tools/cortex-bridge.py "
         "ptfe <millimetres>",
+    ]) + [
         "ptfe_length: %d" % int(unit.get("ptfe_length") or 0),
         "current_target: 0.30",
         "current_kp: 0.375",

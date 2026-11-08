@@ -55,6 +55,25 @@ class ConfigWriterTests(unittest.TestCase):
         self.assertIn("source_oams: ams2", text)
         self.assertIn("oams_idx: 2", text)
 
+    def test_the_ptfe_comment_names_what_this_ams_accepts(self):
+        measures = dict(AMS2, ptfe_calibration=True)
+        text, _ = config.render_units([measures])
+        self.assertIn("OAMS_CALIBRATE_PTFE_LENGTH OAMS=1 SPOOL=<bay>", text)
+        self.assertNotIn("cortex-bridge.py ptfe", text)
+        text, _ = config.render_units([AMS2])
+        self.assertIn("cortex-bridge.py ptfe <millimetres>", text)
+        self.assertNotIn("OAMS_CALIBRATE_PTFE_LENGTH", text)
+
+    def test_the_next_step_follows_the_bridge_firmware(self):
+        # Firmware 8 or later: the AMS measures, so no millimetres to convert.
+        line = cli.next_step_after_config(
+            [dict(AMS2, ptfe_calibration=True), dict(HT)])
+        self.assertIn("OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>", line)
+        self.assertNotIn("cortex-bridge.py ptfe", line)
+        line = cli.next_step_after_config([AMS2])
+        self.assertIn("cortex-bridge.py ptfe <millimetres>", line)
+        self.assertIn("cortex-bridge.py update", line)
+
     def test_two_of_a_family_get_distinct_names(self):
         second = dict(AMS2, uid="0123456789ab")
         _, names = config.render_units([AMS2, second])
@@ -277,7 +296,23 @@ class IdentifyTests(unittest.TestCase):
                                "version": "cortex-bridge-1"})
         self.assertEqual(facts, {"family": "ams2", "bays": 4,
                                  "name": "AMS 2 Pro",
-                                 "version": "cortex-bridge-1"})
+                                 "version": "cortex-bridge-1",
+                                 "ptfe_calibration": False})
+
+    def test_bridge_firmware_8_says_the_ams_measures_its_path(self):
+        # Bridge firmware 8 keeps the older constant at 0 and publishes the
+        # new one; the new one wins, as in src/ams_family.py.
+        facts = self.describe({"config": {"AMS_FAMILY": "ams2",
+                                          "AMS_BAYS": 4,
+                                          "AMS_HT_CAP_PTFE_CALIBRATION": 0,
+                                          "AMS_CAP_PTFE_CALIBRATION": 1}})
+        self.assertIs(facts["ptfe_calibration"], True)
+        self.assertIs(identify.measures_own_path(
+            {"AMS_CAP_PTFE_CALIBRATION": "0",
+             "AMS_HT_CAP_PTFE_CALIBRATION": "1"}), False)
+        self.assertIs(identify.measures_own_path(
+            {"AMS_HT_CAP_PTFE_CALIBRATION": "1"}), True)
+        self.assertIs(identify.measures_own_path({}), False)
 
     def test_a_sequence_correction_is_followed(self):
         facts = self.describe({"config": {"BOARD_NAME": "ams-ht",
