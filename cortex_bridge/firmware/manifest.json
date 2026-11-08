@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 10,
+   "file": "bridge-10.oac2",
+   "sha256": "8c3a06842107ccd6300dbdcadfa74fc0278bdd888b363e5c1ae80eee510cb6a3",
+   "released": "2026-11-08",
+   "notes": "During a dry the vents open and close with the moisture in the chamber, and the dry ends with the vents closed until it cools; an AMS connected while the bridge runs is added at once."
+  },
+  {
    "version": 9,
    "file": "bridge-9.oac2",
    "sha256": "bbd5d7495df08b576bb00a8cbea18d46f245449c41eaefca093dd9d6e8b995ac",
