@@ -14,7 +14,10 @@ package that is damaged, that was not made for this board, or that is not
 newer than what it runs. A refused package leaves the installed firmware
 untouched.
 
-You do not have to update. Install a new version when its release note fixes
+When you set up a new bridge, update it right after installing OpenAMS
+([setup step 5](cortex-bridge-setup.md#5-install-openams)): a bridge can reach
+you with older firmware, which may not recognise a newer AMS. After that you
+do not have to update. Install a new version when its release note fixes
 something you need, or when support asks you to.
 
 ## Check whether your bridge is up to date

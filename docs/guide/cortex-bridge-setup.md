@@ -226,7 +226,9 @@ and says so.
   see the bridge. Check the USB cable and the white LED, then run
   `./install.sh` again. It is safe to run as often as you like.
 - `No AMS was added to oams.cfg yet` means the bridge is fine but no AMS
-  answered. Check the red LED, the BUFFER cable and the AMS cable, then run
+  answered. Update the bridge firmware first (below). If still no AMS
+  answers, check the red LED and that the BUFFER cable and the AMS cable are
+  fully seated at both ends, then run
   `python3 ~/openams/tools/cortex-bridge.py config --write`.
 - `oams.cfg was left unchanged: it still describes OpenAMS 1 hardware` means
   this printer ran OpenAMS 1 before. The installer doesn't add the bridge's
@@ -246,6 +248,23 @@ and says so.
   one bay each, so set up any spare-spool groups again afterwards. If the old
   FPS board is still connected, for example as the USB-to-CAN bridge for your
   toolhead board, keep its `[mcu]`; if it's gone, comment that out too.
+
+> [!IMPORTANT]
+> **Update the bridge firmware now, before anything else.** A bridge can
+> reach you with older firmware than your OpenAMS bundles, and an older bridge
+> may not recognise a newer AMS: the AMS lights up but never answers. With the
+> printer idle and no filament loaded, run:
+>
+> ```bash
+> python3 ~/openams/tools/cortex-bridge.py update
+> ```
+>
+> Answer `y`. It takes about a minute, keep USB and 24 V connected, and it ends
+> with `The bridge now runs version <n>.` `Nothing to do: the bridge is up to
+> date.` means there was nothing to install. If the installer added no AMS,
+> run `python3 ~/openams/tools/cortex-bridge.py config --write` after the
+> update, then **FIRMWARE RESTART**.
+> [Update the Cortex Bridge firmware](cortex-bridge-update.md) has the details.
 
 ## 6. Check the bridge
 
@@ -272,8 +291,9 @@ the problem and its fix; [troubleshooting](#troubleshooting) has the full list.
 
 The `Firmware:` line is the bridge's own firmware: the version it runs, and
 whether a newer one came with OpenAMS. `version 4; version 7 is available`
-means an update is waiting; [update the bridge firmware](cortex-bridge-update.md)
-when it suits you.
+means an update is waiting. During setup, install it now, as in step 5;
+later, [update the bridge firmware](cortex-bridge-update.md) when it suits
+you.
 
 ## 7. Finish the config
 
@@ -504,7 +524,7 @@ names the first thing to fix.
 | `The bridge is not on USB` | `lsusb` does not list `1a86:fe11` | A charge-only cable, a bad port, or a USB hub. Try another cable and port. |
 | `The bridge relay is not installed` | OpenAMS was installed without the bridge connected | Connect it and run `~/openams/install.sh` again. |
 | `Start the relay` | The `cortex-bridge` service is stopped or failed | `sudo systemctl start cortex-bridge`, then `status` again. |
-| `No AMS answers` | The bridge is running but sees no AMS | Check the red LED, the 4-pin BUFFER cable, and the 6-pin AMS cable. Power the AMS off and on. |
+| `No AMS answers` | The bridge is running but sees no AMS | Update the bridge firmware (`cortex-bridge.py update`): an older bridge may not recognise a newer AMS. Then check the red LED, and that the 4-pin BUFFER cable and the 6-pin AMS cable are fully seated at both ends. Power the AMS off and on. |
 | `... AMS online but not in your config` | A new AMS was connected | `cortex-bridge.py config --write` |
 | `The bridge is waiting for firmware` | A firmware update was interrupted | `cortex-bridge.py update`; see [the update guide](cortex-bridge-update.md). |
 | `Firmware: installed version unknown: ...` | The bridge has not said which version it runs; the rest of the line says why | See [the update guide](cortex-bridge-update.md#when-the-version-is-unknown). |
