@@ -346,7 +346,7 @@ class DryerVentLoopTests(unittest.TestCase):
         self.assertEqual(order, ["tuning", "start"])
         self.assertEqual(driver.ams_dryer_vent_tuning_cmd.sent,
                          [[1500, 0, 0, 0, 0, 900, 0, 4000, 1]])
-        self.assertIn("vents follow the moisture", gcmd.responses[0])
+        self.assertIn("the bridge drives the vents", gcmd.responses[0])
 
     def test_vent_unit_leaves_the_vents_to_the_unit(self):
         driver = self.loop_driver()

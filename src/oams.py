@@ -2639,7 +2639,7 @@ class OAMS(oams_ext.UnitHooks):
         hold_after = gcmd.get_int("HOLD_AFTER", 0, minval=0, maxval=1)
         vent = str(gcmd.get("VENT", "auto")).strip().lower()
         if vent not in ("auto", "unit"):
-            raise gcmd.error("VENT must be auto (vents follow the moisture) "
+            raise gcmd.error("VENT must be auto (the bridge drives the vents) "
                              "or unit (the unit moves them itself)")
         running = self._dryer_cycle_running()
         vents = ""
@@ -2648,7 +2648,7 @@ class OAMS(oams_ext.UnitHooks):
             self._send_ams_ht_control(
                 tuning_cmd, self._dryer_vent_tuning_args(vent == "auto"),
                 "%s dryer vent tuning" % self._unit_label(), gcmd)
-            vents = ("; vents follow the moisture" if vent == "auto"
+            vents = ("; the bridge drives the vents" if vent == "auto"
                      else "; the unit moves its vents")
         try:
             self._send_ams_ht_control(
