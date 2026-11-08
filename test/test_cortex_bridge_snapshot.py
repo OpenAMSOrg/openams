@@ -201,7 +201,7 @@ class DecodeTests(unittest.TestCase):
         self.assertEqual(sizes, {"system": 25, "line": 48, "master": 28,
                                  "discovery": 51, "host": 22, "units": 56,
                                  "candidates": 29, "feed_failures": 24,
-                                 "refusals": 13})
+                                 "dryers": 73, "refusals": 13})
         self.assertEqual(len(body()), len(SILENT_LINE_BODY))
 
     def test_rows_decode(self):
@@ -567,8 +567,9 @@ class FeedFailureTests(unittest.TestCase):
         self.assertEqual(second["odo_flags"]["rewind_seen"], True)
         self.assertEqual(second["odo_flags"]["base"], False)
         self.assertEqual(second["ams_state"], "unknown_99")
-        self.assertEqual(list(decoded)[-3:],
-                         ["candidates", "feed_failures", "refusals"])
+        self.assertEqual(list(decoded)[-4:],
+                         ["candidates", "feed_failures", "dryers",
+                          "refusals"])
 
     def lines(self, *rows, unit_kind=0):
         return snap.classify(self.decode(*rows, unit_kind=unit_kind))[
@@ -656,3 +657,40 @@ class AllowlistTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DryerRowTests(unittest.TestCase):
+    """Section 0x13 (bridge firmware 10): the vent loop's row per unit."""
+
+    CASE = VECTORS["ams2_dryer_cooldown"]
+
+    def test_the_row_decodes_and_reads(self):
+        decoded = snap.decode_body(bytes.fromhex(self.CASE["body_hex"]))
+        row = decoded["dryers"][0]
+        self.assertEqual((row["vent_state"], row["ah_mgm3"],
+                          row["reply_length"]), ("cooldown", 15606, 55))
+        self.assertEqual(len(row["reply"]), 110)
+        lines = snap.classify(decoded)["dryers"]
+        self.assertEqual(lines, [
+            "Dryer of the AMS at index 0: vents cooldown, 0 openings this "
+            "dry; moisture 15.6 g/m³; the last dry ended with the cool-down "
+            "request and the stop."])
+
+    def test_a_report_keeps_the_reply_and_nothing_else_raw(self):
+        decoded = snap.decode_body(bytes.fromhex(self.CASE["body_hex"]))
+        row = dict(decoded["dryers"][0])
+        kept = snap.allowlisted(dict(decoded, dryers=[row]))["dryers"][0]
+        self.assertEqual(kept["reply"], row["reply"])
+        self.assertEqual(kept["vent_flags"], row["vent_flags"])
+        # Anything but 110 lowercase hex digits is dropped.
+        for bad in ("zz" * 55, row["reply"][:108], row["reply"].upper(),
+                    b"\x00" * 55):
+            row["reply"] = bad
+            kept = snap.allowlisted(dict(decoded, dryers=[row]))
+            self.assertNotIn("reply", kept["dryers"][0], bad)
+
+    def test_a_bridge_9_snapshot_has_no_dryers(self):
+        decoded = snap.decode_body(SILENT_LINE_BODY)
+        self.assertEqual(decoded["dryers"], [])
+        self.assertEqual(snap.classify(decoded)["dryers"], [])
+

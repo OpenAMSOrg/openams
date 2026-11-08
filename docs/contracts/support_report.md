@@ -163,7 +163,7 @@ update OpenAMS.
 **Decoding** (`bridge_snapshot.decode_body`): format 1, then
 `id | length | value` sections in ascending order: `system`, `line`,
 `master`, `discovery` and `host` once each, then `units`, `candidates`,
-`feed_failures` and `refusals` rows. Unknown ids are skipped, bytes after the
+`feed_failures`, `dryers` (bridge firmware 10) and `refusals` rows. Unknown ids are skipped, bytes after the
 known fields of a section are ignored, and a section shorter than its known
 fields, a cut header, ids out of order or another format make the snapshot
 malformed. Each field becomes one key, in wire order; enums become names
@@ -185,18 +185,31 @@ duration, so 0 stays 0), `odo_flags` (`start`, `base`, `rewind_seen`,
 firmware shows its odometer nowhere else, so this row is how a report shows
 the rewind profile of, say, an AMS 1 whose load failed.
 
+**Dryers** (section 0x13, bridge firmware 10, one 73-byte row per unit whose
+dryer vent loop has run since it was bound): `slot`, `index`, `vent_state`
+(`idle`, `heating`, `closed`, `open`, `cooldown`), `opened_by` (`none`,
+`plateau`, `forced`, `unit`), `closed_by` (`none`, `settled`, `max_open`,
+`cold`, `end`, `stopped`, `disabled`), `openings` this dry, `vent_flags`
+(`enabled`, `timed`, `forcing`, `cooling`, `fast`), `ended` (how the last
+sealed cooldown went: `cool_down`, `stop`, `unit_off`, `vents_opened`,
+`capped`), `ah_mgm3` (the loop's last moisture sample), `reply_ms`,
+`reply_length` and `reply`: the unit's latest dryer status answer as 110 hex
+digits (55 bytes, zero past `reply_length`). The reply is the one block of
+received bytes a report carries (the owner's decision below).
+
 **Tested against the firmware's own encoder:**
-`test/fixtures/bridge_snapshot/vectors_v1.json` holds four bodies the bridge
+`test/fixtures/bridge_snapshot/vectors_v1.json` holds five bodies the bridge
 firmware's encoder wrote (a silent line, an AMS refused at an HT index with
-an unrecognised suffix, an admitted AMS Klipper has not configured, and an
-AMS 1 whose load stalled while it was still rewinding), each with its exact
+an unrecognised suffix, an admitted AMS Klipper has not configured, an AMS 1
+whose load stalled while it was still rewinding, and an AMS 2 Pro in the
+sealed cooldown after a dry), each with its exact
 decoded JSON; the decoder must reproduce it key for key and in order, and
 each must read as its class.
 
 **In the report** (`support_report.bridge_support_snapshot`): only the
 fields `bridge_snapshot.allowlisted` keeps, each checked against its decoded
 type (integers, booleans, enum names, the unit ID, the 4-byte version, the
-suffix); anything else, including a field a later firmware adds, is dropped,
+suffix, a dryer reply of exactly 110 lowercase hex digits); anything else, including a field a later firmware adds, is dropped,
 and `raw` is not carried. The section starts with a plain reading,
 `bridge_snapshot.classify`, first match wins:
 
@@ -221,6 +234,12 @@ how far into the feed, whether it was still rewinding, and the AMS state.
 For example: `Last load of AMS df5d1d75218e failed: the AMS rewound from
 1200 mm to 601 mm and then stopped moving for 4 s, 6.2 s into the feed; it
 was still rewinding. AMS state: moving.`
+
+Then one sentence per dryer row (`bridge_snapshot.dryer_lines`): the vent
+state, the openings this dry, why the vents last opened and closed, the
+moisture, and how the last dry ended. For example: `Dryer of the AMS at index
+0: vents cooldown, 0 openings this dry; moisture 15.6 g/m³; the last dry
+ended with the cool-down request and the stop.`
 
 **In `status`:** when the relay runs and no AMS is online, `status` asks for
 the snapshot; if it has a reading, the next-step line becomes `No AMS
@@ -275,6 +294,11 @@ against a server on 127.0.0.1 that answers 302.
   `N460`, ...) name a model class, not a unit; the snapshot carries them, and
   the redactor leaves them alone.
 - **The version bytes the AMS reports: DECIDED, all four allowed.**
+- **The AMS's dryer status reply: DECIDED, allowed raw** (an exception to "no
+  received bytes", limited to that reply). Its 54 or 55 bytes hold
+  temperatures, flags and vent and fan states, no identifiers; they show where
+  an AMS HT reports its vents and whether the end-of-dry cool-down request
+  avoids a vent purge.
 - Everything else the redactor removes stays removed.
 
 ### Open (the owner's)

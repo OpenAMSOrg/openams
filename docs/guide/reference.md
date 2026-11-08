@@ -30,8 +30,8 @@ One section per unit. Required unless marked otherwise.
 | `ptfe_length_<bay>:` | no | shared `ptfe_length` | Per-bay path length override |
 | `spool_id_<bay>:` | no | — | Spoolman spool linked to that bay |
 | `link_source_<bay>:` | no | `manual` | `tag` or `manual`; written by the plugin |
-| `dryer_vent_rise:` | no | unit's own (about 2 % RH at the target) | Dryer vent loop (Cortex Bridge firmware 10 or later): how far the moisture must rise, in g/m³, before a level-off opens the vents |
-| `dryer_vent_flat:` | no | unit's own (0.1) | The moisture counts as level, or as no longer falling, while it moves less than this many g/m³ per minute |
+| `dryer_vent_rise:` | no | unit's own (two RH steps at the target) | Dryer vent loop (Cortex Bridge firmware 10 or later): how far the moisture must rise above where it started, in g/m³, before it stops rising and the vents open |
+| `dryer_vent_flat:` | no | unit's own (one RH step at the target per 10 minutes: about 0.10 at 55 °C, 0.29 at 80 °C) | The moisture counts as no longer rising, or no longer falling, while it moves less than this many g/m³ per minute |
 | `dryer_vent_hold:` | no | unit's own (120) | Seconds the moisture must stay level before the vents move |
 | `dryer_vent_min_open:` / `dryer_vent_max_open:` | no | unit's own (90 / 600) | Seconds the vents stay open at least and at most; 30 to 1800 |
 | `dryer_vent_min_interval:` / `dryer_vent_max_interval:` | no | unit's own (600 / 3600) | Seconds between openings at least and at most; 300 to 14400 |

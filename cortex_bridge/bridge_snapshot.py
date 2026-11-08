@@ -100,6 +100,14 @@ HOST_BITS = ("attached", "configured", "heard")
 FLAG_BITS = ("model", "identity", "status", "announce", "conflict", "fresh",
              "synthetic")
 ODO_BITS = ("start", "base", "rewind_seen", "rewinding", "at_valid", "rule")
+# The dryer vent loop (bridge firmware 10, section 0x13).
+VENT_STATE = ("idle", "heating", "closed", "open", "cooldown")
+OPENED_BY = ("none", "plateau", "forced", "unit")
+CLOSED_BY = ("none", "settled", "max_open", "cold", "end", "stopped",
+             "disabled")
+VENT_FLAG_BITS = ("enabled", "timed", "forcing", "cooling", "fast")
+ENDED_BITS = ("cool_down", "stop", "unit_off", "vents_opened", "capped")
+DRYER_REPLY_SIZE = 55
 
 
 def enum_name(table, value: int) -> str:
@@ -176,6 +184,13 @@ def _signed(raw: bytes) -> int:
 
 
 def _uid(raw: bytes) -> str:
+    return raw.hex()
+
+
+def _reply(raw: bytes) -> str:
+    """The unit's latest dryer status answer, 110 hex digits (zero past its
+    length). The one block of received bytes a report carries: status bytes
+    with no identifiers, allowed by the owner's decision of 2026-11-08."""
     return raw.hex()
 
 
@@ -289,6 +304,19 @@ FEED_FAILURE = (
     _f("odo_flags", 1, _bitfield(ODO_BITS), "bits"),
     _f("ams_state", 1, _enum(AMS_STATE), "enum"),
 )
+# One row per unit whose dryer vent loop has run since it was bound.
+DRYER = (
+    _f("slot", 1), _f("index", 1),
+    _f("vent_state", 1, _enum(VENT_STATE), "enum"),
+    _f("opened_by", 1, _enum(OPENED_BY), "enum"),
+    _f("closed_by", 1, _enum(CLOSED_BY), "enum"),
+    _f("openings", 2),
+    _f("vent_flags", 1, _bitfield(VENT_FLAG_BITS), "bits"),
+    _f("ended", 1, _bitfield(ENDED_BITS), "bits"),
+    _f("ah_mgm3", 4), _f("reply_ms", 4, _instant, "int?"),
+    _f("reply_length", 1),
+    _f("reply", DRYER_REPLY_SIZE, _reply, "reply", raw=True),
+)
 REFUSAL_ROW = (
     _f("at_ms", 4, _instant, "int?"), _f("index", 1),
     _f("reason", 1, _enum(REFUSAL), "enum"),
@@ -308,6 +336,7 @@ SECTIONS = {
     0x10: ("units", UNIT, True),
     0x11: ("candidates", CANDIDATE, True),
     0x12: ("feed_failures", FEED_FAILURE, True),
+    0x13: ("dryers", DRYER, True),
     0x20: ("refusals", REFUSAL_ROW, True),
 }
 
@@ -537,7 +566,51 @@ def classify(snapshot) -> dict:
     unit whose last load or calibration failed (``feed_failure_lines``)."""
     reading = _classify(snapshot)
     reading["feed_failures"] = feed_failure_lines(snapshot)
+    reading["dryers"] = dryer_lines(snapshot)
     return reading
+
+
+OPENED_TEXT = {"plateau": "once the moisture stopped rising",
+               "forced": "because an hour had passed",
+               "unit": "by the AMS itself"}
+CLOSED_TEXT = {"settled": "once the moisture stopped falling",
+               "max_open": "at the longest opening",
+               "cold": "because the chamber fell 5 °C below target",
+               "end": "at the end of the dry", "stopped": "when the dry was "
+               "stopped", "disabled": "when the vent loop was turned off"}
+
+
+def dryer_lines(snapshot) -> list:
+    """One sentence per dryer row: the vent loop's state, its last opening
+    and closing and how its last dry ended, from the row's own fields."""
+    snap = snapshot or {}
+    lines = []
+    for row in snap.get("dryers") or []:
+        if not isinstance(row, dict):
+            continue
+        text = "Dryer of the AMS at index %s: vents %s" % (
+            row.get("index"), row.get("vent_state"))
+        openings = row.get("openings")
+        if isinstance(openings, int):
+            text += ", %d opening%s this dry" % (
+                openings, "" if openings == 1 else "s")
+        if row.get("opened_by") in OPENED_TEXT:
+            text += "; last opened %s" % OPENED_TEXT[row["opened_by"]]
+        if row.get("closed_by") in CLOSED_TEXT:
+            text += ", closed %s" % CLOSED_TEXT[row["closed_by"]]
+        moisture = row.get("ah_mgm3")
+        if isinstance(moisture, int) and moisture:
+            text += "; moisture %.1f g/m³" % (moisture / 1000.0)
+        ended = row.get("ended") or {}
+        if ended.get("cool_down") or ended.get("stop"):
+            text += "; the last dry ended %s%s%s" % (
+                "with the cool-down request and the stop"
+                if ended.get("cool_down") else "with the stop",
+                ", the vents read open during the cooldown"
+                if ended.get("vents_opened") else "",
+                ", at the 60-minute cap" if ended.get("capped") else "")
+        lines.append(text + ".")
+    return lines
 
 
 def _seconds(ms: int) -> str:
@@ -748,6 +821,7 @@ def _classify(snapshot) -> dict:
 _ENUM_TEXT = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 _UID_TEXT = re.compile(r"^[0-9a-f]{12}$")
 _SUFFIX_TEXT = re.compile(r"^(?:[\x20-\x7e]{4}|0x[0-9a-f]{8})$")
+_REPLY_TEXT = re.compile(r"^[0-9a-f]{%d}$" % (2 * DRYER_REPLY_SIZE))
 
 # The keys of the fields that decode to objects, and what each holds.
 NESTED = {
@@ -757,6 +831,8 @@ NESTED = {
     "odo_flags": {key: "bool" for key in ODO_BITS},
     "host": dict({key: "bool" for key in HOST_BITS}, latch="enum"),
     "operation": {"active": "bool", "kind": "enum?"},
+    "vent_flags": {key: "bool" for key in VENT_FLAG_BITS},
+    "ended": {key: "bool" for key in ENDED_BITS},
 }
 
 
@@ -782,6 +858,8 @@ def _allowed(kind: str, value) -> bool:
     if kind == "suffix":
         return value is None or (isinstance(value, str) and
                                  bool(_SUFFIX_TEXT.match(value)))
+    if kind == "reply":
+        return isinstance(value, str) and bool(_REPLY_TEXT.match(value))
     return False
 
 

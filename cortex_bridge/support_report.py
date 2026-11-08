@@ -142,6 +142,8 @@ def snapshot_text(result: dict, redactor: redact.Redactor) -> str:
             lines.append("What to do: " + reading["action"])
         # The odometer around each failed load or calibration.
         lines.extend(reading.get("feed_failures") or [])
+        # The dryer vent loop (bridge firmware 10).
+        lines.extend(reading.get("dryers") or [])
     else:
         lines.append(result.get("text") or "unavailable")
     lines.append("")

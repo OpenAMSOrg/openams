@@ -108,6 +108,7 @@
     "units": [],
     "candidates": [],
     "feed_failures": [],
+    "dryers": [],
     "refusals": []
    }
   },
@@ -249,6 +250,7 @@
      }
     ],
     "feed_failures": [],
+    "dryers": [],
     "refusals": [
      {
       "at_ms": 4201,
@@ -414,6 +416,7 @@
     ],
     "candidates": [],
     "feed_failures": [],
+    "dryers": [],
     "refusals": []
    }
   },
@@ -586,6 +589,190 @@
        "rule": true
       },
       "ams_state": "moving"
+     }
+    ],
+    "dryers": [],
+    "refusals": []
+   }
+  },
+  {
+   "name": "ams2_dryer_cooldown",
+   "reading": "none",
+   "body_hex": "010119000000090001388a1800007f007701000100000fa0000002b202300000bae1000000000000000000000000000000000000032900000000000000000000000000000fa20001383300013833031c0000096b000003290000036e0000000000000000000000000000096b043300000000000000000000000000ff000000000000ff000000000000000000000000210000000000000000000001010000000000051600000001000000000000000000000000000000000000103800098c21d3911f0002021d15000303290000000138330000010f070001000000000f00000000ffff00000000ffff0000000000004e353733134900000400000000110300003cf6000136e33700e8030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002d000000",
+   "message_hex": "040901430102030400010119000000090001388a1800007f007701000100000fa0000002b202300000bae1000000000000000000000000000000000000032900000000000000000000000000000fa20001383300013833031c0000096b000003290000036e0000000000000000000000000000096b043300000000000000000000000000ff000000000000ff000000000000000000000000210000000000000000000001010000000000051600000001000000000000000000000000000000000000103800098c21d3911f0002021d15000303290000000138330000010f070001000000000f00000000ffff00000000ffff0000000000004e353733134900000400000000110300003cf6000136e33700e8030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002d000000",
+   "decoded": {
+    "format": 1,
+    "system": {
+     "app_version": 9,
+     "uptime_ms": 80010,
+     "reset_flags": 24,
+     "boot_status": 0,
+     "genuine_status": 0,
+     "image": {
+      "tx": true,
+      "motion": true,
+      "dryer": true,
+      "tray_info": true,
+      "tag_read": true,
+      "diagnostics": true,
+      "production": true,
+      "application": false
+     },
+     "min_evidence": "hypothesis",
+     "policy": {
+      "requested": {
+       "master": true,
+       "motion": true,
+       "dryer": true
+      },
+      "effective": {
+       "master": true,
+       "motion": true,
+       "dryer": true
+      }
+     },
+     "role": {
+      "master": true,
+      "foreign_master": false,
+      "tx_fault": false,
+      "awaiting": false
+     },
+     "master_acquisitions": 1,
+     "master_since_ms": 4000,
+     "max_pass_gap_us": 690
+    },
+    "line": {
+     "bytes": 47841,
+     "parity_errors": 0,
+     "framing_errors": 0,
+     "noise_errors": 0,
+     "overruns": 0,
+     "messages": 809,
+     "check_errors": 0,
+     "malformed": 0,
+     "skipped_bytes": 0,
+     "first_rx_ms": 4002,
+     "last_rx_ms": 79923,
+     "last_answer_ms": 79923
+    },
+    "master": {
+     "requests": 2411,
+     "answers": 809,
+     "unanswered": 878,
+     "send_failures": 0,
+     "foreign_requests": 0,
+     "unmatched_answers": 0,
+     "sent_messages": 2411
+    },
+    "discovery": {
+     "announces": 0,
+     "first_announce_ms": null,
+     "last_announce_ms": null,
+     "last_announce_marker": null,
+     "last_announce_tag_family": "none",
+     "offers": 0,
+     "offer_giveups": 0,
+     "last_offer_index": null,
+     "last_offer_basis": "none",
+     "last_offer_ms": null,
+     "identity_conflicts": 0,
+     "candidates_dropped": 0,
+     "index_polls": 33,
+     "refused_unsupported_family": 0,
+     "refused_index_mismatch": 0,
+     "refused_over_capacity": 0,
+     "refused_duplicate_identity": 0,
+     "refused_tag_model_mismatch": 0,
+     "admitted": 1,
+     "candidates": 1,
+     "omitted": 0,
+     "last_announce_tag_suffix": null
+    },
+    "host": {
+     "usb_sessions": 1,
+     "protocol_faults": 0,
+     "recoveries": 0,
+     "host_messages": 0,
+     "host_dropped": 0,
+     "host_stale": 0,
+     "update_refused": 0,
+     "attach_refused": 0,
+     "roster_rejected": 0
+    },
+    "units": [
+     {
+      "slot": 0,
+      "uid": "098c21d3911f",
+      "index": 0,
+      "link": "online",
+      "family": "ams2pro",
+      "ams_version": [
+       29,
+       21,
+       0,
+       3
+      ],
+      "answers": 809,
+      "timeouts": 0,
+      "last_answer_ms": 79923,
+      "ams_error": 0,
+      "motion_error": 0,
+      "ams_state": "idle",
+      "spools_present": 15,
+      "host": {
+       "attached": true,
+       "configured": true,
+       "heard": true,
+       "latch": "none"
+      },
+      "configurations": 1,
+      "host_quiet_ms": 0,
+      "operation": {
+       "active": false,
+       "kind": null
+      },
+      "stage": "none",
+      "fault_severity": "none",
+      "fault_code": 0,
+      "fault_bay": null,
+      "loaded_bay": null,
+      "path_mm": 0,
+      "failures": 0,
+      "last_failure_kind": null,
+      "last_failure_outcome": null,
+      "last_failure_detail": 0,
+      "last_failure_ms": null,
+      "tag_suffix": "N573"
+     }
+    ],
+    "candidates": [],
+    "feed_failures": [],
+    "dryers": [
+     {
+      "slot": 0,
+      "index": 0,
+      "vent_state": "cooldown",
+      "opened_by": "none",
+      "closed_by": "none",
+      "openings": 0,
+      "vent_flags": {
+       "enabled": true,
+       "timed": false,
+       "forcing": false,
+       "cooling": false,
+       "fast": true
+      },
+      "ended": {
+       "cool_down": true,
+       "stop": true,
+       "unit_off": false,
+       "vents_opened": false,
+       "capped": false
+      },
+      "ah_mgm3": 15606,
+      "reply_ms": 79587,
+      "reply_length": 55,
+      "reply": "00e8030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002d000000"
      }
     ],
     "refusals": []
