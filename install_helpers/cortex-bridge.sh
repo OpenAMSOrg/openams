@@ -321,6 +321,9 @@ configure_cortex_bridge_units()
     elif [ "$rc" -ne 0 ]; then
         echo "[NOTE] No AMS was added to oams.cfg yet. When the AMS is connected and powered, run:"
         echo "       python3 ${SCRIPT_DIR}/tools/cortex-bridge.py config --write"
+        echo "       If it still finds no AMS, \`cortex-bridge.py status\` names what to check, and"
+        echo "       python3 ${SCRIPT_DIR}/tools/cortex-bridge.py support"
+        echo "       writes a report for support (private details removed; nothing is sent)."
     fi
 }
 

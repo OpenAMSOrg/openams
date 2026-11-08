@@ -6,6 +6,7 @@
     python3 ~/openams/tools/cortex-bridge.py config --write
     python3 ~/openams/tools/cortex-bridge.py ptfe 2050
     python3 ~/openams/tools/cortex-bridge.py update
+    python3 ~/openams/tools/cortex-bridge.py support [--submit]
 
 Runs with any python3; it needs no extra packages. The relay service does all
 USB work, so this command only reads its status and sends it requests. When
@@ -242,7 +243,7 @@ def next_step(facts: dict) -> str:
     if missing:
         return ("%d AMS online but not in your config. Run "
                 "`cortex-bridge.py config --write`." % len(missing))
-    return "Everything is connected."
+    return ALL_CONNECTED
 
 
 def firmware_line(comparison: dict, firmware) -> str:
@@ -268,50 +269,67 @@ def firmware_line(comparison: dict, firmware) -> str:
         bridge_info.unknown_reason(firmware), newest)
 
 
-def cmd_status(args) -> int:
-    facts = gather(args)
-    if args.json:
-        print(json.dumps(facts, indent=1, sort_keys=True))
-        return 0
+def status_lines(facts: dict) -> list:
+    """What `status` prints above the next step (the support report starts
+    with the same lines)."""
+    lines = ["Cortex Bridge"]
     relay = facts["relay"] or {}
-    print("Cortex Bridge")
     if not facts["usb"]:
-        print("  USB:         not connected")
+        lines.append("  USB:         not connected")
     for device in facts["usb"]:
         label = {"application": "running", "receiver": "waiting for "
                  "firmware", "fault": "FAULT %s" % device["serial"]}[
                      device["state"]]
         image = {"SiForge": ", production firmware",
                  "OpenAMS": ", lab firmware"}.get(device["manufacturer"], "")
-        print("  USB:         %s, serial %s%s%s" % (
+        lines.append("  USB:         %s, serial %s%s%s" % (
             label, device["serial"] or "?", image,
             (" on " + device["device"]) if device["device"] else ""))
-    print("  Relay:       %s%s" % (
+    lines.append("  Relay:       %s%s" % (
         facts["relay_service"],
         (" (%s)" % relay.get("detail")) if relay.get("detail") else ""))
     units = relay.get("units", [])
     configured = set(facts["configured"])
     if units:
-        print("  AMS units:")
+        lines.append("  AMS units:")
         for unit in units:
-            print("    %s  %-7s  %s  %s" % (
+            lines.append("    %s  %-7s  %s  %s" % (
                 unit["uid"], "online" if unit.get("online") else "offline",
                 unit["path"], "configured" if unit["uid"] in configured
                 else "NOT in config"))
     else:
-        print("  AMS units:   none")
+        lines.append("  AMS units:   none")
     firmware = relay.get("firmware") if facts["relay_service"] == "active" \
         else None
-    print("  Firmware:    %s" % firmware_line(facts["installed_firmware"],
-                                              firmware))
+    lines.append("  Firmware:    %s" % firmware_line(
+        facts["installed_firmware"], firmware))
     update = relay.get("update")
     if update:
-        print("  Last update: %s %s" % (
+        lines.append("  Last update: %s %s" % (
             update.get("result") or update.get("phase"),
             update.get("message") or ""))
-    print("  Klipper:     %s" % facts["klipper_service"])
+    lines.append("  Klipper:     %s" % facts["klipper_service"])
+    return lines
+
+
+ALL_CONNECTED = "Everything is connected."
+SUPPORT_HINT = ("If that does not fix it, `cortex-bridge.py support` writes a "
+                "report for support. It stays on this printer until you send "
+                "it.")
+
+
+def cmd_status(args) -> int:
+    facts = gather(args)
+    if args.json:
+        print(json.dumps(facts, indent=1, sort_keys=True))
+        return 0
+    for line in status_lines(facts):
+        print(line)
     print()
-    print(next_step(facts))
+    step = next_step(facts)
+    print(step)
+    if step != ALL_CONNECTED:
+        print(SUPPORT_HINT)
     return 0
 
 
@@ -922,46 +940,59 @@ def cmd_klipper_started(args, *, sleep=time.sleep, clock=time.monotonic) -> int:
 # support
 # ---------------------------------------------------------------------------
 
-def _command_output(command: list) -> str:
-    try:
-        return subprocess.run(
-            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            universal_newlines=True, timeout=20).stdout
-    except (OSError, subprocess.SubprocessError) as exc:
-        return "(%s: %s)\n" % (" ".join(command), exc)
+def cmd_support(args, *, sources=None, ask=input, interactive=None,
+                opener=None) -> int:
+    """Write a redacted support report; with --submit, offer to send it.
 
-
-def cmd_support(args) -> int:
-    facts = gather(args)
-    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = Path(args.output) if args.output else \
-        default_logs_dir() / ("cortex-bridge-support-%s.txt" % stamp)
-    log_path = Path(args.log_file).expanduser()
-    lines = []
-    try:
-        lines = log_path.read_text("utf-8", errors="replace") \
-            .splitlines()[-400:]
-    except OSError as exc:
-        lines = ["(no support log at %s: %s)" % (log_path, exc)]
-    report = [
-        "Cortex Bridge support report, %s" % stamp,
-        "",
-        "== facts",
-        json.dumps(facts, indent=1, sort_keys=True),
-        "",
-        "== openams",
-        _command_output(["git", "-C", str(OPENAMS_DIR), "describe",
-                         "--always", "--dirty", "--tags"]),
-        "== relay service",
-        _command_output(["systemctl", "status", SERVICE + ".service",
-                         "--no-pager", "-n", "40"]),
-        "== support log (last %d lines)" % len(lines),
-    ] + lines
-    path.write_text("\n".join(report) + "\n", encoding="utf-8")
-    print("Wrote %s" % path)
-    print("Mainsail lists it under Machine > Log files; attach it to your "
-          "support request.")
-    return 0
+    Nothing is ever sent without a configured destination and a yes typed
+    in a terminal (``cortex_bridge.support_submit``)."""
+    from cortex_bridge import support_report, support_submit
+    sources = sources or support_report.Sources(args)
+    if args.file:
+        if not args.submit:
+            print("--file names a report to send; add --submit.",
+                  file=sys.stderr)
+            return 2
+        path = Path(args.file).expanduser()
+        try:
+            text = path.read_text("utf-8", errors="replace")
+        except OSError as exc:
+            print("Cannot read %s: %s" % (path, exc.strerror),
+                  file=sys.stderr)
+            return 1
+        findings = support_report.check_text(text, sources)
+        if findings:
+            print("Nothing was sent: %s still has something that looks "
+                  "private:" % path)
+            for check, number, shown in findings[:10]:
+                print("  line %d: %s (%s)" % (number, check, shown))
+            print("Edit those lines out, or write a new report with "
+                  "`cortex-bridge.py support`.")
+            return 1
+    else:
+        report = support_report.build(sources)
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        path = Path(args.output).expanduser() if args.output else \
+            sources.logs_dir / ("cortex-bridge-support-%s.txt" % stamp)
+        path.write_text(report.text, encoding="utf-8")
+        print("Wrote %s" % path)
+        print("  It holds: %s." % ", ".join(report.sections))
+        print("  Removed before writing: %s." % report.removed_summary())
+        print("  Next step `status` names: %s" % report.next_step)
+        if args.print:
+            print()
+            print(report.text)
+    destination = support_submit.configured(Path(args.config_dir), args.to)
+    if not args.submit:
+        print("Nothing was sent. Mainsail lists the report under Machine > "
+              "Log files; attach it to your support request.")
+        if destination is not None:
+            print("To send it to %s instead, run `cortex-bridge.py support "
+                  "--submit`." % destination.url)
+        return 0
+    print()
+    return support_submit.submit(path, destination, ask=ask,
+                                 interactive=interactive, opener=opener)
 
 
 # ---------------------------------------------------------------------------
@@ -1039,11 +1070,29 @@ def parser() -> argparse.ArgumentParser:
                         help="do not restart Klipper afterwards")
     update.set_defaults(func=cmd_update)
 
-    support = commands.add_parser("support", help="write a support report")
-    support.add_argument("--output", help="report file")
+    support = commands.add_parser(
+        "support", help="write a support report with private details "
+        "removed; --submit offers to send it")
+    support.add_argument("--output", help="report file (default "
+                         "cortex-bridge-support-<date>.txt in the log "
+                         "folder)")
+    support.add_argument("--logs-dir", default=None,
+                         help="Klipper's log folder (default %s)" %
+                         default_logs_dir())
     support.add_argument(
         "--log-file", default="~/printer_data/logs/cortex-bridge.jsonl",
         help="the relay's support log")
+    support.add_argument("--print", action="store_true",
+                         help="also print the report")
+    support.add_argument("--submit", action="store_true",
+                         help="after writing it, show what would be sent "
+                         "and send it if you answer yes (needs a "
+                         "destination: support_url in [openams_bridge], "
+                         "moonraker.conf, or --to)")
+    support.add_argument("--to", metavar="URL",
+                         help="with --submit: send to this https URL")
+    support.add_argument("--file", help="with --submit: send this existing "
+                         "report instead of writing a new one")
     support.set_defaults(func=cmd_support)
     return top
 

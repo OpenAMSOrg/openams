@@ -58,15 +58,20 @@ class FakeServer:
 
 
 class FakeConfig:
-    def __init__(self, server, run_dir):
+    def __init__(self, server, run_dir, options=None):
         self.server = server
         self.run_dir = run_dir
+        self.options = dict(options or {})
+        self.read = set()
 
     def get_server(self):
         return self.server
 
     def get(self, key, default=None):
-        return str(self.run_dir) if key == "run_dir" else default
+        self.read.add(key)
+        if key == "run_dir":
+            return str(self.run_dir)
+        return self.options.get(key, default)
 
     def getboolean(self, key, default=None):
         return default
@@ -116,6 +121,18 @@ class ComponentTests(unittest.TestCase):
     def call(self, path, **args):
         return self.loop.run_until_complete(
             self.server.endpoints[path](Request(**args)))
+
+    def test_support_url_is_accepted_and_unset_by_default(self):
+        """Moonraker warns about options a component does not read; the
+        support report's destination lives in this section."""
+        config = FakeConfig(self.server, self.run_dir)
+        component = bridge_component.OpenAmsBridge(config)
+        self.assertIn("support_url", config.read)
+        self.assertIsNone(component.support_url)
+        config = FakeConfig(self.server, self.run_dir,
+                            {"support_url": "https://support.example.org/r"})
+        self.assertEqual(bridge_component.OpenAmsBridge(config).support_url,
+                         "https://support.example.org/r")
 
     def test_status_reports_relay_and_bundled_firmware(self):
         self.write_status(True)

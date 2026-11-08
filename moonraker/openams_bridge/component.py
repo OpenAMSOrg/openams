@@ -76,6 +76,11 @@ class OpenAmsBridge:
         self.server = config.get_server()
         self.run_dir = Path(config.get("run_dir", RUN_DIR))
         self.restart_klipper = config.getboolean("restart_klipper", True)
+        # Where `cortex-bridge.py support --submit` may send a support report
+        # (cortex_bridge/support_submit.py), after asking. Unset by default;
+        # read here so Moonraker accepts the option. This component sends
+        # nothing.
+        self.support_url = config.get("support_url", None)
         self.update_task = None
         self.last_result = None
         self.server.register_notification(EVENT_NAME, NOTIFY_NAME)

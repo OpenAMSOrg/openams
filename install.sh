@@ -116,6 +116,19 @@ if [ "$REMOVE_KLIPPER_PATCHES" = "1" ] && [ -n "${UNINSTALL:-}" ]; then
     exit 1
 fi
 
+# Keep this run's output for the Cortex Bridge support report: `cortex-bridge.py
+# support` includes the end of it, with private details removed. The file is
+# replaced on every run. OPENAMS_INSTALL_LOG names it; test mode
+# (OPENAMS_NO_SERVICE=1) keeps none unless it is named.
+INSTALL_LOG="${OPENAMS_INSTALL_LOG:-}"
+if [ -z "$INSTALL_LOG" ] && [ "$NO_SERVICE" != "1" ] && [ -d "${HOME}/printer_data/logs" ]; then
+    INSTALL_LOG="${HOME}/printer_data/logs/openams-install.log"
+fi
+if [ -n "$INSTALL_LOG" ] && [ -z "${OPENAMS_INSTALL_LOGGING:-}" ] && { : > "$INSTALL_LOG"; } 2>/dev/null; then
+    export OPENAMS_INSTALL_LOGGING=1
+    exec > >(tee -a "$INSTALL_LOG") 2> >(tee -a "$INSTALL_LOG" >&2)
+fi
+
 # Find SRCDIR from the pathname of this script
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SRCDIR="$SCRIPT_DIR/src"

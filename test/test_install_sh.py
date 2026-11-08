@@ -147,6 +147,27 @@ class InstallShTests(unittest.TestCase):
         self.assertIn("[skipped: OPENAMS_NO_SERVICE=1] systemctl start klipper-test", result.stdout)
         self.assertIn("[skipped: OPENAMS_NO_SERVICE=1] systemctl restart moonraker", result.stdout)
 
+    def test_the_last_run_is_kept_for_the_support_report(self):
+        """OPENAMS_INSTALL_LOG keeps the run's output (stdout and stderr) in a
+        file the Cortex Bridge support report reads; the terminal still sees
+        all of it, and each run replaces the file."""
+        log = self.root / "printer_data/logs/openams-install.log"
+        log.parent.mkdir(parents=True)
+        log.write_text("an older run\n")
+        self.env["OPENAMS_INSTALL_LOG"] = str(log)
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        kept = log.read_text()
+        self.assertNotIn("an older run", kept)
+        self.assertIn("Klipper installation found at", kept)
+        self.assertIn("Klipper installation found at", result.stdout)
+
+    def test_test_mode_keeps_no_install_log_unless_named(self):
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(
+            (self.root / "printer_data/logs/openams-install.log").exists())
+
     def configured_moonraker(self):
         """A moonraker.conf that already has every OpenAMS section, as on a
         printer whose OS was reinstalled with its old config restored."""
