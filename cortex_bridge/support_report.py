@@ -327,6 +327,10 @@ class Sources:
 
         def ask(*words):
             return _run(git + list(words), timeout=10).strip()
+        if ask("rev-parse", "--is-inside-work-tree") != "true":
+            # A copy without git (unpacked from an archive) has no version
+            # to report; say so once instead of a git error in every field.
+            return {"checkout": "not a git checkout: %s" % cli.OPENAMS_DIR}
         status = ask("status", "--porcelain", "--untracked-files=no")
         return {
             "describe": ask("describe", "--always", "--dirty", "--tags"),

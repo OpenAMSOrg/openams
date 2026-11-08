@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -433,6 +434,42 @@ class Fixture(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # The report
 # ---------------------------------------------------------------------------
+
+class OpenAMSVersionTests(unittest.TestCase):
+    """The openams section reads the checkout's git state."""
+
+    def sources(self, root):
+        args = types.SimpleNamespace(
+            config_dir=str(root), logs_dir=str(root), run_dir=str(root),
+            moonraker="http://127.0.0.1:7125",
+            log_file=str(root / "cortex-bridge.jsonl"))
+        return support_report.Sources(args)
+
+    def test_a_copy_without_git_says_so_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with mock.patch.object(cli, "OPENAMS_DIR", root):
+                section = self.sources(root).openams()
+        self.assertEqual(list(section), ["checkout"])
+        self.assertIn("not a git checkout", section["checkout"])
+
+    def test_a_git_checkout_reports_its_commit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = dict(os.environ,
+                       GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.invalid",
+                       GIT_COMMITTER_NAME="t",
+                       GIT_COMMITTER_EMAIL="t@example.invalid")
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            (root / "f").write_text("x")
+            subprocess.run(["git", "-C", str(root), "add", "f"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "c"],
+                           check=True, env=env)
+            with mock.patch.object(cli, "OPENAMS_DIR", root):
+                section = self.sources(root).openams()
+        self.assertRegex(section["commit"], r"^[0-9a-f]{40}$")
+        self.assertEqual(section["changed_files"], 0)
+
 
 class ReportContentsTests(Fixture):
     def setUp(self):
