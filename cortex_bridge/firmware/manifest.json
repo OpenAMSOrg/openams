@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 11,
+   "file": "bridge-11.oac2",
+   "sha256": "11dc9eb70e0b87b9092b1d9c8b88e59ff24419c44f5dda130688c89c7314bf7f",
+   "released": "2026-11-08",
+   "notes": "During a dry the bridge asks the AMS to vent as a Bambu printer does, so the vents open once the chamber is at temperature; the AMS HT's vent position shows in Klipper."
+  },
+  {
    "version": 10,
    "file": "bridge-10.oac2",
    "sha256": "8c3a06842107ccd6300dbdcadfa74fc0278bdd888b363e5c1ae80eee510cb6a3",
