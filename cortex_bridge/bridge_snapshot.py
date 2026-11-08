@@ -309,8 +309,8 @@ FEED_FAILURE = (
     _f("odo_flags", 1, _bitfield(ODO_BITS), "bits"),
     _f("ams_state", 1, _enum(AMS_STATE), "enum"),
 )
-# One row per unit whose dryer schedule has run since it was bound.
-DRYER = (
+# One row per unit asked to dry, or drying, since it was bound.
+DRYER_V11 = (
     _f("slot", 1), _f("index", 1),
     _f("vent_state", 1, _enum(VENT_STATE), "enum"),
     _f("opened_by", 1, _enum(OPENED_BY), "enum"),
@@ -322,6 +322,15 @@ DRYER = (
     _f("reply_ms", 4, _instant, "int?"),
     _f("reply_length", 1),
     _f("reply", DRYER_REPLY_SIZE, _reply, "reply", raw=True),
+)
+# Bridge firmware 12 appends how the last start went: 77 bytes.
+START = ("none", "confirmed", "sent", "refused_busy", "refused_hub",
+         "not_confirmed", "failed")
+DRYER = DRYER_V11 + (
+    _f("start", 1, _enum(START), "enum"),
+    _f("start_state", 1),
+    _f("start_lanes", 1),
+    _f("start_bay", 1, _index, "int?"),
 )
 # The same 73 bytes from bridge firmware 10 (its moisture loop).
 DRYER_V10 = (
@@ -410,9 +419,11 @@ def decode_body(body: bytes) -> dict:
             last_id = section_id
             continue                              # a later firmware's
         name, layout, table = known
-        if section_id == 0x13 and (out.get("system") or {}).get(
-                "app_version") == 10:
-            layout = DRYER_V10
+        if section_id == 0x13:
+            if (out.get("system") or {}).get("app_version") == 10:
+                layout = DRYER_V10
+            elif len(value) < layout_size(DRYER):
+                layout = DRYER_V11                # firmware 11: 73 bytes
         if not table and section_id == last_id:
             raise SnapshotError("the %s section appears twice" % name)
         last_id = section_id
@@ -592,6 +603,13 @@ def classify(snapshot) -> dict:
     return reading
 
 
+START_TEXT = {"confirmed": "was confirmed",
+              "sent": "is waiting for the AMS to confirm it",
+              "refused_busy": "was not sent: the AMS was busy",
+              "refused_hub": "was refused: filament is past the feeder, in "
+                             "the hub",
+              "not_confirmed": "was sent but the AMS never started drying",
+              "failed": "could not be sent"}
 STATE_TEXT = {"drying": "drying", "forcing": "drying, asking the AMS to "
               "vent", "cooldown": "in the sealed cooldown", "idle": "idle",
               "heating": "heating", "closed": "drying, vents closed",
@@ -630,6 +648,15 @@ def dryer_lines(snapshot) -> list:
             moisture = row.get("ah_mgm3")
             if isinstance(moisture, int) and moisture:
                 text += "; moisture %.1f g/m³" % (moisture / 1000.0)
+        start = row.get("start")
+        if start in START_TEXT:
+            text += "; the last start %s" % START_TEXT[start]
+            if start in ("refused_busy", "not_confirmed") and \
+                    isinstance(row.get("start_state"), int) and \
+                    row["start_state"] != 255:
+                text += " (AMS state %d)" % row["start_state"]
+            if start == "refused_hub" and row.get("start_bay") is not None:
+                text += " (bay %d)" % row["start_bay"]
         if row.get("closed_by") in CLOSED_TEXT:
             text += "; vents last closed %s" % CLOSED_TEXT[row["closed_by"]]
         ended = row.get("ended") or {}

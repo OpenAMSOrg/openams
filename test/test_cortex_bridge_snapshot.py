@@ -201,7 +201,7 @@ class DecodeTests(unittest.TestCase):
         self.assertEqual(sizes, {"system": 25, "line": 48, "master": 28,
                                  "discovery": 51, "host": 22, "units": 56,
                                  "candidates": 29, "feed_failures": 24,
-                                 "dryers": 73, "refusals": 13})
+                                 "dryers": 77, "refusals": 13})
         self.assertEqual(len(body()), len(SILENT_LINE_BODY))
 
     def test_rows_decode(self):
@@ -675,8 +675,27 @@ class DryerRowTests(unittest.TestCase):
         self.assertEqual(snap.classify(decoded)["dryers"], [
             "Dryer of the AMS at index 0: in the sealed cooldown, 1 exhaust "
             "request this dry, vents closed (the AMS opened them on a "
-            "request); vents last closed at the end of the dry; the last dry "
-            "ended with the cool-down request."])
+            "request); the last start was confirmed; vents last closed at "
+            "the end of the dry; the last dry ended with the cool-down "
+            "request."])
+
+    def test_a_refused_start_says_why(self):
+        decoded = snap.decode_body(bytes.fromhex(
+            VECTORS["ams2_dryer_refused_hub"]["body_hex"]))
+        row = decoded["dryers"][0]
+        self.assertEqual((row["start"], row["start_lanes"], row["start_bay"]),
+                         ("refused_hub", 0x75, 2))
+        self.assertIn("refused: filament is past the feeder, in the hub "
+                      "(bay 2)", snap.classify(decoded)["dryers"][0])
+
+    def test_a_firmware_11_row_of_73_bytes_still_decodes(self):
+        body = bytearray(bytes.fromhex(self.CASE["body_hex"]))
+        at = bytes(body).index(bytes((0x13, 77)))
+        body[at + 1] = 73
+        del body[at + 2 + 73:at + 2 + 77]
+        row = snap.decode_body(bytes(body))["dryers"][0]
+        self.assertEqual(row["vent_state"], "cooldown")
+        self.assertNotIn("start", row)
 
     def test_a_firmware_10_row_keeps_its_own_names(self):
         body = bytearray(bytes.fromhex(self.CASE["body_hex"]))

@@ -185,8 +185,15 @@ duration, so 0 stays 0), `odo_flags` (`start`, `base`, `rewind_seen`,
 firmware shows its odometer nowhere else, so this row is how a report shows
 the rewind profile of, say, an AMS 1 whose load failed.
 
-**Dryers** (section 0x13, one 73-byte row per unit whose dryer schedule has
-run since it was bound). Bridge firmware 11: `slot`, `index`, `vent_state`
+**Dryers** (section 0x13, one row per unit asked to dry, or drying, since it
+was bound; 77 bytes from bridge firmware 12, 73 before, read by length).
+Firmware 12 appends how the last start went: `start` (`none`, `confirmed`,
+`sent` (waiting for the AMS to confirm), `refused_busy` (the AMS was not
+idle; nothing sent), `refused_hub` (filament past a feeder, in the hub;
+nothing sent), `not_confirmed` (sent, but the AMS never reported drying),
+`failed`), `start_state` (the AMS's own state at that moment, 255 unknown),
+`start_lanes` (its two bits per bay: 00 empty, 01 at the feeder, 11 in the
+hub or loaded) and `start_bay` (`null` for none). Bridge firmware 11: `slot`, `index`, `vent_state`
 (`idle`, `drying`, `forcing` while an exhaust request is held, `cooldown`),
 `opened_by` (`none`, `forced`: the vents opened during a request, `unit`:
 without one), `closed_by` (`none`, `end`, `stopped`, `disabled`), `pulses`
@@ -203,11 +210,12 @@ and `ah_mgm3` (the loop's last moisture sample) instead of `pulses` and
 carries (the owner's decision below).
 
 **Tested against the firmware's own encoder:**
-`test/fixtures/bridge_snapshot/vectors_v1.json` holds five bodies the bridge
+`test/fixtures/bridge_snapshot/vectors_v1.json` holds six bodies the bridge
 firmware's encoder wrote (a silent line, an AMS refused at an HT index with
 an unrecognised suffix, an admitted AMS Klipper has not configured, an AMS 1
 whose load stalled while it was still rewinding, and an AMS 2 Pro in the
-sealed cooldown after a dry, encoded by bridge firmware 11), each with its exact
+sealed cooldown after a dry, and an AMS 2 Pro whose start was refused for
+filament in the hub; encoded by bridge firmware 12), each with its exact
 decoded JSON; the decoder must reproduce it key for key and in order, and
 each must read as its class.
 
