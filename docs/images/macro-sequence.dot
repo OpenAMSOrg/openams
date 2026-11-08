@@ -32,8 +32,10 @@ digraph macros {
              label=<<font face="Courier"><b>G28</b></font>   <font color="#7d4fc7"><b>home</b></font><br/><font point-size="10">only if the printer isn't homed</font>>];
     loaded  [shape=hexagon, fillcolor="#fff6cc", color="#b8900a",
              label=<Filament in the toolhead?>];
+    hb_tx   [fillcolor="#e2f5e7", color="#2e8b4e", style="rounded,filled,dashed",
+             label=<<font face="Courier"><b>_OAMS_HOOK_BEFORE_HEAT</b></font><br/><font point-size="10">yours, if you wrote one (run by _OAMS_HEAT)</font>>];
     heat_tx [fillcolor="#f0f1f4", color="#8a919b",
-             label=<<font face="Courier"><b>_OAMS_HEAT</b></font>   <font color="#c0392b"><b>heat</b></font><br/><font point-size="10">your _OAMS_HOOK_BEFORE_HEAT, if any,<br/>then heats and waits, if colder</font>>];
+             label=<<font face="Courier"><b>_OAMS_HEAT</b></font>   <font color="#c0392b"><b>heat</b></font><br/><font point-size="10">heats and waits, only if the nozzle is colder</font>>];
   }
 
   // ---- SAFE_UNLOAD_FILAMENT: the unload -------------------------------------
@@ -42,14 +44,18 @@ digraph macros {
     style="rounded,filled"; fillcolor="#f7f8fa"; color="#b9bfc8";
     plan_u  [fillcolor="#f0f1f4", color="#8a919b", style="rounded,filled,dashed",
              label=<<font face="Courier"><b>_OAMS_PLAN</b>, <b>G28</b></font><br/><font point-size="10">Panel Unload only: its own plan, homes if needed</font>>];
+    hb_u    [fillcolor="#e2f5e7", color="#2e8b4e", style="rounded,filled,dashed",
+             label=<<font face="Courier"><b>_OAMS_HOOK_BEFORE_HEAT</b></font><br/><font point-size="10">yours, if you wrote one (run by _OAMS_HEAT)</font>>];
     heat_u  [fillcolor="#f0f1f4", color="#8a919b",
-             label=<<font face="Courier"><b>_OAMS_HEAT</b></font>   <font color="#c0392b"><b>heat</b></font><br/><font point-size="10">your _OAMS_HOOK_BEFORE_HEAT, if any,<br/>then heats and waits, if colder</font>>];
+             label=<<font face="Courier"><b>_OAMS_HEAT</b></font>   <font color="#c0392b"><b>heat</b></font><br/><font point-size="10">heats and waits, only if the nozzle is colder</font>>];
     follow  [fillcolor="#dceafe", color="#2f6fd0",
              label=<<font face="Courier"><b>OAMSM_FOLLOWER</b></font><br/><font point-size="10">the AMS follows the extruder backwards</font>>];
     ret1    [fillcolor="#ffeedd", color="#d9822b",
              label=<<font face="Courier"><b>G1 E-retract_length</b></font>   <font color="#c0392b"><b>cut</b></font><br/><font point-size="10">a short retract before the cut</font>>];
     cut     [fillcolor="#efe5ff", color="#7d4fc7",
-             label=<<font face="Courier"><b>CUT_FILAMENT</b></font><br/><font point-size="10">pre_cut → cut → post_cut, or your OAMS_CUT</font>>];
+             label=<<font face="Courier"><b>CUT_FILAMENT</b></font><br/><font point-size="10">the cutter moves: pre_cut → cut → post_cut</font>>];
+    ocut    [fillcolor="#e2f5e7", color="#2e8b4e", style="rounded,filled,dashed",
+             label=<<font face="Courier"><b>OAMS_CUT</b></font><br/><font point-size="10">yours, if you wrote one:<br/>CUT_FILAMENT runs it instead of the moves</font>>];
     h_cut   [fillcolor="#e2f5e7", color="#2e8b4e", style="rounded,filled,dashed",
              label=<<font face="Courier"><b>_OAMS_HOOK_AFTER_CUT</b></font><br/><font point-size="10">yours, if you wrote one</font>>];
     ret2    [fillcolor="#ffeedd", color="#d9822b",
@@ -127,12 +133,17 @@ digraph macros {
   same -> nothing [label=" yes"];
   same -> plan [label=" no"];
   plan -> home -> loaded;
-  loaded -> heat_tx [label=" no: an empty toolhead"];
-  loaded -> heat_u [label=" yes: a swap"];
+  loaded -> hb_tx [label=" no: an empty toolhead"];
+  hb_tx -> heat_tx;
+  loaded -> hb_u [label=" yes: a swap"];
+  hb_u -> heat_u;
   heat_tx -> feed [label=" no unload"];
 
-  ui_unload -> plan_u -> heat_u;
+  ui_unload -> plan_u -> hb_u;
   heat_u -> follow -> ret1 -> cut -> h_cut -> ret2 -> fs_u;
+  ret1 -> ocut [style=dashed, label=" or"];
+  ocut -> h_cut [style=dashed];
+  {rank=same; cut; ocut;}
   fs_u -> f_u [label=" no", color="#c62828", fontcolor="#c62828"];
   fs_u -> ret3 [label=" yes"];
   ret3 -> rewind -> confirm;
@@ -160,7 +171,7 @@ digraph macros {
   // ---- what "fail" does, and the other flows --------------------------------
   node [shape=box, style="rounded,filled", fillcolor="#fde2e2", color="#c62828", fontcolor="#2b2f36",
         fontsize=11, margin="0.14,0.06"];
-  failnote [label=<<b>fail</b>: <font face="Courier"><b>_OAMS_FAIL_TOOLCHANGE</b></font> → <font face="Courier"><b>_OAMS_ABORT</b></font><br/><font point-size="10">puts the G-code state back without moving, stops the AMS follower,<br/>then PAUSE and an error during a print, or only an error from the panel.<br/>The heater stays on, so a retry starts hot. The panel's Stop button<br/>ends the sequence the same way, before the next step.</font>>];
+  failnote [label=<<b>fail</b>: <font face="Courier"><b>_OAMS_FAIL_TOOLCHANGE</b></font> → <font face="Courier"><b>_OAMS_ABORT</b></font><br/><font point-size="10">puts the G-code state back without moving, stops the AMS follower,<br/>then an error; during a print PAUSE first, and the error ends the print<br/>(on_error_gcode). From the panel, only an error. The heater stays on. The panel's Stop button<br/>ends the sequence the same way, before the next step.</font>>];
 
   subgraph cluster_bare {
     label=<<b>Without the cutter</b>>; labeljust=l;

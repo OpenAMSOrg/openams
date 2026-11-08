@@ -37,12 +37,15 @@ _TX GROUP=T1
   G28                                     only when the printer isn't homed       [home]
   SAVE_GCODE_STATE NAME=oams_toolchange   remembers the toolhead's place in the print
   SAFE_UNLOAD_FILAMENT STAGED=1
-    _OAMS_HEAT                            your _OAMS_HOOK_BEFORE_HEAT, then heats and
-                                          waits, only if the nozzle is colder     [heat]
+    _OAMS_HEAT
+      _OAMS_HOOK_BEFORE_HEAT              yours, if you wrote one
+      SET_HEATER_TEMPERATURE              heats and waits, only if the nozzle
+                                          is colder                               [heat]
     SAVE_GCODE_STATE NAME=oams_unload
     OAMSM_FOLLOWER ENABLE=1 DIRECTION=0   the AMS follows the extruder backwards
     G1 E-<retract_length>                 a short retract                         [cut]
-    CUT_FILAMENT                          to pre_cut, cut and post_cut (or your OAMS_CUT)
+    CUT_FILAMENT                          to pre_cut, cut and post_cut
+      OAMS_CUT                            yours, if you wrote one: instead of those moves
     _OAMS_HOOK_AFTER_CUT                  yours, if you wrote one
     G1 E-<extrusion_unload_length>        pulls the cut end out of the extruder gears
     _UNLOAD_FS_OUT                        check: the filament has left the extruder
@@ -97,7 +100,11 @@ Starting values for your toolhead: `python3 ~/openams/tools/toolhead_defaults.py
 
 ## When something fails
 
-During a print, a check that fails stops the sequence through `_OAMS_FAIL_TOOLCHANGE` and `_OAMS_ABORT`. These put the G-code state back without moving, stop the AMS follower, run `PAUSE` and raise the error, so the print waits for you. The sensor checks record the failure, and the helper after them stops. From the panel (`OPENAMS_LOAD`, `OPENAMS_UNLOAD`) a failure raises the error at once and does not pause: there is no print to protect.
+A check that fails stops the sequence through `_OAMS_FAIL_TOOLCHANGE` and `_OAMS_ABORT`. These put the G-code state back without moving and stop the AMS follower; during a print they run `PAUSE`, and in every case they raise the error. The sensor checks record the failure, and the helper after them stops. A failing OpenAMS command (an AMS load or unload, a latched unit fault, the Stop button) raises its error at once, without `PAUSE`.
+
+**During a print, a failed toolchange ends the print.** Klipper answers an error in an SD print with `on_error_gcode`, which Mainsail sets to `CANCEL_PRINT`, and stops reading the file. To try again, fix the cause, run `OAMS_CLEAR_FAULT OAMS=<n>` if the AMS latched a fault, then `OAMSM_CLEAR_ERRORS`, and run the toolchange again. A retry starts from the beginning and plans from what the AMS reports: when the failure came after the feed, the AMS counts the new group as loaded and `T<n>` does nothing, so unload first (`OAMSM_UNLOAD_FILAMENT` when the filament never reached the extruder, `OPENAMS_UNLOAD` otherwise). A change that makes a failure pause the print, with `RESUME` continuing where it stopped, is in progress.
+
+From the panel (`OPENAMS_LOAD`, `OPENAMS_UNLOAD`) a failure raises the error and does not pause: there is no print to protect.
 
 A failed sequence leaves the heater on, so a retry starts hot. The Stop button ends the sequence the same way, before the next step; a move already queued (a `G1`, the cutter, homing) finishes first. The messages are in [troubleshooting](troubleshooting.md).
 
