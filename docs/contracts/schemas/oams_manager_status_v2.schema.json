@@ -833,6 +833,27 @@
                     "null"
                   ],
                   "description": "Whether the dryer's power adapter is connected; null where the unit does not report it."
+                },
+                "vent": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["position", "purging", "ah_gm3"],
+                  "description": "Only on a unit that runs the dryer vent loop (capabilities.dryer_vent_loop, Cortex Bridge firmware 10 or later): the vents follow the chamber's moisture.",
+                  "properties": {
+                    "position": {
+                      "enum": ["unknown", "closed", "open"],
+                      "description": "The vent position the unit reports; unknown where it cannot tell."
+                    },
+                    "purging": {
+                      "type": "boolean",
+                      "description": "True while the loop holds the vents open."
+                    },
+                    "ah_gm3": {
+                      "type": ["number", "null"],
+                      "minimum": 0,
+                      "description": "The chamber's absolute humidity in g/m3; null before the first reading."
+                    }
+                  }
                 }
               }
             }

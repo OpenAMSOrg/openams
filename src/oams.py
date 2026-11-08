@@ -116,6 +116,27 @@ MIN_HOST_WATCHDOG_MS = 2000
 # the scale of minutes; the per-cycle telemetry sequence stays untouched.
 ENVIRONMENT_POLL_S = 5.0
 
+# The dryer vent loop's tuning (C1 section 4.4, AMS_CAP_DRYER_VENT_LOOP). A
+# field sent as 0 keeps the unit's built-in value; `enable` turns the loop on
+# (1) or leaves the vents to the unit (0).
+DRYER_VENT_TUNING_COMMAND = (
+    "ams_dryer_vent_tuning rise_mgm3=%hu flat_mgm3=%hu hold_s=%hu"
+    " min_open_s=%hu max_open_s=%hu min_interval_s=%hu max_interval_s=%hu"
+    " cooldown_centic=%hu enable=%c")
+# [oams NAME] option -> (wire scale, minimum, maximum), in the wire order. The
+# ranges are the unit's own clamps, so a value outside them is a config error
+# here instead of a silent change there.
+DRYER_VENT_OPTIONS = (
+    ("dryer_vent_rise", 1000, 0.001, 65.0),        # g/m3 -> mg/m3
+    ("dryer_vent_flat", 1000, 0.001, 65.0),        # g/m3 per minute
+    ("dryer_vent_hold", 1, 1, 3600),               # s
+    ("dryer_vent_min_open", 1, 30, 1800),          # s
+    ("dryer_vent_max_open", 1, 30, 1800),          # s
+    ("dryer_vent_min_interval", 1, 300, 14400),    # s
+    ("dryer_vent_max_interval", 1, 300, 14400),    # s
+    ("dryer_cooldown_below", 100, 35.0, 60.0),     # C -> centi-C
+)
+
 # From this protocol version the firmware owns per-op liveness: it runs its own
 # no-progress watchdog, stops the motors on a stall, and completes the op with
 # code OAMS_OP_CODE_TIMEOUT. The host then drops its authoritative op deadline
@@ -253,6 +274,7 @@ class OAMS(oams_ext.UnitHooks):
             above=self.fps_lower_threshold, below=self.fps_upper_threshold)
         self.current_target = config.getfloat(
             "current_target", 0.3, minval=0.1, maxval=0.4)
+        self.dryer_vent_tuning = self._read_dryer_vent_tuning(config)
 
         # Index of the spool currently loaded through the hub (0..3), or None.
         # This is the driver's own firmware mirror, kept in step with the
@@ -324,6 +346,7 @@ class OAMS(oams_ext.UnitHooks):
         self.oams_load_spool3_cmd = None
         self.ams_ht_dryer_start_cmd = None
         self.ams_ht_dryer_stop_cmd = None
+        self.ams_dryer_vent_tuning_cmd = None
         self.ams_ht_clear_fault_cmd = None
         # The shared AMS HT/AMS2 status commands are fire-and-report, not queries.
         # They are feature-detected after identify and polled round-robin only
@@ -775,7 +798,7 @@ class OAMS(oams_ext.UnitHooks):
         data = self._telemetry.get("dryer", {})
         heater = data.get("heater_permille")
         fan = data.get("fan_permille")
-        return {
+        status = {
             "state": data.get("state_name", "unknown"),
             "target_c": data.get("target_c"),
             "remaining_s": data.get("remaining_s"),
@@ -784,6 +807,14 @@ class OAMS(oams_ext.UnitHooks):
             "fault": data.get("fault_name", "none"),
             "adapter": self._adapter_status(),
         }
+        if self.capabilities.get("dryer_vent_loop"):
+            humidity = data.get("humidity_gm3")
+            status["vent"] = {
+                "position": data.get("vent_position_name", "unknown"),
+                "purging": bool(data.get("purging")),
+                "ah_gm3": humidity if humidity else None,
+            }
+        return status
 
     def _note_f1s(self, values, now):
         """Store an F1S snapshot and remember a fresh spool presence edge.
@@ -1702,6 +1733,7 @@ class OAMS(oams_ext.UnitHooks):
         self.capabilities["telemetry"] = False
         self._telemetry_commands = {}
         for attribute in ("ams_ht_dryer_start_cmd", "ams_ht_dryer_stop_cmd",
+                          "ams_dryer_vent_tuning_cmd",
                           "ams_ht_clear_fault_cmd"):
             setattr(self, attribute, None)
         self._ext_reset_commands()
@@ -1770,6 +1802,10 @@ class OAMS(oams_ext.UnitHooks):
                     ("ams_ht_dryer_stop_cmd", "ams_ht_dryer_stop",
                      "dryer stop"),
                 ])
+                if self.capabilities.get("dryer_vent_loop"):
+                    control_cmds.append(
+                        ("ams_dryer_vent_tuning_cmd",
+                         DRYER_VENT_TUNING_COMMAND, "dryer vent tuning"))
             control_cmds = self._ext_control_commands(control_cmds)
             for attribute, command, operation in control_cmds:
                 try:
@@ -2550,6 +2586,29 @@ class OAMS(oams_ext.UnitHooks):
             raise gcmd.error("%s rejected: %s (%d)" % (
                 operation, self._AMS_HT_RESULTS.get(result, "unknown"), result))
 
+    @staticmethod
+    def _read_dryer_vent_tuning(config):
+        """The [oams NAME] dryer vent options as wire values, 0 where unset
+        (the unit's built-in value)."""
+        values = []
+        for option, scale, low, high in DRYER_VENT_OPTIONS:
+            value = config.getfloat(option, None, minval=low, maxval=high)
+            values.append(0 if value is None
+                          else max(1, int(round(value * scale))))
+        pairs = (("dryer_vent_min_open", "dryer_vent_max_open", 3, 4),
+                 ("dryer_vent_min_interval", "dryer_vent_max_interval", 5, 6))
+        for low_name, high_name, low_at, high_at in pairs:
+            if values[low_at] and values[high_at] and \
+                    values[low_at] > values[high_at]:
+                raise config.error("%s must not be more than %s"
+                                   % (low_name, high_name))
+        return values
+
+    def _dryer_vent_tuning_args(self, enable):
+        tuning = list(getattr(self, "dryer_vent_tuning", None)
+                      or [0] * len(DRYER_VENT_OPTIONS))
+        return tuning + [1 if enable else 0]
+
     cmd_OAMS_DRYER_START_help = "Start the dryer within firmware limits"
 
     def cmd_OAMS_DRYER_START(self, gcmd):
@@ -2578,7 +2637,19 @@ class OAMS(oams_ext.UnitHooks):
         duration = gcmd.get_int(
             "DURATION", 3600, minval=1, maxval=7 * 24 * 60 * 60)
         hold_after = gcmd.get_int("HOLD_AFTER", 0, minval=0, maxval=1)
+        vent = str(gcmd.get("VENT", "auto")).strip().lower()
+        if vent not in ("auto", "unit"):
+            raise gcmd.error("VENT must be auto (vents follow the moisture) "
+                             "or unit (the unit moves them itself)")
         running = self._dryer_cycle_running()
+        vents = ""
+        tuning_cmd = getattr(self, "ams_dryer_vent_tuning_cmd", None)
+        if tuning_cmd is not None and not running:
+            self._send_ams_ht_control(
+                tuning_cmd, self._dryer_vent_tuning_args(vent == "auto"),
+                "%s dryer vent tuning" % self._unit_label(), gcmd)
+            vents = ("; vents follow the moisture" if vent == "auto"
+                     else "; the unit moves its vents")
         try:
             self._send_ams_ht_control(
                 self.ams_ht_dryer_start_cmd,
@@ -2597,8 +2668,8 @@ class OAMS(oams_ext.UnitHooks):
                         "" if left is None else ", %d s left" % left, exc))
             raise
         gcmd.respond_info(
-            "%s: dryer started at %.1fC for %ds (hold_after=%d)"
-            % (self._unit_label(), target, duration, hold_after))
+            "%s: dryer started at %.1fC for %ds (hold_after=%d)%s"
+            % (self._unit_label(), target, duration, hold_after, vents))
 
     cmd_OAMS_DRYER_STOP_help = "Stop the unit's dryer safely"
 

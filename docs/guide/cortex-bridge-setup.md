@@ -535,6 +535,29 @@ stayed below `arrival_threshold`, lower `arrival_threshold:` in `[fps]` under
 the value the message names; see
 [configure](configure.md#host-confirmed-arrival-from-a-relayed-fps).
 
+## Drying
+
+An AMS 2 Pro or AMS HT dries from Mainsail's panel or with
+`OAMS_DRYER_START OAMS=<n> TARGET=<C> DURATION=<s>`. The AMS HT needs its own
+power adapter for the heater.
+
+With bridge firmware 10 or later, the bridge also decides when the vents open.
+It does this from the moisture in the chamber, the absolute humidity it works
+out from the AMS's humidity and temperature readings:
+
+- With the vents closed, once the moisture has risen and levelled off, it
+  opens them.
+- Once the moisture stops falling, it closes them again.
+- It opens them at most once every 10 minutes, and at least once an hour.
+- When the dry time is up, the heater stops and the vents stay closed until
+  the chamber is below 45 °C.
+
+The bridge does this by itself, so a dry finishes the same way when Klipper
+restarts. Mainsail's panel shows the vent position and the humidity.
+`VENT=unit` on `OAMS_DRYER_START` leaves the vents to the AMS. The numbers can
+be changed with the `dryer_vent_*` options in `[oams <name>]`; see
+[the reference](reference.md#oams-name).
+
 ## Keep it up to date
 
 - **OpenAMS**, including the bridge relay, updates from Mainsail's

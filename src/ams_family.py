@@ -346,7 +346,11 @@ def resolve_capabilities(configured, constants):
             ("arrival_distance", "AMS_CAP_ARRIVAL_DISTANCE"),
             # A failed operation's terminal value is its reason, one of the
             # AMS_REASON_* constants (C1 section 4.1).
-            ("op_reason", "AMS_CAP_OP_REASON")):
+            ("op_reason", "AMS_CAP_OP_REASON"),
+            # The unit opens and closes its dryer vents from the chamber's
+            # moisture and ends a dry with a sealed cooldown, tuned by
+            # ams_dryer_vent_tuning (C1 section 4.4; Cortex Bridge 10+).
+            ("dryer_vent_loop", "AMS_CAP_DRYER_VENT_LOOP")):
         if constant in constants:
             result[field] = bool(_int_constant(constants, constant, 0))
     reasons = {}

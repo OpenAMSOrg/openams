@@ -300,6 +300,113 @@ class DryerControlTests(unittest.TestCase):
         self.assertEqual(domain["system_fault_name"], "none")
 
 
+class FakeConfig:
+    """Just enough of Klipper's ConfigWrapper for the dryer vent options."""
+
+    def __init__(self, values):
+        self.values = values
+
+    def getfloat(self, name, default=None, minval=None, maxval=None):
+        if name not in self.values:
+            return default
+        value = float(self.values[name])
+        if minval is not None and value < minval:
+            raise self.error("%s below minimum" % name)
+        if maxval is not None and value > maxval:
+            raise self.error("%s above maximum" % name)
+        return value
+
+    def error(self, message):
+        return ValueError(message)
+
+
+class DryerVentLoopTests(unittest.TestCase):
+    """A unit that runs the dryer vent loop (AMS_CAP_DRYER_VENT_LOOP) gets its
+    tuning before every dry start; 0 keeps the unit's built-in value."""
+
+    def loop_driver(self, **options):
+        driver = make_driver()
+        driver.capabilities["dryer_vent_loop"] = True
+        driver.ams_dryer_vent_tuning_cmd = FakeQuery()
+        driver.dryer_vent_tuning = OAMS._read_dryer_vent_tuning(
+            FakeConfig(options))
+        return driver
+
+    def test_the_tuning_goes_before_the_start(self):
+        driver = self.loop_driver(dryer_vent_min_interval=900,
+                                  dryer_vent_rise=1.5,
+                                  dryer_cooldown_below=40)
+        order = []
+        driver.ams_dryer_vent_tuning_cmd.payload = \
+            lambda args: order.append("tuning") or {"result": 0}
+        driver.ams_ht_dryer_start_cmd.payload = \
+            lambda args: order.append("start") or {"result": 0}
+        gcmd = FakeGcmd({"TARGET": 55})
+        driver.cmd_OAMS_DRYER_START(gcmd)
+        self.assertEqual(order, ["tuning", "start"])
+        self.assertEqual(driver.ams_dryer_vent_tuning_cmd.sent,
+                         [[1500, 0, 0, 0, 0, 900, 0, 4000, 1]])
+        self.assertIn("vents follow the moisture", gcmd.responses[0])
+
+    def test_vent_unit_leaves_the_vents_to_the_unit(self):
+        driver = self.loop_driver()
+        gcmd = FakeGcmd({"TARGET": 55, "VENT": "unit"})
+        driver.cmd_OAMS_DRYER_START(gcmd)
+        self.assertEqual(driver.ams_dryer_vent_tuning_cmd.sent,
+                         [[0, 0, 0, 0, 0, 0, 0, 0, 0]])
+        self.assertIn("the unit moves its vents", gcmd.responses[0])
+        with self.assertRaisesRegex(RuntimeError, "VENT must be"):
+            driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 55,
+                                                  "VENT": "open"}))
+
+    def test_a_running_dry_keeps_its_tuning(self):
+        # The unit answers Busy to the second start; the tuning must not be
+        # changed under the running cycle on the way there.
+        driver = self.loop_driver()
+        driver._telemetry["dryer"] = {"state_name": "timed_dry",
+                                      "remaining_s": 600}
+        driver.ams_ht_dryer_start_cmd.result = 1
+        with self.assertRaisesRegex(RuntimeError, "already running"):
+            driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 55}))
+        self.assertEqual(driver.ams_dryer_vent_tuning_cmd.sent, [])
+
+    def test_a_unit_without_the_loop_gets_no_tuning(self):
+        driver = make_driver()
+        gcmd = FakeGcmd({"TARGET": 55, "VENT": "auto"})
+        driver.cmd_OAMS_DRYER_START(gcmd)
+        self.assertEqual(len(driver.ams_ht_dryer_start_cmd.sent), 1)
+        self.assertNotIn("vents", gcmd.responses[0])
+
+    def test_options_are_checked_against_the_units_ranges(self):
+        with self.assertRaisesRegex(ValueError, "below minimum"):
+            OAMS._read_dryer_vent_tuning(
+                FakeConfig({"dryer_vent_min_interval": 60}))
+        with self.assertRaisesRegex(ValueError, "must not be more than"):
+            OAMS._read_dryer_vent_tuning(
+                FakeConfig({"dryer_vent_min_open": 600,
+                            "dryer_vent_max_open": 120}))
+        self.assertEqual(
+            OAMS._read_dryer_vent_tuning(FakeConfig(
+                {"dryer_vent_flat": 0.05, "dryer_vent_hold": 90,
+                 "dryer_vent_min_open": 60, "dryer_vent_max_open": 900,
+                 "dryer_vent_max_interval": 3600})),
+            [0, 50, 90, 60, 900, 0, 3600, 0])
+
+    def test_the_status_shows_the_vents_only_with_the_loop(self):
+        driver = self.loop_driver()
+        driver.capabilities["dryer"] = True
+        driver._telemetry["dryer"] = {
+            "state_name": "timed_dry", "vent_position_name": "open",
+            "purging": 1, "humidity_gm3": 18.25}
+        self.assertEqual(driver._dryer_status()["vent"],
+                         {"position": "open", "purging": True,
+                          "ah_gm3": 18.25})
+        driver._telemetry["dryer"]["humidity_gm3"] = 0.0
+        self.assertIsNone(driver._dryer_status()["vent"]["ah_gm3"])
+        driver.capabilities["dryer_vent_loop"] = False
+        self.assertNotIn("vent", driver._dryer_status())
+
+
 class FaultClearTests(unittest.TestCase):
     def driver(self, result=0):
         driver = make_driver(result)

@@ -28,6 +28,15 @@ class FamilyProfileTests(unittest.TestCase):
             self.assertFalse(caps[key], key)
         self.assertEqual(caps["rfid_reader_count"], 2)
 
+    def test_a_unit_that_runs_the_dryer_vent_loop_says_so(self):
+        caps, _ = F.resolve_capabilities("ams_ht", {
+            "AMS_FAMILY": "ams_ht", "AMS_BAYS": 1,
+            "AMS_CAP_DRYER_VENT_LOOP": 1})
+        self.assertIs(caps["dryer_vent_loop"], True)
+        caps, _ = F.resolve_capabilities("ams_ht", {
+            "AMS_FAMILY": "ams_ht", "AMS_BAYS": 1})
+        self.assertFalse(caps.get("dryer_vent_loop", False))
+
     def test_ams2_dryer_zones_do_not_imply_independent_controls(self):
         caps, _ = F.resolve_capabilities("ams2", {
             "AMS_CAPABILITY_SCHEMA_VERSION": 4, "AMS_DRYER_ZONES": 2,

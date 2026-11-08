@@ -30,6 +30,12 @@ One section per unit. Required unless marked otherwise.
 | `ptfe_length_<bay>:` | no | shared `ptfe_length` | Per-bay path length override |
 | `spool_id_<bay>:` | no | — | Spoolman spool linked to that bay |
 | `link_source_<bay>:` | no | `manual` | `tag` or `manual`; written by the plugin |
+| `dryer_vent_rise:` | no | unit's own (about 2 % RH at the target) | Dryer vent loop (Cortex Bridge firmware 10 or later): how far the moisture must rise, in g/m³, before a level-off opens the vents |
+| `dryer_vent_flat:` | no | unit's own (0.1) | The moisture counts as level, or as no longer falling, while it moves less than this many g/m³ per minute |
+| `dryer_vent_hold:` | no | unit's own (120) | Seconds the moisture must stay level before the vents move |
+| `dryer_vent_min_open:` / `dryer_vent_max_open:` | no | unit's own (90 / 600) | Seconds the vents stay open at least and at most; 30 to 1800 |
+| `dryer_vent_min_interval:` / `dryer_vent_max_interval:` | no | unit's own (600 / 3600) | Seconds between openings at least and at most; 300 to 14400 |
+| `dryer_cooldown_below:` | no | unit's own (45) | At the end of a dry the vents stay closed until the chamber is below this, in °C; 35 to 60 |
 
 A threshold list must hold one value or four. Anything else stops Klipper with
 `<option> requires one value (single-bay AMS HT) or four comma-separated values`.
@@ -225,7 +231,7 @@ the unit's `oams_idx`, except in the four group and spool-link commands and
 | `OAMS_PID_SET` | `P=`, `I=`, `D=`, `TARGET=` (optional) |
 | `OAMS_CURRENT_PID_SET` | `P=`, `I=`, `D=`, `TARGET=` (optional) |
 | `OAMS_PID_AUTOTUNE` | none; always answers that autotune is unsupported |
-| `OAMS_DRYER_START` | `TARGET=<C>`, `DURATION=<s>` (default 3600), `HOLD_AFTER=<0\|1>`, `ROTATE=<0\|1>` |
+| `OAMS_DRYER_START` | `TARGET=<C>`, `DURATION=<s>` (default 3600), `HOLD_AFTER=<0\|1>`, `ROTATE=<0\|1>`, `VENT=<auto\|unit>` (default `auto`: on Cortex Bridge firmware 10 or later the vents follow the moisture; `unit` leaves them to the AMS) |
 | `OAMS_DRYER_STOP` | none |
 | `OAMS_CLEAR_FAULT` | none |
 | `OAMS_RFID_SCAN` | `BAY=<bay>`: asks a unit that reads its own tags to read that bay ([using](using.md#units-that-read-their-own-tags)) |
