@@ -280,7 +280,7 @@ Cortex Bridge
   Relay:       active (1 AMS online)
   AMS units:
     0a1b2c3d4e5f  online   /dev/oams/0a1b2c3d4e5f  configured
-  Firmware:    version 7, up to date
+  Firmware:    version 10, up to date
   Klipper:     active
 
 Everything is connected.
