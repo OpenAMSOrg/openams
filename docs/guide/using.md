@@ -63,14 +63,23 @@ T0
 T1
 ```
 
-Each `T<n>` calls `_TX GROUP=T<n>`, which runs the whole sequence: home if
-needed, heat, cut the old filament, retract, rewind it to its bay, feed the new
-spool to the extruder gears, check the inlet, reload it into the melt zone,
-check the outlet, then `CLEAN_NOZZLE`. On failure it stops the follower,
-`PAUSE`, and raises a G-code error, so an SD print ends through
-`on_error_gcode` instead of continuing without filament.
+Each `T<n>` calls `OAMSM_TOOLCHANGE GROUP=T<n>`, which runs `_TX`, the whole
+sequence: home if needed, heat, cut the old filament, retract, rewind it to its
+bay, feed the new spool to the extruder gears, check the inlet, reload it into
+the melt zone, check the outlet, then `CLEAN_NOZZLE`.
 [How the macros run](macro-sequence.md) draws every macro of it as a state
 machine and lists each command in order.
+
+**When a toolchange fails during a print, the print pauses.** Whatever failed
+(a check, the AMS, a hook, `CLEAN_NOZZLE`, the Stop button), `OAMSM_TOOLCHANGE`
+puts the toolhead back where the toolchange started, records the failure on the
+lane, and runs `PAUSE`; the print does not end. Fix the cause and press
+**RESUME**: it clears the AMS's faults, works out where the lane is, and runs
+only what is left (the toolhead reload alone when the AMS had already fed the
+filament, the feed when it had not, the whole swap when the old filament is
+still loaded). If that fails too, the print stays paused with the reason, and
+RESUME can be pressed again. OpenAMS never retries on its own: the AMS retries
+before it reports a failure.
 
 Point the slicer at these names: set its toolchange G-code to `T` and the tool
 index. Its own multi-material moves (ramming, cooling moves, parking, loading,
@@ -84,8 +93,11 @@ For more than four tools, add a group for each and uncomment the matching
 ```ini
 [gcode_macro T4]
 gcode:
-  _TX GROUP=T4
+  OAMSM_TOOLCHANGE GROUP=T4 {rawparams}
 ```
+
+Call `OAMSM_TOOLCHANGE`, not `_TX` directly: a `_TX` called directly has no
+failure guard, so a failure in a print ends the print.
 
 Call `T<n>` and `OPENAMS_LOAD` from ordinary G-code, **never** inside another
 `START` block. They own their background routine, and nested routines are not
@@ -101,6 +113,7 @@ OPENAMS_LOAD GROUP=T0 SLOT=0
 OPENAMS_UNLOAD
 OAMSM_LOAD_FILAMENT_CANCEL
 OAMSM_CLEAR_ERRORS
+OAMSM_RETRY
 ```
 
 `SLOT=` is the slot id from the UI API status, not a bay number. `OPENAMS_LOAD`
@@ -108,8 +121,12 @@ rejects a malformed, unknown, unavailable or wrongly grouped slot before any
 homing, cutting or unloading; check one without moving anything with
 `OAMSM_VALIDATE_LOAD GROUP=T0 SLOT=0`.
 
-`OPENAMS_UNLOAD` runs `STRICT=1`: on a sensor failure it raises instead of
-pausing, because a UI request has no print to protect.
+A failed `OPENAMS_LOAD` or `OPENAMS_UNLOAD` raises its error instead of
+pausing, because a UI request has no print to protect. The lane then carries a
+`toolchange_fault` in the status. `OAMSM_RETRY` (the `retry` command) continues
+it from where it stopped, `OPENAMS_UNLOAD` backs it out, and
+`OAMSM_CLEAR_ERRORS` (the `reset` command) clears the AMS's latched faults and
+re-reads the lanes without moving anything.
 
 A client must read command names from the status, not hard-code them; see the
 [UI API](../UI_API.md).
@@ -125,7 +142,9 @@ the heat wait ends within half a second, and any other step ends at the next
 boundary; a move already queued (a `G1`, the cutter, homing) finishes first.
 The step that was running shows as failed with "Stopped by the user", and a
 heater the sequence turned on goes back to where it was, unless a print is
-running (a print's temperatures are never touched).
+running (a print's temperatures are never touched). A stop during a print's
+toolchange pauses the print, like any other failure, and RESUME finishes the
+toolchange.
 
 ## Groups and runout
 

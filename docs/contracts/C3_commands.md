@@ -109,6 +109,57 @@ recovery on every AMS behind it. It is now left alone and named:
 `"OAMSM_CLEAR_ERRORS: skipped read-only box; it holds no error state to
 clear"`, after the units that could be cleared are. The hardware-snapshot
 guard still applies to those (`"OpenAMS hardware snapshot unavailable for %s"`).
+**Reset clears latched unit faults first (2026-11-08).** Each unit whose
+faults carry the `clear_fault` action (§5.7 of C2) gets its own
+`OAMS_CLEAR_FAULT OAMS=<idx>`; the command then judges the latches only after
+`FAULT_CLEAR_SETTLE_S` (15 s, the unit's own recovery window: an AMS 2 Pro's
+`motor_drive_fault` looked cleared at once and latched again seconds later),
+waits up to `FAULT_CLEAR_WAIT_S` (20 s) in all, resyncs as above, and raises
+`"OAMSM_CLEAR_ERRORS: a fault stayed latched after the clear on <units>"` for
+any that stayed. A lane's `toolchange_fault` is kept and named
+(`"OAMSM_CLEAR_ERRORS: the toolchange to T1 on lane fps is not finished: ..."`),
+so `RESUME` or `OAMSM_RETRY` still finishes it.
+
+### `OAMSM_TOOLCHANGE GROUP=<name> [SLOT=<id>] [TEMP=<°C>]` / `OAMSM_TOOLCHANGE UNLOAD=1 [FPS=<lane>] [TEMP=<°C>]`
+`cmd_TOOLCHANGE` (2026-11-08). The failure guard every toolchange and unload
+runs in: `T<n>` and `OPENAMS_LOAD` call it with `GROUP=`, `OPENAMS_UNLOAD` with
+`UNLOAD=1`. It saves the G-code state (`oams_guard`), runs `_TX ...` or
+`SAFE_UNLOAD_FILAMENT STRICT=1 ...` with `run_script_from_command`, and catches
+any G-code error inside it. On an error it records the lane's
+`toolchange_fault` (C2), marks the running step failed if no macro did,
+notes the flow as failed (its follower stops once no print is printing), and
+restores the guard state. Then:
+- in a print (`print_stats.state` is `printing`) and not from the panel (no
+  `SLOT=`, not an unload): restores with `MOVE=1`, runs `PAUSE`, writes
+  `"!! OpenAMS: <the toolchange to T1> failed at the <step> step: <reason>. The
+  print is paused: fix it and press RESUME, which retries it."` and returns
+  without an error, so the print file stays open;
+- otherwise: re-raises the original error.
+A group the topology does not know runs `_TX` unguarded (a configuration
+error, which `_TX` names). A successful run clears the lane's fault.
+
+### `OAMSM_RETRY [FPS=<lane>]`
+`cmd_RETRY` (2026-11-08), the UI's `retry` command. Without `FPS=` it takes the
+one lane with a `toolchange_fault` (`"several lanes have a failed toolchange;
+specify FPS=<name>"` when there are more). It resets as `OAMSM_CLEAR_ERRORS`
+(raising when a unit fault stays latched), then continues from the lane state:
+a load whose target group is loaded and was `fed` runs `_OAMS_RESUME_TOOLHEAD`
+(heat, forward follower, inlet check, reload, outlet check, `CLEAN_NOZZLE`);
+loaded but not fed runs `OAMSM_UNLOAD_FILAMENT` then `_TX`; another group
+loaded, or nothing loaded, runs `_TX`; an unload runs the unload again, or
+clears the fault when the lane is already unloaded. It runs inside the same
+guard and raises on failure.
+
+### `RESUME` (Klipper's, wrapped)
+At ready the manager finds the command whose handler unwraps to
+`pause_resume.cmd_RESUME` (`RESUME_BASE` under Mainsail's or Fluidd's
+`RESUME`, or `RESUME` itself) and wraps it. While the print is paused and a
+lane holds a print's `toolchange_fault`, it runs `OAMSM_RETRY`'s logic for each
+such lane first; a retry that fails raises `"OpenAMS could not finish <the
+toolchange to T1> ...: <reason>. The print stays paused: fix it and press
+RESUME again."`, and Klipper's resume is not called. Otherwise it calls
+Klipper's resume unchanged. A print's fault is dropped once `print_stats`
+leaves `printing` and `paused`.
 
 ### `OAMSM_SELFTEST`
 `cmd_SELFTEST`, `oams_manager.py:480-548`. Read-only diagnostic report: FPS

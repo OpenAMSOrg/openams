@@ -151,6 +151,10 @@ Prints one `KEY=value` per line, then any `STOP_REASON=` and `ASK=` lines, then
 | `OpenAMS hardware snapshot unavailable for <name>` | The unit has not reported its sensors yet | Wait; then check the wiring and `OAMSM_SELFTEST` |
 | `Unknown FPS '<name>'` | A `FPS=` value names no lane | Use the `[fps ...]` section's short name |
 | `Multiple FPS present; specify FPS=<name>` | Several lanes and no `FPS=` given | Add `FPS=` |
+| `OpenAMS: the toolchange to <group> failed at the <step> step: <reason>. The print is paused` | A toolchange in a print failed; the print paused instead of ending | Fix what the reason names, then press **RESUME**: it finishes the toolchange from where it stopped, then the print goes on ([how](macro-sequence.md#when-something-fails)) |
+| `OpenAMS could not finish the toolchange to <group> ...: <reason>. The print stays paused` | RESUME retried and it failed again | Fix the cause and press **RESUME** again; to give up, cancel the print |
+| `OAMSM_CLEAR_ERRORS: a fault stayed latched after the clear on <unit>` | The unit refused or did not recover within its 15 s recovery window (a fault can look cleared, then latch again) | Check the unit (filament path, its LEDs), then Reset again; a power cycle of the AMS clears what it cannot |
+| `OAMSM_CLEAR_ERRORS: the toolchange to <group> on lane <lane> is not finished` | Reset keeps an unfinished toolchange on purpose | In a print, **RESUME** finishes it; from the panel, **Retry** finishes it or **Unload** backs it out |
 | `Unknown OpenAMS setting '<name>'` | A bad `OAMSM_SET_OPTION` name | Use one of the six policy switches |
 | `Unknown OAMS '<name>'.` | `OAMS=` on a group or spool-link command names no unit | Use the unit's name (`oams1`), not its index |
 | `Refusing to unload: <bay> is loaded on this OAMS, not <bay>` | `SPOOL=` names a bay other than the loaded one | Drop `SPOOL=`, or name the loaded bay |

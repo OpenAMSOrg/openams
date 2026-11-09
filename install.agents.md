@@ -435,7 +435,7 @@ already used by another `[mcu]`. If there is more than one: ASK.
     ```
     [gcode_macro Tn]
     gcode:
-      _TX GROUP=Tn
+      OAMSM_TOOLCHANGE GROUP=Tn {rawparams}
     ```
 - **Groups, update or migration:** never change existing groups.
 - **`[temperature_sensor oams]`:** this is the HDC1080 sensor on the STM32F072

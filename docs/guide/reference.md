@@ -202,7 +202,9 @@ the unit's `oams_idx`, except in the four group and spool-link commands and
 | `OAMSM_UNLOAD_FILAMENT` | `FPS=<lane>` (optional) |
 | `OAMSM_VALIDATE_LOAD` | `GROUP=<name>`, `SLOT=<n>` |
 | `OAMSM_LOAD_FILAMENT_CANCEL` | `FPS=<lane>` (optional) |
-| `OAMSM_CLEAR_ERRORS` | none |
+| `OAMSM_CLEAR_ERRORS` | none (Reset: clears latched unit faults, then re-reads the lanes; moves nothing) |
+| `OAMSM_TOOLCHANGE` | `GROUP=<name>` with `SLOT=<id>` and `TEMP=<°C>` optional, or `UNLOAD=1` with `FPS=<lane>` optional: runs the toolchange or unload and catches any failure (pauses a print) |
+| `OAMSM_RETRY` | `FPS=<lane>` (optional): continues the failed toolchange or unload from where it stopped |
 | `OAMSM_CURRENT_LOADED_GROUP` | none |
 | `OAMSM_STAGE` | exactly one of `PLAN=`, `NAME=`, `FAILED=1`, `DONE=1`; optional `FPS=` or `GROUP=` |
 | `OAMSM_FOLLOWER` | `ENABLE=<0\|1>`, `DIRECTION=<0\|1>` |

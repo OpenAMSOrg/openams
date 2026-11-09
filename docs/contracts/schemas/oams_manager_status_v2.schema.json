@@ -89,6 +89,9 @@
         },
         "reset": {
           "$ref": "#/$defs/gcode_word"
+        },
+        "retry": {
+          "$ref": "#/$defs/gcode_word"
         }
       }
     },
@@ -418,6 +421,23 @@
         "motion_blocked_reason": {
           "type": "string",
           "description": "Additive and optional. Present only while `following` is null (follower state unknown after a restart or a failed follower command): the operator-readable reason motion_settled is false. Absent otherwise."
+        },
+        "toolchange_fault": {
+          "type": "object",
+          "description": "Additive and optional. Present only while a toolchange or unload on the lane failed and is not finished: what failed, so a UI can offer Retry (the `retry` command), Unload and Reset. Absent otherwise. In a print the print is paused and RESUME retries it.",
+          "required": ["kind", "group", "slot", "temp", "step", "reason", "panel", "fed", "since"],
+          "properties": {
+            "kind": {"enum": ["load", "unload"]},
+            "group": {"type": ["string", "null"], "description": "The target group of a load; null for an unload."},
+            "slot": {"type": ["string", "null"], "description": "The targeted slot id of a panel load, as given; null otherwise."},
+            "temp": {"type": ["string", "null"], "description": "The TEMP= override, as given; null otherwise."},
+            "step": {"type": ["string", "null"], "description": "The plan step that was running (C2 §5.3), or null when it failed before its plan started."},
+            "reason": {"type": "string", "description": "The error, operator-readable."},
+            "panel": {"type": "boolean", "description": "True when the panel started it (no print to pause)."},
+            "fed": {"type": "boolean", "description": "True when the AMS had fed the target group to the extruder gears: a retry then finishes the toolhead part only."},
+            "since": {"type": "number", "description": "Klipper monotonic time of the failure."}
+          },
+          "additionalProperties": false
         },
         "filament_temp_c": {
           "type": ["integer", "null"],

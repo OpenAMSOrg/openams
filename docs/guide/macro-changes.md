@@ -51,11 +51,17 @@ through the hooks. The changes:
   a whole macro before running it; each helper renders fresh, so every safety
   decision sees the result of the step before it. `_TX` and
   `SAFE_UNLOAD_FILAMENT` call them, so copy all of them.
-- Failure handling: on a failed load, failed unload, enabled sensor failure, or
-  a pause arriving mid-toolchange, `T0`-`T19` and `SAFE_UNLOAD_FILAMENT` turn
-  the follower off, `PAUSE`, and raise a G-code error. In an SD print the print
-  therefore ends through `on_error_gcode` instead of continuing. UI (`STRICT`)
-  requests (`OPENAMS_LOAD`, `OPENAMS_UNLOAD`) raise without `PAUSE`.
+- Failure handling (2026-11-08): `T0`-`T19`, `OPENAMS_LOAD` and
+  `OPENAMS_UNLOAD` run through `OAMSM_TOOLCHANGE`, which catches any error in
+  the chain. In a print it records the fault, puts the toolhead back where the
+  toolchange started, runs `PAUSE` and does not raise, so the print pauses
+  instead of ending through `on_error_gcode`; `RESUME` finishes the toolchange
+  from where it stopped. From the panel, or outside a print, the error stands.
+  The toolhead sensor checks now raise at once, `_OAMS_ABORT` no longer runs
+  `PAUSE`, and the `pause_triggered` variables of `_TX` and
+  `SAFE_UNLOAD_FILAMENT` are gone (with the "Resolve the previous ... failure
+  before retrying" refusals). A `T<n>` of your own must call
+  `OAMSM_TOOLCHANGE GROUP=T<n> {rawparams}`, not `_TX`, or it has no guard.
 - `CLEAN_NOZZLE` runs after the OpenAMS load and before the toolhead reload
   (previously after the reload). There is no `G0 Z15` before it, so
   `CLEAN_NOZZLE` must provide its own Z clearance.

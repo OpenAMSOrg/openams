@@ -109,7 +109,7 @@ resends the whole top-level field.
 | `topology` | object, §4.3 | no | EXISTS-v1 | HC | — | `src/oams_manager.py:405`, `:379-392` |
 | `devices` | object, unit name → §4.4 | no | EXISTS-v1 | FW + HC + HR | — | `src/oams_manager.py:406-407` |
 | `settings` | object, §4.9 | no | NEW-v2 | HC | H7 | D3 |
-| `commands` | object `{load?, unload?, cancel?, reset?}` → G-code word | no | UI-API-v1 | host (registered commands) | P0.3b | `legacy:src/oams_manager.py:171-179`: a key appears only while its command is registered |
+| `commands` | object `{load?, unload?, cancel?, reset?, retry?}` → G-code word | no | UI-API-v1 | host (registered commands) | P0.3b | `legacy:src/oams_manager.py:171-179`: a key appears only while its command is registered |
 | `units` | array, §4.10 | no | UI-API-v1 | FW + HC | P0.3b | `legacy:src/oams_manager.py:130-146` |
 | `groups` | array, §4.10 | no | UI-API-v1 | HC | P0.3b | `legacy:src/oams_manager.py:148-157` |
 
@@ -158,6 +158,7 @@ One entry per FPS lane (one per toolhead), keyed by the lane's short name.
 | `extruder` | string | — | no | NEW-v2 | HC | H1 | the lane's extruder; today only in the `openams/status` webhook (`src/oams_manager.py:419-420`); C4 needs it for `SET_PRESSURE_ADVANCE EXTRUDER=` |
 | `motion_settled` | bool | — | no | NEW-v2 | HR | H1 | ; published form of the motion-safety predicate (§5.6): `true` iff nothing is moving and no motion action is in progress: op is `UNLOADED` or `LOADED` with runout `idle`, the printer is not printing, `following` is not `null`, no bay positioning, no `stop`/`pause` fault on any unit of the lane, no `follower_uncertain`, and all units connected. `following` may be `true` on an idle `LOADED` lane (corrected 2026-09-28: requiring `false` made every loaded lane unsettled and hid **Unload**). A UI uses this in place of re-deriving the predicate itself |
 | `motion_blocked_reason` | string | — | n/a (absent when not applicable) | NEW-v2 (additive) | HR | — | non-null only while `following` is `null`: why `motion_settled` is false (follower state unknown after a restart, or a follower command was not acknowledged). absent otherwise. After a restart the manager resolves it itself (see the restart note below), so it is normally transient |
+| `toolchange_fault` | object | — | n/a (absent when not applicable) | NEW-v2 (additive) | HR | — | present only while a toolchange or unload on the lane failed and is not finished (`OAMSM_TOOLCHANGE`): `{kind: load\|unload, group, slot, temp, step, reason, panel, fed, since}`. `step` is the plan step that was running (§5.3) or null when it failed before its plan; `fed` is true when the AMS had fed the target group to the extruder gears, so a retry finishes the toolhead part only; `panel` is true when a UI started it. Cleared by a retry that finishes it (`OAMSM_RETRY`, or `RESUME` in a print), by a successful unload, or, for a print's fault, when that print ends; `OAMSM_CLEAR_ERRORS` keeps it |
 | `filament_temp_c` | int | °C | yes | NEW-v2 | SM, via the component | H2 | the loaded bay's `devices.<unit>.bays[i].filament.temp_c` (§4.5.1), so an unload can heat to the temperature of what is actually in the extruder. `null` when the lane holds nothing, or when that bay's temperature is unknown |
 
 Not published, by design: `op_gen`, `op_deadline`, `pause_origin`, `coast_origin`,

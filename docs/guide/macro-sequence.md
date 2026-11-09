@@ -17,12 +17,13 @@ Every filament move OpenAMS makes at your printer is a chain of macros from `oam
 
 | What starts it | What runs | What it does |
 |---|---|---|
-| `T0`, `T1`, ... (one per group), from the slicer at the start of the print and at each colour change | `_TX GROUP=T<n>` | A toolchange: unloads the filament in the toolhead, if there is one, and loads the group's next spool |
-| The panel's **Load** (`OPENAMS_LOAD GROUP=<group> SLOT=<slot>`) | `_TX GROUP=<group> SLOT=<slot>` | The same toolchange, for the spool you picked. It checks that spool before anything moves, and a failure stops with an error instead of pausing |
-| The panel's **Unload** (`OPENAMS_UNLOAD`) | `SAFE_UNLOAD_FILAMENT STRICT=1` | The unload half of a toolchange: cut, retract, rewind |
+| `T0`, `T1`, ... (one per group), from the slicer at the start of the print and at each colour change | `OAMSM_TOOLCHANGE GROUP=T<n>`, then `_TX` | A toolchange: unloads the filament in the toolhead, if there is one, and loads the group's next spool |
+| The panel's **Load** (`OPENAMS_LOAD GROUP=<group> SLOT=<slot>`) | `OAMSM_TOOLCHANGE GROUP=<group> SLOT=<slot>`, then `_TX` | The same toolchange, for the spool you picked. It checks that spool before anything moves, and a failure stops with an error instead of pausing |
+| The panel's **Unload** (`OPENAMS_UNLOAD`) | `OAMSM_TOOLCHANGE UNLOAD=1`, then `SAFE_UNLOAD_FILAMENT STRICT=1` | The unload half of a toolchange: cut, retract, rewind |
 | `OAMSM_LOAD_TO_TOOLHEAD GROUP=<group>` | the AMS load, then `_OAMS_TOOLHEAD_LOAD` | A load without the cutter, for the first load and for tests |
 | `OAMSM_UNLOAD_FROM_TOOLHEAD` | `_OAMS_TOOLHEAD_EJECT`, then the AMS rewind | An unload without the cutter |
 | A spool runs out during a print | no macro | OpenAMS feeds a spare bay of the same group, or runs `PAUSE` when there is none |
+| **RESUME**, after a failed toolchange paused the print | `OAMSM_RETRY` logic, then Klipper's resume | Finishes the toolchange from where it stopped, then the print goes on (see [When something fails](#when-something-fails)) |
 
 `OAMSM_LOAD_FILAMENT` and `OAMSM_UNLOAD_FILAMENT` move the AMS alone. The first feeds a bay's filament to the extruder gears; the second rewinds it to its bay. The macros above use them, and neither one moves the extruder.
 
@@ -32,42 +33,46 @@ Every filament move OpenAMS makes at your printer is a chain of macros from `oam
 
 ```text
 T1
-_TX GROUP=T1
-  _OAMS_PLAN KIND=swap                    works out the temperature, announces the plan
-  G28                                     only when the printer isn't homed       [home]
-  SAVE_GCODE_STATE NAME=oams_toolchange   remembers the toolhead's place in the print
-  SAFE_UNLOAD_FILAMENT STAGED=1
-    _OAMS_HEAT
-      _OAMS_HOOK_BEFORE_HEAT              yours, if you wrote one
-      SET_HEATER_TEMPERATURE              heats and waits, only if the nozzle
+OAMSM_TOOLCHANGE GROUP=T1                 runs the chain below; catches any failure
+  _TX GROUP=T1
+    _OAMS_PLAN KIND=swap                  works out the temperature, announces the plan
+    G28                                   only when the printer isn't homed       [home]
+    SAVE_GCODE_STATE NAME=oams_toolchange
+                                          remembers the toolhead's place in the print
+    SAFE_UNLOAD_FILAMENT STAGED=1
+      _OAMS_HEAT
+        _OAMS_HOOK_BEFORE_HEAT            yours, if you wrote one
+        SET_HEATER_TEMPERATURE            heats and waits, only if the nozzle
                                           is colder                               [heat]
-    SAVE_GCODE_STATE NAME=oams_unload
-    OAMSM_FOLLOWER ENABLE=1 DIRECTION=0   the AMS follows the extruder backwards
-    G1 E-<retract_length>                 a short retract                         [cut]
-    CUT_FILAMENT                          to pre_cut, cut and post_cut
-      OAMS_CUT                            yours, if you wrote one: instead of those moves
-    _OAMS_HOOK_AFTER_CUT                  yours, if you wrote one
-    G1 E-<extrusion_unload_length>        pulls the cut end out of the extruder gears
-    _UNLOAD_FS_OUT                        check: the filament has left the extruder
-    _OAMS_FINISH_UNLOAD
-      G1 E-<extrusion_unload_additional_length>
-      OAMSM_UNLOAD_FILAMENT               the AMS rewinds T0's filament to its bay [retract]
-      _OAMS_CONFIRM_UNLOADED              check: the AMS reports nothing loaded
-  _OAMS_CONTINUE_AFTER_UNLOAD
-    _OAMS_HOOK_AFTER_RETRACT              yours, if you wrote one
-    OAMSM_LOAD_FILAMENT GROUP=T1          the AMS feeds T1's next spool to the
+      SAVE_GCODE_STATE NAME=oams_unload
+      OAMSM_FOLLOWER ENABLE=1 DIRECTION=0
+                                          the AMS follows the extruder backwards
+      G1 E-<retract_length>               a short retract                         [cut]
+      CUT_FILAMENT                        to pre_cut, cut and post_cut
+        OAMS_CUT                          yours, if you wrote one: instead of those moves
+      _OAMS_HOOK_AFTER_CUT                yours, if you wrote one
+      G1 E-<extrusion_unload_length>      pulls the cut end out of the extruder gears
+      _UNLOAD_FS_OUT                      check: the filament has left the extruder
+      _OAMS_FINISH_UNLOAD
+        G1 E-<extrusion_unload_additional_length>
+        OAMSM_UNLOAD_FILAMENT             the AMS rewinds T0's filament to its bay [retract]
+        _OAMS_CONFIRM_UNLOADED            check: the AMS reports nothing loaded
+    _OAMS_CONTINUE_AFTER_UNLOAD
+      _OAMS_HOOK_AFTER_RETRACT            yours, if you wrote one
+      OAMSM_LOAD_FILAMENT GROUP=T1        the AMS feeds T1's next spool to the
                                           extruder gears, then follows the extruder [feed]
-    _OAMS_CONTINUE_AFTER_LOAD             check: T1 is loaded
-      _LOAD_FS_IN                         check: filament at the extruder inlet
-      _OAMS_CONTINUE_AFTER_INLET
-        _OAMS_RELOAD                      G1 E<extrusion_reload_length + retract_length
+      _OAMS_CONTINUE_AFTER_LOAD           check: T1 is loaded
+        _LOAD_FS_IN                       check: filament at the extruder inlet
+        _OAMS_CONTINUE_AFTER_INLET
+          _OAMS_RELOAD                    G1 E<extrusion_reload_length + retract_length
                                                 + hotend_meltzone_compensation>
-        _LOAD_FS_OUT                      check: filament past the extruder
-        _OAMS_FINISH_TOOLCHANGE
-          CLEAN_NOZZLE                    your macro: wipe or purge
-          _OAMS_HOOK_AFTER_FEED           yours, if you wrote one
-          _OAMS_RESTORE                   heater back where it was, on an idle printer
-          RESTORE_GCODE_STATE NAME=oams_toolchange MOVE=1   back to the print
+          _LOAD_FS_OUT                    check: filament past the extruder
+          _OAMS_FINISH_TOOLCHANGE
+            CLEAN_NOZZLE                  your macro: wipe or purge
+            _OAMS_HOOK_AFTER_FEED         yours, if you wrote one
+            _OAMS_RESTORE                 heater back where it was, on an idle printer
+            RESTORE_GCODE_STATE NAME=oams_toolchange MOVE=1
+                                          back to the print
 ```
 
 Before every step and every hook, `OAMSM_CHECK_STOP` runs: that is how the panel's Stop button ends a sequence. Klipper renders a whole macro before it runs any of it, so each decision sits in its own small macro (`_OAMS_CONTINUE_AFTER_...`) that sees the result of the step before it.
@@ -100,13 +105,31 @@ Starting values for your toolhead: `python3 ~/openams/tools/toolhead_defaults.py
 
 ## When something fails
 
-A check that fails stops the sequence through `_OAMS_FAIL_TOOLCHANGE` and `_OAMS_ABORT`. These put the G-code state back without moving and stop the AMS follower; during a print they run `PAUSE`, and in every case they raise the error. The sensor checks record the failure, and the helper after them stops. A failing OpenAMS command (an AMS load or unload, a latched unit fault, the Stop button) raises its error at once, without `PAUSE`.
+![Toolchange failure and recovery: a failure pauses the print, RESUME resets, works out where the lane is and continues from there, or pauses again](../images/toolchange-recovery.svg)
 
-**During a print, a failed toolchange ends the print.** Klipper answers an error in an SD print with `on_error_gcode`, which Mainsail sets to `CANCEL_PRINT`, and stops reading the file. To try again, fix the cause, run `OAMS_CLEAR_FAULT OAMS=<n>` if the AMS latched a fault, then `OAMSM_CLEAR_ERRORS`, and run the toolchange again. A retry starts from the beginning and plans from what the AMS reports: when the failure came after the feed, the AMS counts the new group as loaded and `T<n>` does nothing, so unload first (`OAMSM_UNLOAD_FILAMENT` when the filament never reached the extruder, `OPENAMS_UNLOAD` otherwise). A change that makes a failure pause the print, with `RESUME` continuing where it stopped, is in progress.
+**During a print, a failed toolchange pauses the print; it never ends it.** Every toolchange and unload runs inside `OAMSM_TOOLCHANGE`, which catches any error in the chain: a failed check, the AMS refusing or failing, a hook or `CLEAN_NOZZLE` error, homing, a cold extrusion, the Stop button. It has to be a Python command: Klipper macros cannot catch an error, and an error that reaches an SD print makes Klipper run `on_error_gcode` (Mainsail: `CANCEL_PRINT`). On a failure `OAMSM_TOOLCHANGE`:
 
-From the panel (`OPENAMS_LOAD`, `OPENAMS_UNLOAD`) a failure raises the error and does not pause: there is no print to protect.
+1. records the fault on the lane: what was being loaded or unloaded, the step that was running, the reason, and whether the AMS had already fed the filament to the gears;
+2. puts the toolhead back where the toolchange started;
+3. stops the AMS follower once it is safe (never under a print that is still printing);
+4. in a print, runs `PAUSE` and writes the reason to the console; from the panel, or outside a print, raises the error instead.
 
-A failed sequence leaves the heater on, so a retry starts hot. The Stop button ends the sequence the same way, before the next step; a move already queued (a `G1`, the cutter, homing) finishes first. The messages are in [troubleshooting](troubleshooting.md).
+**RESUME finishes the toolchange.** OpenAMS wraps Klipper's own resume (the `RESUME_BASE` that Mainsail's and Fluidd's `RESUME` call), so this works from any screen without changing your config. With a fault recorded, `RESUME` first clears the AMS's latched faults and re-reads the lanes, then runs only what is left:
+
+| What it finds | What it runs |
+|---|---|
+| the target group loaded, and the AMS had fed it | the toolhead part (`_OAMS_RESUME_TOOLHEAD`): heat, re-arm the follower, inlet check, reload, outlet check, `CLEAN_NOZZLE` |
+| the target group out past its hub, but never fed to the gears | a rewind of that bay (`OAMSM_UNLOAD_FILAMENT`), then the toolchange |
+| another group loaded | the whole swap, from the cut |
+| nothing loaded | the feed and the toolhead part |
+
+When that works, Klipper's resume returns to the print. When it fails, the print stays paused, the console says why, and `RESUME` can be pressed again. OpenAMS never retries on its own: the AMS retries before it reports a failure.
+
+**From the panel**, a failed Load or Unload raises its error; there is no print to pause. The lane's `toolchange_fault` in the status lets the panel offer **Retry** (`OAMSM_RETRY`, the same diagnosis), **Unload** (`OPENAMS_UNLOAD`) and **Reset**.
+
+**Reset** (`OAMSM_CLEAR_ERRORS`) sends each unit with a latched fault its `OAMS_CLEAR_FAULT`, waits out the unit's 15 s recovery window (a fault can look cleared for a moment, then latch again), names any fault that stays latched, and re-reads the lanes. It never moves anything. It keeps an unfinished toolchange, so a later `RESUME` still finishes it; a print's fault is dropped when that print ends.
+
+A failed sequence leaves the heater on, so a retry starts hot. A move already queued when something fails (a `G1`, the cutter, homing) finishes first. The messages are in [troubleshooting](troubleshooting.md).
 
 ## Without the cutter
 
@@ -136,7 +159,7 @@ No macro runs. OpenAMS watches how far the extruder has pulled against `ptfe_len
 | Macro | Needed | What for |
 |---|---|---|
 | `CLEAN_NOZZLE` | yes | Every toolchange calls it once the new filament is down in the nozzle, to wipe or purge. Nothing ships it. Without a nozzle cleaner, an empty one will do (below) |
-| `PAUSE`, `RESUME` and `[pause_resume]` | yes | A failed toolchange, and a runout with no spare bay, pause the print. Mainsail's `mainsail.cfg` has them |
+| `PAUSE`, `RESUME` and `[pause_resume]` | yes | A failed toolchange, and a runout with no spare bay, pause the print, and `RESUME` finishes the toolchange. Mainsail's `mainsail.cfg` has them |
 | `OAMS_CUT` | no | Replaces the cutter moves of `CUT_FILAMENT` |
 | `_OAMS_HOOK_BEFORE_HEAT`, `_OAMS_HOOK_AFTER_CUT`, `_OAMS_HOOK_AFTER_RETRACT`, `_OAMS_HOOK_AFTER_FEED` | no | Your own moves at those points: a park, a brush, a purge |
 | `LOAD_FILAMENT`, `UNLOAD_FILAMENT` | no | OpenAMS doesn't call them |

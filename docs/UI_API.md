@@ -12,7 +12,7 @@ inside the already-installed `oams_manager.py`: it adds no Python dependencies,
 extra-module symlinks, mandatory configuration, or MCU firmware requirements.
 Rerunning the installer is **not required for this change**.
 
-Existing `T0`/`T1`/`_TX GROUP=...` macros, automatic runout handling, and
+Existing `T0`/`T1` macros (through `OAMSM_TOOLCHANGE`), automatic runout handling, and
 untargeted `OAMSM_LOAD_FILAMENT` / `OAMSM_UNLOAD_FILAMENT` keep their existing
 behavior, including informational replies on hardware failure. Strict error
 handling is opt-in: a load with `SLOT=...`, or an unload with `STRICT=1`, raises
@@ -68,7 +68,8 @@ The status object has this shape:
     "load": "OPENAMS_LOAD",
     "unload": "OPENAMS_UNLOAD",
     "cancel": "OAMSM_LOAD_FILAMENT_CANCEL",
-    "reset": "OAMSM_CLEAR_ERRORS"
+    "reset": "OAMSM_CLEAR_ERRORS",
+    "retry": "OAMSM_RETRY"
   },
   "lanes": [
     {
@@ -205,9 +206,9 @@ The advertised command names differ by plugin:
 | `openams` without it | `OAMSM_LOAD_TO_TOOLHEAD` | `OAMSM_UNLOAD_FROM_TOOLHEAD` |
 | `klipper_openams` | `OPENAMS_LOAD` | `OPENAMS_UNLOAD` |
 
-A UI must follow the map and never hard-code these names. `cancel` and `reset`
-are advertised as `OAMSM_LOAD_FILAMENT_CANCEL` and `OAMSM_CLEAR_ERRORS` by
-every row.
+A UI must follow the map and never hard-code these names. `cancel`, `reset`
+and `retry` are advertised as `OAMSM_LOAD_FILAMENT_CANCEL`,
+`OAMSM_CLEAR_ERRORS` and `OAMSM_RETRY` by every row.
 
 ### Load a selected slot
 
@@ -259,8 +260,30 @@ OAMSM_CLEAR_ERRORS
 ```
 
 Cancel requests cancellation of an active hardware load. It does not promise
-that already queued physical toolhead moves have stopped. Reset clears OpenAMS
-errors and re-determines state.
+that already queued physical toolhead moves have stopped. Reset clears the
+units' latched faults (`OAMS_CLEAR_FAULT` for each, then waiting out the unit's
+15 s recovery window before judging the result) and OpenAMS errors, and re-determines state. It moves nothing.
+A fault that stays latched makes it fail with the unit named.
+
+### Retry a failed load or unload
+
+```gcode
+OAMSM_RETRY
+```
+
+A load or unload that fails leaves a `toolchange_fault` object on its lane in
+`lanes_by_fps` (additive; absent otherwise): `kind` (`load` or `unload`),
+`group`, `slot`, `temp`, `step` (the plan step that was running, or null),
+`reason`, `panel` (true when a UI started it), `fed` (true when the AMS had fed
+the target group to the extruder gears) and `since`. Offer Retry (the `retry`
+command), Unload and Reset while it is present.
+
+Retry resets as above, then continues from where the lane is: the toolhead part
+alone when the target group was fed, the feed when nothing is loaded, the whole
+swap when another group is still loaded, a rewind then the toolchange when the
+target bay stopped short of the gears. It raises when that fails, and the fault
+stays. In a print the same happens on `RESUME`: a failed toolchange pauses the
+print instead of ending it, and `RESUME` finishes it before the print goes on.
 
 `OAMSM_LOAD_FILAMENT_CANCEL` is ordinary G-code, so it runs only once Klipper's
 G-code queue is free. It can reach a load the manager runs on its own, such as

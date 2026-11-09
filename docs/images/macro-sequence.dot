@@ -20,6 +20,11 @@ digraph macros {
   ui_unload [shape=box, style="filled,bold", fillcolor="#ffffff", color="#2b2f36",
            label=<<b>Panel Unload</b><br/><font face="Courier" point-size="10">OPENAMS_UNLOAD</font>>];
 
+  catch   [shape=box, style="rounded,filled,bold", fillcolor="#ffffff", color="#2b2f36",
+           label=<<font face="Courier"><b>OAMSM_TOOLCHANGE</b></font><br/><font point-size="10">runs the chain below and catches any failure in it</font>>];
+  catch_u [shape=box, style="rounded,filled,bold", fillcolor="#ffffff", color="#2b2f36",
+           label=<<font face="Courier"><b>OAMSM_TOOLCHANGE UNLOAD=1</b></font><br/><font point-size="10">the same catch point, for the unload</font>>];
+
   // ---- _TX: the toolchange --------------------------------------------------
   subgraph cluster_tx {
     label=<<font face="Courier"><b>_TX GROUP=T&lt;n&gt;</b></font>>; labeljust=l;
@@ -128,8 +133,9 @@ digraph macros {
   f_u; f_c; f_l; f_in; f_out;
 
   // ---- the flow -------------------------------------------------------------
-  t_n -> same;
-  ui_load -> same [label=" checks the slot first"];
+  t_n -> catch;
+  ui_load -> catch;
+  catch -> same [label=" checks a panel slot first"];
   same -> nothing [label=" yes"];
   same -> plan [label=" no"];
   plan -> home -> loaded;
@@ -139,7 +145,7 @@ digraph macros {
   hb_u -> heat_u;
   heat_tx -> feed [label=" no unload"];
 
-  ui_unload -> plan_u -> hb_u;
+  ui_unload -> catch_u -> plan_u -> hb_u;
   heat_u -> follow -> ret1 -> cut -> h_cut -> ret2 -> fs_u;
   ret1 -> ocut [style=dashed, label=" or"];
   ocut -> h_cut [style=dashed];
@@ -166,12 +172,12 @@ digraph macros {
   {rank=same; fs_in; f_in;}
   {rank=same; fs_out; f_out;}
   {rank=same; t_n; ui_load;}
-  {rank=same; loaded; ui_unload;}
+  {rank=same; home; ui_unload;}
 
   // ---- what "fail" does, and the other flows --------------------------------
   node [shape=box, style="rounded,filled", fillcolor="#fde2e2", color="#c62828", fontcolor="#2b2f36",
         fontsize=11, margin="0.14,0.06"];
-  failnote [label=<<b>fail</b>: <font face="Courier"><b>_OAMS_FAIL_TOOLCHANGE</b></font> → <font face="Courier"><b>_OAMS_ABORT</b></font><br/><font point-size="10">puts the G-code state back without moving, stops the AMS follower,<br/>then an error; during a print PAUSE first, and the error ends the print<br/>(on_error_gcode). From the panel, only an error. The heater stays on. The panel's Stop button<br/>ends the sequence the same way, before the next step.</font>>];
+  failnote [label=<<b>fail</b>: the error goes up to <font face="Courier"><b>OAMSM_TOOLCHANGE</b></font><br/><font point-size="10">which records the fault on the lane, puts the toolhead back where the<br/>toolchange started and stops the follower once it is safe. In a print it runs<br/>PAUSE, and RESUME finishes the toolchange from where it stopped (the next<br/>drawing). From the panel, an error: Retry, Unload or Reset. The Stop button<br/>fails the running step the same way. The heater stays on.</font>>];
 
   subgraph cluster_bare {
     label=<<b>Without the cutter</b>>; labeljust=l;

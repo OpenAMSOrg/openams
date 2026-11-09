@@ -195,6 +195,9 @@ class Printer:
         self.section_names = []
         self.events = {}
         self.trace = []
+        # OAMSM_TOOLCHANGE's own SAVE/RESTORE_GCODE_STATE NAME=oams_guard, kept
+        # apart so the motion trace stays what the macros do.
+        self.guard = []
         self.received_controls = []
         self.reactor = Reactor()
         self.command_error = klipper.gcode.CommandError
@@ -236,7 +239,8 @@ class Printer:
             self.gcode.register_command(command, self.control)
 
     def record(self, command):
-        self.trace.append(command.get_commandline())
+        line = command.get_commandline()
+        (self.guard if "NAME=oams_guard" in line else self.trace).append(line)
 
     def home(self, command):
         self.record(command)
@@ -1576,7 +1580,7 @@ EXPECTED_MACROS = {
     "OPENAMS_LOAD", "OPENAMS_UNLOAD",
     "_LOAD_FS_IN", "_LOAD_FS_OUT", "_UNLOAD_FS_OUT",
     "OAMS_TORTURE_TEST", "OAMS_TOOLCHANGE_TORTURE_TEST", "T0", "T1", "T2", "T3",
-    "_OAMS_TOOLHEAD_EJECT", "_OAMS_TOOLHEAD_LOAD", "_OAMS_RELOAD"}
+    "_OAMS_TOOLHEAD_EJECT", "_OAMS_TOOLHEAD_LOAD", "_OAMS_RELOAD", "_OAMS_RESUME_TOOLHEAD"}
 NEW_VARIABLES = {"extrusion_unload_additional_length": 250, "unload_speed": 1000,
                  "additional_unload_speed": 5000, "minimum_extrude_temperature": 0,
                  "unknown_material_temperature": 235, "max_operation_temperature": 0}
@@ -1910,5 +1914,255 @@ def test_the_working_temperature_is_decided_before_g28_and_read_in_the_helper():
             if line.startswith("_OAMS_HEAT"):
                 heats += 1
                 assert "printer" not in line and "TARGET" not in line, (section, line)
-    # 3 plan calls (swap, load and standalone unload) and 2 heat calls.
-    assert (plans, heats) == (3, 2)
+    # 4 plan calls (swap, load, standalone unload and the resume at the
+    # toolhead) and 3 heat calls.
+    assert (plans, heats) == (4, 3)
+
+
+# ---------------------------------------------------------------------------
+# Toolchange recovery (docs/plan/toolchange-recovery.md): a failed toolchange
+# in a print pauses the print; RESUME resets, works out where the lane is and
+# continues from there, and pauses again if that fails; Reset clears latched
+# unit faults and keeps an unfinished toolchange for RESUME.
+
+class PauseResume(Status):
+    """pause_resume with Klipper's own resume, which OpenAMS wraps."""
+
+    def __init__(self):
+        super().__init__(is_paused=False)
+        self.resumed = 0
+
+    @property
+    def is_paused(self):
+        return self.values["is_paused"]
+
+    def cmd_RESUME(self, gcmd):
+        self.resumed += 1
+        self.values["is_paused"] = False
+
+
+def printing_with_resume(printer, manager):
+    """A print running under Mainsail: its RESUME macro calls Klipper's own
+    resume, renamed RESUME_BASE, and OpenAMS wraps that one."""
+    printer.objects["print_stats"].values["state"] = "printing"
+    pause_resume = PauseResume()
+    printer.objects["pause_resume"] = pause_resume
+    # What Klipper does: pause_resume registers RESUME; Mainsail's macro
+    # renames it (gcode_macro.handle_connect re-registers the old handler,
+    # wrapping it a second time) and takes the name RESUME itself.
+    printer.gcode.register_command("RESUME", pause_resume.cmd_RESUME)
+    previous = printer.gcode.register_command("RESUME", None)
+    printer.gcode.register_command("RESUME_BASE", previous,
+                                   desc="Renamed builtin of 'RESUME'")
+    printer.gcode.register_command(
+        "RESUME", lambda gcmd: printer.gcode.run_script_from_command("RESUME_BASE"))
+    manager._wrap_resume()
+    assert manager._resume_wrapped == "RESUME_BASE"
+    return pause_resume
+
+
+def inlet_sensor(printer, sees_filament):
+    printer.objects["gcode_macro _oams_macro_variables"].variables["fs_extruder_in"] = True
+    printer.objects["filament_switch_sensor extruder_in"].values["filament_detected"] = sees_filament
+
+
+def fault_of(manager):
+    return lane_stage(manager).get("toolchange_fault")
+
+
+def test_a_failed_toolchange_in_a_print_pauses_instead_of_ending_it(setup):
+    printer, manager, unit = setup(loaded=0)
+    pause_resume = printing_with_resume(printer, manager)
+    inlet_sensor(printer, False)
+    printer.gcode.run_script("T1")      # no error reaches the print
+    assert pause_resume.is_paused and printer.trace[-1] == "PAUSE"
+    fault = fault_of(manager)
+    assert (fault["kind"], fault["group"], fault["step"], fault["fed"], fault["panel"]) == \
+        ("load", "T1", "feed", True, False)
+    assert "inlet" in fault["reason"]
+    # The toolhead goes back to where the toolchange started before PAUSE
+    # parks it, so RESUME returns to the print.
+    assert printer.guard == ["SAVE_GCODE_STATE NAME=oams_guard",
+                             "RESTORE_GCODE_STATE NAME=oams_guard MOVE=1 MOVE_SPEED=100"]
+    # The follower is never stopped under a print still printing: it stops
+    # once the print is paused.
+    assert "follower:0:0" not in printer.trace
+    printer.objects["print_stats"].values["state"] = "paused"
+    manager._monitor(printer.reactor.monotonic())
+    assert last_follower(printer) == "follower:0:0"
+
+
+def test_resume_finishes_only_the_toolhead_part_after_an_inlet_failure(setup):
+    printer, manager, unit = setup(loaded=0)
+    pause_resume = printing_with_resume(printer, manager)
+    inlet_sensor(printer, False)
+    printer.gcode.run_script("T1")
+    printer.objects["print_stats"].values["state"] = "paused"
+    inlet_sensor(printer, True)
+    printer.trace.clear()
+    printer.gcode.run_script("RESUME")
+    assert pause_resume.resumed == 1 and not pause_resume.is_paused
+    assert fault_of(manager) is None
+    # No second feed, no rewind, no cut: the forward follower is re-armed and
+    # the toolhead reloads, then CLEAN_NOZZLE.
+    assert not [c for c in printer.trace if c.startswith(("feed:", "unload", "G0"))]
+    assert "follower:1:1" in printer.trace
+    reload = next(i for i, c in enumerate(printer.trace) if is_reload(c))
+    assert printer.trace.index("follower:1:1") < reload < printer.trace.index("CLEAN_NOZZLE")
+    assert unit.current_spool == 2
+
+
+def test_a_resume_that_fails_again_stays_paused_until_it_works(setup):
+    printer, manager, unit = setup(loaded=0)
+    pause_resume = printing_with_resume(printer, manager)
+    inlet_sensor(printer, False)
+    printer.gcode.run_script("T1")
+    printer.objects["print_stats"].values["state"] = "paused"
+    with pytest.raises(printer.command_error,
+                       match="could not finish the toolchange to T1.*stays paused"):
+        printer.gcode.run_script("RESUME")
+    assert pause_resume.resumed == 0 and pause_resume.is_paused
+    assert fault_of(manager)["fed"] is True
+    # Inside RESUME nothing moves back: the toolhead stays parked.
+    assert printer.guard[-1] == "RESTORE_GCODE_STATE NAME=oams_guard"
+    inlet_sensor(printer, True)
+    printer.gcode.run_script("RESUME")
+    assert pause_resume.resumed == 1 and fault_of(manager) is None
+
+
+def test_resume_after_a_failed_feed_feeds_again_without_a_second_cut(setup):
+    printer, manager, unit = setup(loaded=0)
+    pause_resume = printing_with_resume(printer, manager)
+    unit.load_result = S.OAMS_OP_CODE_ERROR_BUSY
+    printer.gcode.run_script("T1")
+    assert pause_resume.is_paused
+    fault = fault_of(manager)
+    assert (fault["step"], fault["fed"]) == ("feed", False)
+    unit.load_result = 0
+    printer.objects["print_stats"].values["state"] = "paused"
+    printer.trace.clear()
+    printer.gcode.run_script("RESUME")
+    assert pause_resume.resumed == 1 and unit.current_spool == 2
+    assert "feed:2" in printer.trace
+    assert not [c for c in printer.trace if c.startswith(("G0", "unload"))]
+
+
+def test_resume_after_a_failed_cut_check_runs_the_whole_swap(setup):
+    printer, manager, unit = setup(loaded=0)
+    pause_resume = printing_with_resume(printer, manager)
+    variables = printer.objects["gcode_macro _oams_macro_variables"].variables
+    variables["fs_extruder_out"] = True
+    printer.objects["filament_switch_sensor extruder_out"].values["filament_detected"] = True
+    printer.gcode.run_script("T1")
+    fault = fault_of(manager)
+    assert (fault["step"], fault["fed"]) == ("cut", False)
+    assert unit.current_spool == 0
+    variables["fs_extruder_out"] = False
+    printer.objects["print_stats"].values["state"] = "paused"
+    printer.trace.clear()
+    printer.gcode.run_script("RESUME")
+    assert pause_resume.resumed == 1 and unit.current_spool == 2
+    assert printer.trace.index("G0 X2 Y355 F1000") < printer.trace.index("unload") \
+        < printer.trace.index("feed:2")
+
+
+def test_resume_without_a_fault_is_klipper_resume(setup):
+    printer, manager, unit = setup(loaded=0)
+    pause_resume = printing_with_resume(printer, manager)
+    pause_resume.values["is_paused"] = True
+    printer.gcode.run_script("RESUME")
+    assert pause_resume.resumed == 1 and printer.trace == []
+
+
+def test_a_failed_panel_load_raises_and_its_retry_finishes_it(setup):
+    printer, manager, unit = setup(loaded=0)
+    inlet_sensor(printer, False)
+    with pytest.raises(printer.command_error, match="inlet"):
+        printer.gcode.run_script("OPENAMS_LOAD GROUP=T1 SLOT=2")
+    assert "PAUSE" not in printer.trace
+    fault = fault_of(manager)
+    assert (fault["panel"], fault["slot"], fault["fed"]) == (True, "2", True)
+    assert manager.get_status(0.)["commands"]["retry"] == "OAMSM_RETRY"
+    inlet_sensor(printer, True)
+    printer.trace.clear()
+    printer.gcode.run_script("OAMSM_RETRY")
+    assert fault_of(manager) is None and unit.current_spool == 2
+    assert not [c for c in printer.trace if c.startswith(("feed:", "G0"))]
+
+
+def test_a_failed_toolchange_outside_a_print_raises(setup):
+    printer, manager, unit = setup(loaded=0)
+    inlet_sensor(printer, False)
+    with pytest.raises(printer.command_error, match="inlet"):
+        printer.gcode.run_script("T1")
+    assert "PAUSE" not in printer.trace and fault_of(manager)["panel"] is False
+
+
+def test_reset_keeps_an_unfinished_toolchange_for_resume(setup):
+    printer, manager, unit = setup(loaded=0)
+    printing_with_resume(printer, manager)
+    inlet_sensor(printer, False)
+    printer.gcode.run_script("T1")
+    printer.gcode.run_script("OAMSM_CLEAR_ERRORS")
+    assert fault_of(manager)["group"] == "T1"
+    assert lane_stage(manager)["stage"] is None or lane_stage(manager)["stage"]["failed"] is None
+
+
+def test_reset_clears_a_latched_unit_fault(setup):
+    printer, manager, unit = setup()
+    identity = ("test-latch",)
+    manager.runtime.dispatch(S.FirmwareFault(None, 255, 7, identity))
+    assert manager._latched_faults("unit1")
+    cleared = []
+
+    def clear_fault(gcmd):
+        cleared.append(gcmd.get_commandline())
+        manager.runtime.dispatch(S.FirmwareFaultCleared(255, identity))
+    printer.gcode.register_command("OAMS_CLEAR_FAULT", clear_fault)
+    printer.gcode.run_script("OAMSM_CLEAR_ERRORS")
+    assert cleared == ["OAMS_CLEAR_FAULT OAMS=1"]
+    assert not manager._latched_faults("unit1")
+
+
+def test_reset_waits_out_a_fault_that_clears_and_latches_again(setup):
+    # An AMS 2 Pro's motor_drive_fault looked cleared right after the clear
+    # and latched again seconds later: Reset must judge after the unit's
+    # recovery window, and so name it, not carry on.
+    printer, manager, unit = setup()
+    identity = ("flaky",)
+    manager.runtime.dispatch(S.FirmwareFault(None, 255, 7, identity))
+    cleared_at = []
+
+    def clear_fault(gcmd):
+        manager.runtime.dispatch(S.FirmwareFaultCleared(255, identity))
+        cleared_at.append(printer.reactor.monotonic())
+    printer.gcode.register_command("OAMS_CLEAR_FAULT", clear_fault)
+
+    def relatch(now):
+        if cleared_at and now - cleared_at[0] > 5 and not manager._latched_faults("unit1"):
+            manager.runtime.dispatch(S.FirmwareFault(None, 255, 7, ("again",)))
+    printer.reactor.on_pause = relatch
+    with pytest.raises(printer.command_error, match="stayed latched.*unit1"):
+        printer.gcode.run_script("OAMSM_CLEAR_ERRORS")
+    assert printer.reactor.monotonic() - cleared_at[0] >= manager.FAULT_CLEAR_SETTLE_S
+
+
+def test_reset_names_a_unit_fault_that_stays_latched(setup):
+    printer, manager, unit = setup()
+    manager.runtime.dispatch(S.FirmwareFault(None, 255, 7, ("stuck",)))
+    printer.gcode.register_command("OAMS_CLEAR_FAULT", lambda gcmd: None)
+    with pytest.raises(printer.command_error, match="stayed latched.*unit1"):
+        printer.gcode.run_script("OAMSM_CLEAR_ERRORS")
+
+
+def test_a_print_fault_is_forgotten_when_the_print_ends(setup):
+    printer, manager, unit = setup(loaded=0)
+    printing_with_resume(printer, manager)
+    inlet_sensor(printer, False)
+    printer.gcode.run_script("T1")
+    printer.objects["print_stats"].values["state"] = "paused"
+    manager._forget_faults_of_ended_print(0.)
+    assert fault_of(manager) is not None
+    printer.objects["print_stats"].values["state"] = "cancelled"
+    manager._forget_faults_of_ended_print(0.)
+    assert fault_of(manager) is None

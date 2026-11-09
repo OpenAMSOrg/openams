@@ -1,0 +1,72 @@
+// Toolchange failure and recovery: the state machine of OAMSM_TOOLCHANGE, OAMSM_RETRY and the RESUME guard
+// (src/oams_manager.py, docs/guide/macro-sequence.md).
+// Render: dot -Tsvg toolchange-recovery.dot -o toolchange-recovery.svg
+digraph recovery {
+  graph [rankdir=TB, newrank=true, nodesep=0.35, ranksep=0.4, pad=0.3, fontname="Helvetica", fontsize=13, bgcolor="white",
+         label=<<b>Toolchange failure and recovery</b><br/><font point-size="11">a failure pauses the print; RESUME diagnoses, continues where it stopped, and pauses again if it fails</font>>,
+         labelloc=t, labeljust=l];
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, margin="0.14,0.06", penwidth=1.3,
+        fillcolor="#f0f1f4", color="#8a919b"];
+  edge [fontname="Helvetica", fontsize=10, color="#5f6670", fontcolor="#3c4148", arrowsize=0.7];
+
+  t_n      [style="filled,bold", fillcolor="#ffffff", color="#2b2f36",
+            label=<<b>T0, T1, …</b> in a print<br/><font point-size="10">or the panel's Load / Unload (no print)</font>>];
+  catch    [fillcolor="#f0f1f4", color="#2b2f36", style="rounded,filled,bold",
+            label=<<font face="Courier"><b>OAMSM_TOOLCHANGE</b></font><br/><font point-size="10">one Python command runs the whole macro chain (_TX …)<br/>and catches every error inside it</font>>];
+  chain    [fillcolor="#ffffff", color="#8a919b",
+            label=<the toolchange, as today<br/><font point-size="10">home, heat, cut, retract, rewind, feed,<br/>inlet check, reload, outlet check, CLEAN_NOZZLE, hooks</font>>];
+  done     [style="rounded,filled,bold", fillcolor="#1f7a45", color="#1f7a45", fontcolor="white",
+            label=<<b>READY</b>: the print goes on>];
+
+  fault    [style="rounded,filled,bold", fillcolor="#fde2e2", color="#c62828",
+            label=<<b>FAULT</b><br/><font point-size="10">any error: a failed check, the AMS refusing, a hook or CLEAN_NOZZLE<br/>error, homing, a cold extrude, the Stop button.<br/>Records the step, the reason and the target group, puts the toolhead<br/>back where the toolchange started (in a print), and stops the follower<br/>once the print is no longer printing</font>>];
+  where    [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a", label=<In a print?>];
+  paused   [style="rounded,filled,bold", fillcolor="#fff0c2", color="#b8900a",
+            label=<<b>PAUSED</b><br/><font point-size="10">PAUSE, the reason in the console;<br/>the file stays open after the T&lt;n&gt; line</font>>];
+  error    [fillcolor="#fde2e2", color="#c62828",
+            label=<<b>Error on the panel</b>, no pause<br/><font point-size="10">buttons: Retry, Unload, Reset</font>>];
+
+  resume   [style="filled,bold", fillcolor="#ffffff", color="#2b2f36",
+            label=<<b>RESUME</b><br/><font point-size="10">Mainsail, Fluidd, KlipperScreen or the panel:<br/>OpenAMS wraps Klipper's own resume</font>>];
+  rec      [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a", label=<An OpenAMS fault recorded?>];
+  reset    [fillcolor="#dceafe", color="#2f6fd0",
+            label=<<b>Reset</b> (as <font face="Courier">OAMSM_CLEAR_ERRORS</font>)<br/><font point-size="10">clears latched unit faults, waits out the unit's 15 s recovery,<br/>clears host errors, re-reads the lanes</font>>];
+  diag     [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a",
+            label=<<b>Diagnose</b><br/><font point-size="10">what do the hub (and toolhead) sensors show?</font>>];
+  c_tool   [fillcolor="#ffeedd", color="#d9822b",
+            label=<the toolhead part (<font face="Courier">_OAMS_RESUME_TOOLHEAD</font>)<br/><font point-size="10">heat, follower, inlet check, reload, outlet check, CLEAN_NOZZLE</font>>];
+  c_swap   [fillcolor="#efe5ff", color="#7d4fc7",
+            label=<the whole swap<br/><font point-size="10">from the cut</font>>];
+  c_rew    [fillcolor="#dceafe", color="#2f6fd0",
+            label=<rewind that bay (no cut),<br/>then the feed and the toolhead part>];
+  c_feed   [fillcolor="#dceafe", color="#2f6fd0",
+            label=<the feed, then the toolhead part>];
+  ok       [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a", label=<It worked?>];
+  cont     [style="rounded,filled,bold", fillcolor="#1f7a45", color="#1f7a45", fontcolor="white",
+            label=<<b>The print goes on</b><br/><font point-size="10">fault cleared; Klipper's resume<br/>returns to the pause position</font>>];
+  plain    [fillcolor="#e9ecef", color="#8a919b", label=<a plain resume>];
+
+  t_n -> catch -> chain;
+  chain -> done [label=" no error"];
+  chain -> fault [label=" any error", color="#c62828", fontcolor="#c62828"];
+  fault -> where;
+  where -> paused [label=" yes"];
+  where -> error [label=" no (panel)"];
+  paused -> resume [label=" you fix the cause"];
+  resume -> rec;
+  rec -> plain [label=" no"];
+  rec -> reset [label=" yes"];
+  error -> reset [label=" Retry", style=dashed];
+  reset -> diag;
+  diag -> c_tool [label=" the target group loaded,\n fed to the gears"];
+  diag -> c_swap [label=" another group\n is loaded"];
+  diag -> c_rew  [label=" the target group out past\n its hub, never fed"];
+  diag -> c_feed [label=" nothing loaded"];
+  c_tool -> ok; c_swap -> ok; c_rew -> ok; c_feed -> ok;
+  ok -> cont [label=" yes"];
+  ok -> fault [label=" no: still paused", color="#c62828", fontcolor="#c62828", constraint=false];
+
+  note [shape=note, style="filled", fillcolor="#ffffff", color="#b9bfc8", fontsize=10,
+        label=<OpenAMS never retries on its own:<br/>the AMS retries before it reports a failure.<br/>Reset alone moves nothing and resumes nothing,<br/>and keeps an unfinished toolchange for RESUME.<br/>A print's fault is dropped when the print ends.>];
+  {rank=same; where; note;}
+}
