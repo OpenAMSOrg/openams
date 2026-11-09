@@ -84,7 +84,7 @@ Before every step and every hook, `OAMSM_CHECK_STOP` runs: that is how the panel
 - **The panel's Load** checks the slot first (`OAMSM_VALIDATE_LOAD`), then loads exactly that slot. A failed check stops with an error and does not pause.
 - **The panel's Unload** runs `SAFE_UNLOAD_FILAMENT STRICT=1` on its own, with its own plan (heat, cut, retract), and ends after `_OAMS_CONFIRM_UNLOADED` by putting the heater back.
 - **`clean_after_reload: False`** runs `CLEAN_NOZZLE` before `_OAMS_RELOAD` instead of after it.
-- **With gco-routines** and `oams_macros_ordered.cfg`, `OAMSM_LOAD_FILAMENT` runs in the background and `WAIT` joins it before the reload; with `clean_after_reload: False`, `CLEAN_NOZZLE` runs during the feed.
+- **With gco-routines** and `oams_macros_ordered.cfg`, `OAMSM_LOAD_FILAMENT` runs in the background and `WAIT` joins it before the reload; with `clean_after_reload: False`, `CLEAN_NOZZLE` runs during the feed. `OAMSM_TOOLCHANGE` runs the chain in a gco-routines *handled region*, so a failure, the background load's included, pauses the print as described below instead of ending it (gco-routines from 2026-11-08; [its states](https://github.com/OpenAMSOrg/gco-routines/blob/main/docs/guide/language.md#when-a-command-fails)).
 - **Without the toolhead sensors** (`fs_extruder_in` and `fs_extruder_out` False, the default), the three sensor checks pass without looking.
 
 ## Which value moves what
@@ -107,7 +107,7 @@ Starting values for your toolhead: `python3 ~/openams/tools/toolhead_defaults.py
 
 ![Toolchange failure and recovery: a failure pauses the print, RESUME resets, works out where the lane is and continues from there, or pauses again](../images/toolchange-recovery.svg)
 
-**During a print, a failed toolchange pauses the print; it never ends it.** Every toolchange and unload runs inside `OAMSM_TOOLCHANGE`, which catches any error in the chain: a failed check, the AMS refusing or failing, a hook or `CLEAN_NOZZLE` error, homing, a cold extrusion, the Stop button. It has to be a Python command: Klipper macros cannot catch an error, and an error that reaches an SD print makes Klipper run `on_error_gcode` (Mainsail: `CANCEL_PRINT`). On a failure `OAMSM_TOOLCHANGE`:
+**During a print, a failed toolchange pauses the print; it never ends it.** Every toolchange and unload runs inside `OAMSM_TOOLCHANGE`, which catches any error in the chain: a failed check, the AMS refusing or failing, a hook or `CLEAN_NOZZLE` error, homing, a cold extrusion, the Stop button. It has to be a Python command: Klipper macros cannot catch an error, and an error that reaches an SD print makes Klipper run `on_error_gcode` (Mainsail: `CANCEL_PRINT`). With gco-routines, `OAMSM_TOOLCHANGE` runs the chain, and then its own recovery, in gco-routines' *handled regions*; without them gco-routines would fault the print's run at the failing line, whatever OpenAMS did next. An older gco-routines without regions still ends the print on a failure, and Klipper's log says so. On a failure `OAMSM_TOOLCHANGE`:
 
 1. records the fault on the lane: what was being loaded or unloaded, the step that was running, the reason, and whether the AMS had already fed the filament to the gears;
 2. puts the toolhead back where the toolchange started;

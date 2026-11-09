@@ -10,6 +10,7 @@
 # All decision logic lives in the pure reducer (oams_state.py); all side effects
 # run in the runtime (oams_runtime.py).
 
+import contextlib
 import inspect
 import logging
 import os
@@ -2471,29 +2472,60 @@ class OAMSManager(oams_ext.ManagerHooks):
         before = serials.get(fps, 0)
         gcode.run_script_from_command("SAVE_GCODE_STATE NAME=%s" % guard)
         try:
-            gcode.run_script_from_command(script)
+            # Under gco-routines the chain runs in a handled region, so the
+            # error reaches us instead of faulting the print's run; leaving
+            # the region with it cancels the region's unfinished routines (the
+            # background load).
+            with self._gco_handled_region():
+                gcode.run_script_from_command(script)
         except self.printer.command_error as exc:
             reason = self._error_reason(exc)
-            # Did this run start its plan? A refusal before it (an invalid
-            # slot, a unit not ready) moved nothing and keeps the follower.
-            started = serials.get(fps, 0) != before
-            self._record_toolchange_fault(fps, intent, reason, panel, started)
-            if started:
-                # Stops the follower the run armed, once that is safe: never
-                # under a print still printing, so after the PAUSE below.
-                self._note_flow_failure(fps)
             pause = printing and not panel and not resuming
-            # Back where the toolchange started: in a print that is the print
-            # position, so PAUSE parks from there and RESUME returns there.
-            self._restore_guard(gcode, guard, move=pause)
+            # The recovery's own commands get a region too: a restore that
+            # cannot move (axes not homed) raises, and is caught below.
+            with self._gco_handled_region():
+                # Did this run start its plan? A refusal before it (an
+                # invalid slot, a unit not ready) moved nothing and keeps the
+                # follower.
+                started = serials.get(fps, 0) != before
+                self._record_toolchange_fault(fps, intent, reason, panel,
+                                              started)
+                if started:
+                    # Stops the follower the run armed, once that is safe:
+                    # never under a print still printing, so after PAUSE.
+                    self._note_flow_failure(fps)
+                # Back where the toolchange started: in a print that is the
+                # print position, so PAUSE parks from there and RESUME
+                # returns there.
+                self._restore_guard(gcode, guard, move=pause)
+                if pause:
+                    gcode.run_script_from_command("PAUSE")
+                    gcode.respond_raw(
+                        "!! " + self._fault_message(fps, resuming=False))
             if resuming:
                 raise gcmd.error(self._fault_message(fps, resuming=True))
             if not pause:
                 raise
-            gcode.run_script_from_command("PAUSE")
-            gcode.respond_raw("!! " + self._fault_message(fps, resuming=False))
             return
         self._tc_faults().pop(fps, None)
+
+    def _gco_handled_region(self):
+        """gco-routines' handled region (its docs/decisions.md, 2026-11-08):
+        an error of the commands run inside it reaches the caller instead of
+        faulting the current gco-routines run, which in a print would end the
+        print. Nothing without gco-routines. An older gco-routines has no
+        region; a failed toolchange then ends the print as it always did, and
+        Klipper's log says so once."""
+        gco = self.printer.lookup_object("gco_routines", None)
+        region = getattr(gco, "handled_errors", None)
+        if callable(region):
+            return region()
+        if gco is not None and not self.__dict__.get("_gco_region_warned"):
+            self._gco_region_warned = True
+            logging.warning("OpenAMS: this gco-routines has no handled_errors();"
+                            " update it, or a failed toolchange in a print"
+                            " ends the print instead of pausing it")
+        return contextlib.nullcontext()
 
     def _restore_guard(self, gcode, guard, move):
         """Put the G-code state back as it was before the toolchange, moving

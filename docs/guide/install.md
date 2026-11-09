@@ -232,6 +232,14 @@ and `WAIT` joins it before the toolhead reload. Stock Klipper rejects the
 `render_mode` option the ordered file sets, so never include that file without
 `[gco_routines]`.
 
+A failed toolchange pauses the print with gco-routines too, as long as
+gco-routines is recent enough to offer *handled regions* (2026-11-08 or later;
+`git -C ~/gco-routines log --oneline -1` shows yours). `OAMSM_TOOLCHANGE` runs
+the toolchange in one, so a failure reaches it instead of faulting the print's
+gco-routines run. With an older gco-routines a failed toolchange ends the print,
+and Klipper's log says `this gco-routines has no handled_errors()`; update it
+with `git -C ~/gco-routines pull`, then restart Klipper.
+
 It needs Python 3.9 or newer in Klipper's environment, and it works only on a
 Klipper it was tested against. It identifies one by the SHA-256 of
 `klippy/gcode.py`; on any other, `[gco_routines]` stops Klipper at startup with

@@ -125,7 +125,12 @@ so `RESUME` or `OAMSM_RETRY` still finishes it.
 runs in: `T<n>` and `OPENAMS_LOAD` call it with `GROUP=`, `OPENAMS_UNLOAD` with
 `UNLOAD=1`. It saves the G-code state (`oams_guard`), runs `_TX ...` or
 `SAFE_UNLOAD_FILAMENT STRICT=1 ...` with `run_script_from_command`, and catches
-any G-code error inside it. On an error it records the lane's
+any G-code error inside it. When `gco_routines` provides `handled_errors()`
+(gco-routines 2026-11-08), the script runs inside that handled region and the
+recovery below inside a second one, so neither faults the print's gco-routines
+run; the error leaving the first region cancels its unfinished background
+routines. Without the method it warns once in Klipper's log (`this gco-routines
+has no handled_errors()`). On an error it records the lane's
 `toolchange_fault` (C2), marks the running step failed if no macro did,
 notes the flow as failed (its follower stops once no print is printing), and
 restores the guard state. Then:

@@ -12,7 +12,7 @@ digraph recovery {
   t_n      [style="filled,bold", fillcolor="#ffffff", color="#2b2f36",
             label=<<b>T0, T1, …</b> in a print<br/><font point-size="10">or the panel's Load / Unload (no print)</font>>];
   catch    [fillcolor="#f0f1f4", color="#2b2f36", style="rounded,filled,bold",
-            label=<<font face="Courier"><b>OAMSM_TOOLCHANGE</b></font><br/><font point-size="10">one Python command runs the whole macro chain (_TX …)<br/>and catches every error inside it</font>>];
+            label=<<font face="Courier"><b>OAMSM_TOOLCHANGE</b></font><br/><font point-size="10">one Python command runs the whole macro chain (_TX …)<br/>and catches every error inside it (under gco-routines,<br/>inside its handled region, so the print's run is not faulted)</font>>];
   chain    [fillcolor="#ffffff", color="#8a919b",
             label=<the toolchange, as today<br/><font point-size="10">home, heat, cut, retract, rewind, feed,<br/>inlet check, reload, outlet check, CLEAN_NOZZLE, hooks</font>>];
   done     [style="rounded,filled,bold", fillcolor="#1f7a45", color="#1f7a45", fontcolor="white",

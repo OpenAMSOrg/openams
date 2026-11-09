@@ -28,6 +28,11 @@ What changes when both are present:
 - A toolchange that starts while the printer is paused runs serially. A pause
   during the overlap follows the extension's rules (no new routine starts while
   paused); the toolchange then stops before the toolhead reload.
+- A failure anywhere in the toolchange, the background load included, pauses
+  the print and `RESUME` finishes it, as without gco-routines. This needs a
+  gco-routines with handled regions (2026-11-08 or later): `OAMSM_TOOLCHANGE`
+  runs the toolchange in one, so the failure does not fault the print's run. An
+  older gco-routines ends the print on a failure; update it.
 - Call `T0`-`T19` and `OPENAMS_LOAD` from ordinary G-code only, never inside
   another `START` block: they own their background routine.
 

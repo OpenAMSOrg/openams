@@ -2166,3 +2166,58 @@ def test_a_print_fault_is_forgotten_when_the_print_ends(setup):
     printer.objects["print_stats"].values["state"] = "cancelled"
     manager._forget_faults_of_ended_print(0.)
     assert fault_of(manager) is None
+
+
+class GcoRoutines:
+    """Stands in for gco-routines' handled_errors() (its docs/decisions.md,
+    2026-11-08): records each region and whether an error left it."""
+
+    def __init__(self):
+        self.log = []
+
+    @contextlib.contextmanager
+    def handled_errors(self):
+        self.log.append("enter")
+        try:
+            yield
+        except BaseException as exc:
+            self.log.append("error left: %s" % type(exc).__name__)
+            raise
+        self.log.append("exit")
+
+    def get_status(self, eventtime):
+        return {}
+
+
+def test_under_gco_routines_the_toolchange_and_its_recovery_run_in_handled_regions(setup):
+    printer, manager, unit = setup(loaded=0)
+    pause_resume = printing_with_resume(printer, manager)
+    gco = printer.objects["gco_routines"] = GcoRoutines()
+    inlet_sensor(printer, False)
+    printer.gcode.run_script("T1")
+    assert pause_resume.is_paused and fault_of(manager)["step"] == "feed"
+    # The error left the toolchange's region (which cancels its unfinished
+    # routines), then the restore and PAUSE ran in a region of their own.
+    assert gco.log == ["enter", "error left: CommandError", "enter", "exit"]
+    gco.log.clear()
+    printer.objects["print_stats"].values["state"] = "paused"
+    inlet_sensor(printer, True)
+    printer.gcode.run_script("RESUME")
+    assert pause_resume.resumed == 1 and gco.log == ["enter", "exit"]
+
+
+def test_a_clean_toolchange_opens_one_handled_region(setup):
+    printer, manager, unit = setup(loaded=0)
+    gco = printer.objects["gco_routines"] = GcoRoutines()
+    printer.gcode.run_script("T1")
+    assert unit.current_spool == 2 and gco.log == ["enter", "exit"]
+
+
+def test_an_older_gco_routines_without_regions_is_named_once(setup):
+    printer, manager, unit = setup(loaded=0)
+    printing_with_resume(printer, manager)
+    printer.objects["gco_routines"] = Status()
+    inlet_sensor(printer, False)
+    printer.gcode.run_script("T1")
+    assert manager._gco_region_warned is True
+    assert fault_of(manager)["group"] == "T1"
