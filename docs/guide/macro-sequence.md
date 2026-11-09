@@ -2,7 +2,7 @@
 
 Every filament move OpenAMS makes at your printer is a chain of macros from `oams_macros.cfg`. This page shows that chain in the order it runs. First comes a state machine, then the exact commands, then which value moves what, and what your printer has to provide. The chain comes from a traced run of the shipped macros.
 
-![The OpenAMS macros as a state machine: a toolchange from T<n> to Done, the panel's Unload, the loads without the cutter, and where each check fails](../images/macro-sequence.svg)
+![The OpenAMS macros as a state machine: a toolchange from T<n> to Done, the panel's Unload, the loads without the cutter; each failed check pauses the print, and RESUME re-enters at A, B or C](../images/macro-sequence.svg)
 
 **How to read it.**
 
@@ -10,7 +10,7 @@ Every filament move OpenAMS makes at your printer is a chain of macros from `oam
 - **Grey frames** are macros. The boxes inside one run from top to bottom, and when a macro ends it hands over to the next frame.
 - **Colours** say what moves: blue the AMS, orange the extruder, purple the toolhead.
 - **Green boxes** are your own macros. Dashed ones are optional.
-- **Yellow hexagons** are checks. A failed check goes to a red **fail**, which stops the sequence.
+- **Yellow hexagons** are checks. A failed check goes to a red **fail**, which stops the sequence and goes to **When a step fails**: `OAMSM_TOOLCHANGE` catches it and, in a print, runs `PAUSE`. After you fix the cause, `RESUME` resets the AMS, works out where the lane stopped and re-enters the sequence at a purple letter: **A** runs `_TX` again (the feed, the whole swap, or a rewind of that bay first), **B** runs only the toolhead part, **C** runs the unload again. From there the sequence runs on as drawn, to **Done** or to another pause. [When something fails](#when-something-fails) has the detail.
 - **Red words** (home, heat, cut, retract, feed) are the steps the panel and the screen show while it runs.
 
 ## Who starts what

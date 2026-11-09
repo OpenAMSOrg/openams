@@ -6,7 +6,7 @@
 digraph macros {
   graph [rankdir=TB, newrank=true, compound=true, nodesep=0.3, ranksep=0.32, pad=0.3,
          fontname="Helvetica", fontsize=13, bgcolor="white",
-         label=<<b>How the OpenAMS macros run</b><br/><font point-size="11">oams_macros.cfg, one toolchange (T&lt;n&gt;) from top to bottom</font>>,
+         label=<<b>How the OpenAMS macros run</b><br/><font point-size="11">oams_macros.cfg, one toolchange (T&lt;n&gt;) from top to bottom; a failure pauses the print, and RESUME re-enters where it stopped</font>>,
          labelloc=t, labeljust=l];
   node  [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11,
          margin="0.14,0.06", penwidth=1.3];
@@ -31,6 +31,7 @@ digraph macros {
     style="rounded,filled"; fillcolor="#f7f8fa"; color="#b9bfc8";
     same    [shape=hexagon, fillcolor="#fff6cc", color="#b8900a",
              label=<That group already loaded,<br/>or the object excluded?>];
+    e_a     [shape=circle, style="filled,bold", fillcolor="#7a2bd0", color="#7a2bd0", fontcolor="white", fontsize=14, width=0.42, fixedsize=true, margin=0, label=<<b>A</b>>];
     plan    [fillcolor="#f0f1f4", color="#8a919b",
              label=<<font face="Courier"><b>_OAMS_PLAN</b></font><br/><font point-size="10">works out the temperature, shows the plan on the displays</font>>];
     home    [fillcolor="#efe5ff", color="#7d4fc7",
@@ -49,6 +50,7 @@ digraph macros {
     style="rounded,filled"; fillcolor="#f7f8fa"; color="#b9bfc8";
     plan_u  [fillcolor="#f0f1f4", color="#8a919b", style="rounded,filled,dashed",
              label=<<font face="Courier"><b>_OAMS_PLAN</b>, <b>G28</b></font><br/><font point-size="10">Panel Unload only: its own plan, homes if needed</font>>];
+    e_c     [shape=circle, style="filled,bold", fillcolor="#7a2bd0", color="#7a2bd0", fontcolor="white", fontsize=14, width=0.42, fixedsize=true, margin=0, label=<<b>C</b>>];
     hb_u    [fillcolor="#e2f5e7", color="#2e8b4e", style="rounded,filled,dashed",
              label=<<font face="Courier"><b>_OAMS_HOOK_BEFORE_HEAT</b></font><br/><font point-size="10">yours, if you wrote one (run by _OAMS_HEAT)</font>>];
     heat_u  [fillcolor="#f0f1f4", color="#8a919b",
@@ -93,6 +95,7 @@ digraph macros {
   subgraph cluster_after_load {
     label=<<font face="Courier"><b>_OAMS_CONTINUE_AFTER_LOAD</b></font>>; labeljust=l;
     style="rounded,filled"; fillcolor="#f7f8fa"; color="#b9bfc8";
+    e_b     [shape=circle, style="filled,bold", fillcolor="#7a2bd0", color="#7a2bd0", fontcolor="white", fontsize=14, width=0.42, fixedsize=true, margin=0, label=<<b>B</b>>];
     did_load [shape=hexagon, fillcolor="#fff6cc", color="#b8900a",
              label=<That group loaded?>];
     fs_in   [shape=hexagon, fillcolor="#fff6cc", color="#b8900a",
@@ -126,8 +129,8 @@ digraph macros {
   unloaded  [shape=box, style="rounded,filled,bold", fillcolor="#1f7a45", color="#1f7a45", fontcolor="white",
              label=<<b>Unloaded</b><br/><font point-size="10">Panel Unload ends here</font>>];
 
-  // Every failed check goes to the same place; one red node per check keeps
-  // the drawing readable.
+  // Every failed check goes to the same place (the catch point, then PAUSE);
+  // one red node per check keeps the drawing readable.
   node [shape=box, style="rounded,filled", fillcolor="#fde2e2", color="#c62828", fontcolor="#8e1b1b",
         label=<<b>fail</b>>, fontsize=10, margin="0.08,0.03"];
   f_u; f_c; f_l; f_in; f_out;
@@ -177,7 +180,43 @@ digraph macros {
   // ---- what "fail" does, and the other flows --------------------------------
   node [shape=box, style="rounded,filled", fillcolor="#fde2e2", color="#c62828", fontcolor="#2b2f36",
         fontsize=11, margin="0.14,0.06"];
-  failnote [label=<<b>fail</b>: the error goes up to <font face="Courier"><b>OAMSM_TOOLCHANGE</b></font><br/><font point-size="10">which records the fault on the lane, puts the toolhead back where the<br/>toolchange started (unless it had to home first) and stops the follower once it is safe. In a print it runs<br/>PAUSE, and RESUME finishes the toolchange from where it stopped (the next<br/>drawing). From the panel, an error: Retry, Unload or Reset. The Stop button<br/>fails the running step the same way. The heater stays on.</font>>];
+  // ---- a failure: PAUSE, then RESUME re-enters the chain ---------------------
+  subgraph cluster_fail {
+    label=<<b>When a step fails</b>>; labeljust=l;
+    style="rounded,filled"; fillcolor="#fff7f7"; color="#e3a0a0";
+    fault   [style="rounded,filled,bold", fillcolor="#fde2e2", color="#c62828",
+             label=<<font face="Courier"><b>OAMSM_TOOLCHANGE</b></font> catches it<br/><font point-size="10">any failure: a red check, homing, heating, the cutter, the AMS refusing,<br/>a hook, CLEAN_NOZZLE, the Stop button. It records the step, the<br/>reason and the group on the lane, puts the toolhead back where the<br/>toolchange started (unless it had to home first) and stops the<br/>follower once it is safe. The heater stays on.</font>>];
+    inprint [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a", fontcolor="#2b2f36",
+             label=<In a print?>];
+    pause   [style="rounded,filled,bold", fillcolor="#fff0c2", color="#b8900a", fontcolor="#2b2f36",
+             label=<<font face="Courier"><b>PAUSE</b></font><br/><font point-size="10">the print pauses and the reason is in the console:<br/><font face="Courier">the toolchange to T1 failed at the &lt;step&gt; step: &lt;reason&gt;</font></font>>];
+    perr    [style="rounded,filled", fillcolor="#fde2e2", color="#c62828", fontcolor="#2b2f36",
+             label=<<b>An error on the panel</b><br/><font point-size="10">no print: Retry, Unload or Reset</font>>];
+    resume  [style="filled,bold", fillcolor="#ffffff", color="#2b2f36", fontcolor="#2b2f36",
+             label=<<font face="Courier"><b>RESUME</b></font><br/><font point-size="10">once you have fixed the cause</font>>];
+    reset   [style="rounded,filled", fillcolor="#dceafe", color="#2f6fd0", fontcolor="#2b2f36",
+             label=<<b>Reset</b><br/><font point-size="10">clears the AMS's faults, re-reads the lanes</font>>];
+    diag    [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a", fontcolor="#2b2f36",
+             label=<<b>Diagnose</b>: where did it stop?<br/><font point-size="10">the lane and its sensors</font>>];
+    again   [shape=note, style="filled", fillcolor="#ffffff", color="#b9bfc8", fontcolor="#2b2f36", fontsize=10,
+             label=<Re-entered, the chain runs on as drawn:<br/>it ends at <b>Done</b> (Klipper's resume takes the<br/>toolhead back to the pause position), or a<br/>check fails again and the print pauses again.<br/>OpenAMS never retries on its own.>];
+    fault -> inprint;
+    inprint -> pause [label=" yes"];
+    inprint -> perr [label=" no"];
+    pause -> resume [label=" you fix the cause"];
+    resume -> reset -> diag;
+    perr -> reset [label=" Retry", style=dashed];
+    {rank=same; pause; perr;}
+    node [shape=box, style="rounded,filled", fillcolor="#f3e8ff", color="#7a2bd0", fontcolor="#2b2f36",
+          fontsize=11, margin="0.14,0.06"];
+    r_tool  [label=<<font color="#7a2bd0"><b>→ B</b></font>  <b>the toolhead part</b><br/><font point-size="10"><font face="Courier">_OAMS_RESUME_TOOLHEAD</font> heats, turns the<br/>follower on, then goes on from B</font>>];
+    r_tx    [label=<<font color="#7a2bd0"><b>→ A</b></font>  <b><font face="Courier">_TX</font> again</b><br/><font point-size="10">the feed when nothing is loaded, the whole swap<br/>when another group is, a rewind of that bay first<br/>when it left its bay but was never fed</font>>];
+    r_unl   [label=<<font color="#7a2bd0"><b>→ C</b></font>  <b>the unload again</b><br/><font point-size="10"><font face="Courier">SAFE_UNLOAD_FILAMENT</font></font>>];
+    diag -> r_tool [label=" the group is\n at the gears", color="#7a2bd0", fontcolor="#5a1fa0"];
+    diag -> r_tx [label=" anything\n else", color="#7a2bd0", fontcolor="#5a1fa0"];
+    diag -> r_unl [label=" an unload\n failed", color="#7a2bd0", fontcolor="#5a1fa0"];
+    r_tx -> again [style=invis];
+  }
 
   subgraph cluster_bare {
     label=<<b>Without the cutter</b>>; labeljust=l;
@@ -215,6 +254,8 @@ digraph macros {
           <td bgcolor="#e2f5e7" color="#2e8b4e">your macro (dashed: optional)</td></tr>
       <tr><td bgcolor="#fff6cc" color="#b8900a">a check</td>
           <td bgcolor="#ffffff" color="#8a919b"><font color="#c0392b"><b>heat</b></font>: the step the displays show</td></tr>
+      <tr><td bgcolor="#fde2e2" color="#c62828">a failure: PAUSE</td>
+          <td bgcolor="#f3e8ff" color="#7a2bd0"><font color="#7a2bd0"><b>A B C</b></font>: where RESUME re-enters</td></tr>
     </table>>];
 
   // Park the side panels top right, above the first check that can fail, so
@@ -223,5 +264,20 @@ digraph macros {
   key -> b_load [style=invis];
   key -> b_unload [style=invis];
   b_rel -> runout [style=invis];
-  runout -> failnote [style=invis];
+  runout -> fault [style=invis];
+
+  // every red "fail" goes to the catch point
+  edge [color="#c62828", fontcolor="#c62828"];
+  f_u -> fault; f_c -> fault; f_l -> fault; f_in -> fault; f_out -> fault;
+
+  // RESUME re-enters the chain where the diagnosis says it stopped: a lettered
+  // connector next to each step it re-enters (long arrows back up would cross
+  // the whole drawing).
+  edge [color="#7a2bd0", fontcolor="#5a1fa0", style="bold", penwidth=1.6, constraint=true];
+  e_a -> plan [label=" RESUME"];
+  e_b -> did_load [label=" RESUME"];
+  e_c -> hb_u [label=" RESUME"];
+  {rank=same; e_a; plan;}
+  {rank=same; e_b; did_load;}
+  {rank=same; e_c; hb_u;}
 }
