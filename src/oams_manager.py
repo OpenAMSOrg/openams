@@ -227,7 +227,7 @@ class OAMSManager(oams_ext.ManagerHooks):
         # and the lanes that are inside an OAMSM_HEAT_WAIT right now.
         self._stop_requested = set()
         self._heat_waiting = set()
-        # Toolchange recovery (docs/plan/toolchange-recovery.md): the failed
+        # Toolchange recovery (docs/guide/macro-sequence.md): the failed
         # toolchange or unload on each lane, until a retry finishes it, an
         # unload backs it out, or the print it belongs to ends.
         self._toolchange_faults = {}
@@ -898,8 +898,9 @@ class OAMSManager(oams_ext.ManagerHooks):
             if entry["since"] is None:
                 entry["since"] = now
             if now - entry["since"] >= getattr(fps, "arrival_debounce", 0.3):
-                entry["sent"] = True
-                oam.confirm_load_arrived(lane.op_gen)
+                # Done only once the driver sent it; a refusal (its load not
+                # in flight yet) is tried again on the next tick.
+                entry["sent"] = bool(oam.confirm_load_arrived(lane.op_gen))
 
     def _arrival_drop(self, track, fps_name, now):
         """Forget a lane's arrival tracking. A load that ended unconfirmed
@@ -1196,7 +1197,7 @@ class OAMSManager(oams_ext.ManagerHooks):
         if reason is not None:
             status["motion_blocked_reason"] = reason
         # Additive, and present only while a toolchange or unload on the lane
-        # failed and is not finished (docs/plan/toolchange-recovery.md).
+        # failed and is not finished (docs/guide/macro-sequence.md).
         fault = self.__dict__.get("_toolchange_faults", {}).get(fps_name)
         if fault is not None:
             status["toolchange_fault"] = dict(fault)
@@ -2319,7 +2320,7 @@ class OAMSManager(oams_ext.ManagerHooks):
                              " error state of the OAMS; moves nothing")
 
     def cmd_CLEAR_ERRORS(self, gcmd):
-        """Reset (docs/plan/toolchange-recovery.md): clear every unit's latched
+        """Reset (docs/guide/macro-sequence.md): clear every unit's latched
         faults, then the error state of every unit that has any, and re-read
         the lanes. It moves nothing and resumes nothing. A toolchange that
         failed stays recorded, so RESUME or the panel's Retry still finishes
@@ -2410,7 +2411,7 @@ class OAMSManager(oams_ext.ManagerHooks):
             self.reactor.pause(now + 0.25)
 
     # ------------------------------------------------- toolchange recovery
-    # docs/plan/toolchange-recovery.md, from the owner's decisions of
+    # docs/guide/macro-sequence.md; decided on
     # 2026-11-08: a failed toolchange in a print pauses the print instead of
     # ending it; RESUME resets, works out where the lane is and continues from
     # there, and pauses again if that fails; OpenAMS never retries on its own
@@ -2468,6 +2469,9 @@ class OAMSManager(oams_ext.ManagerHooks):
         gcode = self.printer.lookup_object("gcode")
         guard = self.TOOLCHANGE_GUARD_STATE
         printing = self._print_job_active(self.reactor.monotonic())
+        # A toolchange that homes first saves the guard before homing: that
+        # position (0, 0, 0 after a restart) is no place to move back to.
+        homed = self._axes_homed()
         serials = self.__dict__.setdefault("_plan_serial", {})
         before = serials.get(fps, 0)
         gcode.run_script_from_command("SAVE_GCODE_STATE NAME=%s" % guard)
@@ -2476,7 +2480,10 @@ class OAMSManager(oams_ext.ManagerHooks):
             # error reaches us instead of faulting the print's run; leaving
             # the region with it cancels the region's unfinished routines (the
             # background load).
-            with self._gco_handled_region():
+            # Retried from RESUME, _TX runs inside a recovery handler, which
+            # refuses ordered macros: there it renders as a legacy macro and
+            # takes its serial path (the printer is paused).
+            with self._gco_handled_region(), self._gco_legacy_in_recovery():
                 gcode.run_script_from_command(script)
         except self.printer.command_error as exc:
             reason = self._error_reason(exc)
@@ -2497,7 +2504,7 @@ class OAMSManager(oams_ext.ManagerHooks):
                 # Back where the toolchange started: in a print that is the
                 # print position, so PAUSE parks from there and RESUME
                 # returns there.
-                self._restore_guard(gcode, guard, move=pause)
+                self._restore_guard(gcode, guard, move=pause and homed)
                 if pause:
                     gcode.run_script_from_command("PAUSE")
                     gcode.respond_raw(
@@ -2510,7 +2517,7 @@ class OAMSManager(oams_ext.ManagerHooks):
         self._tc_faults().pop(fps, None)
 
     def _gco_handled_region(self):
-        """gco-routines' handled region (its docs/decisions.md, 2026-11-08):
+        """gco-routines' handled region (its docs/guide/openams.md):
         an error of the commands run inside it reaches the caller instead of
         faulting the current gco-routines run, which in a print would end the
         print. Nothing without gco-routines. An older gco-routines has no
@@ -2526,6 +2533,31 @@ class OAMSManager(oams_ext.ManagerHooks):
                             " update it, or a failed toolchange in a print"
                             " ends the print instead of pausing it")
         return contextlib.nullcontext()
+
+    def _gco_legacy_in_recovery(self):
+        """gco-routines' legacy rendering inside a recovery handler: RESUME
+        retries a failed toolchange by running _TX, an ordered macro, which a
+        recovery handler otherwise refuses. Nothing without gco-routines; an
+        older gco-routines refuses it, the retry fails with that message and
+        the print stays paused, and Klipper's log says so once."""
+        gco = self.printer.lookup_object("gco_routines", None)
+        region = getattr(gco, "legacy_in_recovery", None)
+        if callable(region):
+            return region()
+        if gco is not None and not self.__dict__.get("_gco_legacy_warned"):
+            self._gco_legacy_warned = True
+            logging.warning("OpenAMS: this gco-routines has no"
+                            " legacy_in_recovery(); update it, or RESUME"
+                            " cannot retry a whole failed toolchange")
+        return contextlib.nullcontext()
+
+    def _axes_homed(self):
+        toolhead = self.printer.lookup_object("toolhead", None)
+        try:
+            axes = toolhead.get_status(self.reactor.monotonic())["homed_axes"]
+        except Exception:
+            return False
+        return all(axis in axes for axis in "xyz")
 
     def _restore_guard(self, gcode, guard, move):
         """Put the G-code state back as it was before the toolchange, moving
@@ -2568,9 +2600,20 @@ class OAMSManager(oams_ext.ManagerHooks):
         fed = bool(lane is not None and intent["kind"] == "load"
                    and lane.op == S.OP_LOADED
                    and lane.group == intent["group"])
+        # A fault recorded while a print is printing or paused belongs to that
+        # print, whoever ran the attempt (the panel's Retry included): RESUME
+        # retries it and the end of the print drops it.
+        now = self.reactor.monotonic()
+        stats = self.printer.lookup_object("print_stats", None)
+        try:
+            in_print = (stats is not None and stats.get_status(now).get("state")
+                        in ("printing", "paused"))
+        except Exception:
+            in_print = False
         self._tc_faults()[fps] = dict(
-            intent, step=step, reason=reason, panel=bool(panel), fed=fed,
-            since=round(self.reactor.monotonic(), 3))
+            intent, step=step, reason=reason,
+            panel=bool(panel) and not in_print, fed=fed,
+            since=round(now, 3))
 
     @staticmethod
     def _fault_subject(fault):

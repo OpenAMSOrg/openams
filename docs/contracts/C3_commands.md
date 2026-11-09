@@ -130,12 +130,18 @@ any G-code error inside it. When `gco_routines` provides `handled_errors()`
 recovery below inside a second one, so neither faults the print's gco-routines
 run; the error leaving the first region cancels its unfinished background
 routines. Without the method it warns once in Klipper's log (`this gco-routines
-has no handled_errors()`). On an error it records the lane's
+has no handled_errors()`). It also runs the script inside gco-routines'
+`legacy_in_recovery()` when that exists: inside RESUME (a recovery handler,
+which refuses ordered macros) `_TX` then renders as a legacy macro and takes its
+serial path; without the method it warns once (`this gco-routines has no
+legacy_in_recovery()`). On an error it records the lane's
 `toolchange_fault` (C2), marks the running step failed if no macro did,
 notes the flow as failed (its follower stops once no print is printing), and
 restores the guard state. Then:
 - in a print (`print_stats.state` is `printing`) and not from the panel (no
-  `SLOT=`, not an unload): restores with `MOVE=1`, runs `PAUSE`, writes
+  `SLOT=`, not an unload): restores with `MOVE=1` (without it when the axes
+  were not homed as it saved the state, since the toolchange homed first),
+  runs `PAUSE`, writes
   `"!! OpenAMS: <the toolchange to T1> failed at the <step> step: <reason>. The
   print is paused: fix it and press RESUME, which retries it."` and returns
   without an error, so the print file stays open;

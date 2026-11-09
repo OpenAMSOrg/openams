@@ -1920,7 +1920,7 @@ def test_the_working_temperature_is_decided_before_g28_and_read_in_the_helper():
 
 
 # ---------------------------------------------------------------------------
-# Toolchange recovery (docs/plan/toolchange-recovery.md): a failed toolchange
+# Toolchange recovery (docs/guide/macro-sequence.md): a failed toolchange
 # in a print pauses the print; RESUME resets, works out where the lane is and
 # continues from there, and pauses again if that fails; Reset clears latched
 # unit faults and keeps an unfinished toolchange for RESUME.
@@ -1990,6 +1990,39 @@ def test_a_failed_toolchange_in_a_print_pauses_instead_of_ending_it(setup):
     printer.objects["print_stats"].values["state"] = "paused"
     manager._monitor(printer.reactor.monotonic())
     assert last_follower(printer) == "follower:0:0"
+
+
+def test_a_toolchange_that_homed_first_does_not_move_back_when_it_fails(setup):
+    # Bench, 2026-11-08: the guard was saved before the toolchange homed, so
+    # the restore drove the toolhead to the pre-homing 0, 0, 0 (a corner, at
+    # the bed) before PAUSE parked it, and the crash cost it its position.
+    printer, manager, unit = setup(loaded=0)
+    pause_resume = printing_with_resume(printer, manager)
+    printer.objects["toolhead"].values["homed_axes"] = ""
+    inlet_sensor(printer, False)
+    printer.gcode.run_script("T1")
+    assert pause_resume.is_paused and "G28" in printer.trace
+    assert printer.guard == ["SAVE_GCODE_STATE NAME=oams_guard",
+                             "RESTORE_GCODE_STATE NAME=oams_guard"]
+
+
+def test_a_failed_retry_from_the_panel_in_a_paused_print_stays_the_prints(setup):
+    # Bench, 2026-11-08: a console retry that failed while the print was
+    # paused re-recorded the fault as the panel's, so RESUME would have
+    # skipped it and resumed with the wrong filament, and the fault outlived
+    # the print.
+    printer, manager, unit = setup(loaded=0)
+    pause_resume = printing_with_resume(printer, manager)
+    inlet_sensor(printer, False)
+    printer.gcode.run_script("T1")
+    printer.objects["print_stats"].values["state"] = "paused"
+    with pytest.raises(printer.command_error):
+        printer.gcode.run_script("OAMSM_RETRY")
+    assert fault_of(manager)["panel"] is False
+    inlet_sensor(printer, True)
+    printer.gcode.run_script("RESUME")
+    assert pause_resume.resumed == 1 and fault_of(manager) is None
+    assert unit.current_spool == 2
 
 
 def test_resume_finishes_only_the_toolhead_part_after_an_inlet_failure(setup):
@@ -2169,8 +2202,8 @@ def test_a_print_fault_is_forgotten_when_the_print_ends(setup):
 
 
 class GcoRoutines:
-    """Stands in for gco-routines' handled_errors() (its docs/decisions.md,
-    2026-11-08): records each region and whether an error left it."""
+    """Stands in for gco-routines' handled_errors() (its docs/guide/openams.md):
+    records each region and whether an error left it."""
 
     def __init__(self):
         self.log = []
@@ -2204,6 +2237,36 @@ def test_under_gco_routines_the_toolchange_and_its_recovery_run_in_handled_regio
     inlet_sensor(printer, True)
     printer.gcode.run_script("RESUME")
     assert pause_resume.resumed == 1 and gco.log == ["enter", "exit"]
+
+
+class GcoRoutinesWithLegacy(GcoRoutines):
+    """Also stands in for legacy_in_recovery() (gco-routines docs/guide/openams.md):
+    records whether RESUME was inside it."""
+
+    def __init__(self, printer):
+        super().__init__()
+        self.printer = printer
+        self.legacy = []
+
+    @contextlib.contextmanager
+    def legacy_in_recovery(self):
+        self.legacy.append(self.printer.objects["pause_resume"].is_paused)
+        yield
+
+
+def test_resume_retries_the_toolchange_inside_legacy_in_recovery(setup):
+    printer, manager, unit = setup(loaded=0)
+    pause_resume = printing_with_resume(printer, manager)
+    gco = printer.objects["gco_routines"] = GcoRoutinesWithLegacy(printer)
+    printer.objects["toolhead"].values["homed_axes"] = "xyz"
+    inlet_sensor(printer, False)
+    printer.gcode.run_script("T1")
+    printer.objects["print_stats"].values["state"] = "paused"
+    inlet_sensor(printer, True)
+    gco.legacy.clear()
+    printer.gcode.run_script("RESUME")
+    # The retry ran inside the region, while the print was still paused.
+    assert pause_resume.resumed == 1 and gco.legacy == [True]
 
 
 def test_a_clean_toolchange_opens_one_handled_region(setup):

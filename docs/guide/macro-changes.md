@@ -32,7 +32,10 @@ What changes when both are present:
   the print and `RESUME` finishes it, as without gco-routines. This needs a
   gco-routines with handled regions (2026-11-08 or later): `OAMSM_TOOLCHANGE`
   runs the toolchange in one, so the failure does not fault the print's run. An
-  older gco-routines ends the print on a failure; update it.
+  older gco-routines ends the print on a failure; update it. When `RESUME`
+  retries a toolchange that has to feed again, `_TX` runs inside RESUME in a
+  `legacy_in_recovery()` region and takes its serial path; a gco-routines
+  without that region refuses the retry and the print stays paused.
 - Call `T0`-`T19` and `OPENAMS_LOAD` from ordinary G-code only, never inside
   another `START` block: they own their background routine.
 
@@ -59,7 +62,8 @@ through the hooks. The changes:
 - Failure handling (2026-11-08): `T0`-`T19`, `OPENAMS_LOAD` and
   `OPENAMS_UNLOAD` run through `OAMSM_TOOLCHANGE`, which catches any error in
   the chain. In a print it records the fault, puts the toolhead back where the
-  toolchange started, runs `PAUSE` and does not raise, so the print pauses
+  toolchange started (unless the toolchange homed first), runs `PAUSE` and does
+  not raise, so the print pauses
   instead of ending through `on_error_gcode`; `RESUME` finishes the toolchange
   from where it stopped. From the panel, or outside a print, the error stands.
   The toolhead sensor checks now raise at once, `_OAMS_ABORT` no longer runs

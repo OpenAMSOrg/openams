@@ -310,6 +310,14 @@ class ClearErrorsTests(unittest.TestCase):
         self.assertEqual(lane_of(s).unit, BAY_B)
         self.assertEqual(lane_of(s).group, GROUP)
 
+    def test_resync_keeps_the_generation_counting(self):
+        # The next op must not reuse a generation the unit already saw.
+        sys0 = system(S.LaneState(op=S.OP_LOADED, unit=BAY_A, op_gen=7))
+        w = world(loaded={BAY_A: False, BAY_B: False})
+        s, fx = S.reduce(sys0, S.ClearErrors(), w, now=1.0)
+        self.assertEqual(lane_of(s).op, S.OP_UNLOADED)
+        self.assertEqual(lane_of(s).op_gen, 7)
+
     def test_resync_unloaded(self):
         sys0 = system(S.LaneState(op=S.OP_LOADED, unit=BAY_A))
         w = world(loaded={BAY_A: False, BAY_B: False})

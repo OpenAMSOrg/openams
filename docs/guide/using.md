@@ -72,7 +72,8 @@ machine and lists each command in order.
 
 **When a toolchange fails during a print, the print pauses.** Whatever failed
 (a check, the AMS, a hook, `CLEAN_NOZZLE`, the Stop button), `OAMSM_TOOLCHANGE`
-puts the toolhead back where the toolchange started, records the failure on the
+puts the toolhead back where the toolchange started (unless it had to home
+first), records the failure on the
 lane, and runs `PAUSE`; the print does not end. Fix the cause and press
 **RESUME**: it clears the AMS's faults, works out where the lane is, and runs
 only what is left (the toolhead reload alone when the AMS had already fed the

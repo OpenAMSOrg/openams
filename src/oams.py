@@ -2329,6 +2329,8 @@ class OAMS(oams_ext.UnitHooks):
         self._pending_bay = spool_idx
         self._track_gen(gen)
         self.action_status_code = None
+        # Each started load may be confirmed once, whatever came before it.
+        self._arrival_sent_gen = None
         self.action_status = OAMS_STATUS_LOADING
         self._note_active(self.status_loading, gen)
 
@@ -2379,6 +2381,7 @@ class OAMS(oams_ext.UnitHooks):
         self._track_gen(gen)
         self.action_status_code = None
         self.action_status_value = None
+        self._arrival_sent_gen = None
         self.action_status = OAMS_STATUS_CALIBRATING
         self.ptfe_calibrating = kind == "ptfe"
         self._note_active(self.status_calibrating, gen)

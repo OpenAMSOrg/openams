@@ -274,7 +274,9 @@ OAMSM_RETRY
 A load or unload that fails leaves a `toolchange_fault` object on its lane in
 `lanes_by_fps` (additive; absent otherwise): `kind` (`load` or `unload`),
 `group`, `slot`, `temp`, `step` (the plan step that was running, or null),
-`reason`, `panel` (true when a UI started it), `fed` (true when the AMS had fed
+`reason`, `panel` (true when a UI started it outside a print; a fault recorded
+while a print is printing or paused is the print's, so `RESUME` retries it),
+`fed` (true when the AMS had fed
 the target group to the extruder gears) and `since`. Offer Retry (the `retry`
 command), Unload and Reset while it is present.
 

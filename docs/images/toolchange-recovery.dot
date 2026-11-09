@@ -19,7 +19,7 @@ digraph recovery {
             label=<<b>READY</b>: the print goes on>];
 
   fault    [style="rounded,filled,bold", fillcolor="#fde2e2", color="#c62828",
-            label=<<b>FAULT</b><br/><font point-size="10">any error: a failed check, the AMS refusing, a hook or CLEAN_NOZZLE<br/>error, homing, a cold extrude, the Stop button.<br/>Records the step, the reason and the target group, puts the toolhead<br/>back where the toolchange started (in a print), and stops the follower<br/>once the print is no longer printing</font>>];
+            label=<<b>FAULT</b><br/><font point-size="10">any error: a failed check, the AMS refusing, a hook or CLEAN_NOZZLE<br/>error, homing, a cold extrude, the Stop button.<br/>Records the step, the reason and the target group, puts the toolhead<br/>back where the toolchange started (in a print, unless it had to home<br/>first), and stops the follower once the print is no longer printing</font>>];
   where    [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a", label=<In a print?>];
   paused   [style="rounded,filled,bold", fillcolor="#fff0c2", color="#b8900a",
             label=<<b>PAUSED</b><br/><font point-size="10">PAUSE, the reason in the console;<br/>the file stays open after the T&lt;n&gt; line</font>>];
@@ -30,7 +30,7 @@ digraph recovery {
             label=<<b>RESUME</b><br/><font point-size="10">Mainsail, Fluidd, KlipperScreen or the panel:<br/>OpenAMS wraps Klipper's own resume</font>>];
   rec      [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a", label=<An OpenAMS fault recorded?>];
   reset    [fillcolor="#dceafe", color="#2f6fd0",
-            label=<<b>Reset</b> (as <font face="Courier">OAMSM_CLEAR_ERRORS</font>)<br/><font point-size="10">clears latched unit faults, waits out the unit's 15 s recovery,<br/>clears host errors, re-reads the lanes</font>>];
+            label=<<b>Reset</b> (as <font face="Courier">OAMSM_CLEAR_ERRORS</font>)<br/><font point-size="10">clears latched unit faults, waits out the unit's 15 s recovery,<br/>clears host errors, re-reads the lanes (operation numbers keep<br/>counting, so the next load's arrival is confirmed)</font>>];
   diag     [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a",
             label=<<b>Diagnose</b><br/><font point-size="10">what do the hub (and toolhead) sensors show?</font>>];
   c_tool   [fillcolor="#ffeedd", color="#d9822b",
@@ -57,6 +57,7 @@ digraph recovery {
   rec -> plain [label=" no"];
   rec -> reset [label=" yes"];
   error -> reset [label=" Retry", style=dashed];
+  paused -> reset [label=" or the panel's Retry:\n the print stays paused,\n a failure stays the print's", style=dashed, constraint=false];
   reset -> diag;
   diag -> c_tool [label=" the target group loaded,\n fed to the gears"];
   diag -> c_swap [label=" another group\n is loaded"];
@@ -67,6 +68,6 @@ digraph recovery {
   ok -> fault [label=" no: still paused", color="#c62828", fontcolor="#c62828", constraint=false];
 
   note [shape=note, style="filled", fillcolor="#ffffff", color="#b9bfc8", fontsize=10,
-        label=<OpenAMS never retries on its own:<br/>the AMS retries before it reports a failure.<br/>Reset alone moves nothing and resumes nothing,<br/>and keeps an unfinished toolchange for RESUME.<br/>A print's fault is dropped when the print ends.>];
+        label=<OpenAMS never retries on its own:<br/>the AMS retries before it reports a failure.<br/>Reset alone moves nothing and resumes nothing,<br/>and keeps an unfinished toolchange for RESUME.<br/>A print's fault is dropped when the print ends.<br/>With gco-routines the retry inside RESUME runs<br/>serially (<font face="Courier">legacy_in_recovery()</font>): no overlap.>];
   {rank=same; where; note;}
 }

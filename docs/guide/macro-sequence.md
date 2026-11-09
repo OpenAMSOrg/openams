@@ -110,7 +110,7 @@ Starting values for your toolhead: `python3 ~/openams/tools/toolhead_defaults.py
 **During a print, a failed toolchange pauses the print; it never ends it.** Every toolchange and unload runs inside `OAMSM_TOOLCHANGE`, which catches any error in the chain: a failed check, the AMS refusing or failing, a hook or `CLEAN_NOZZLE` error, homing, a cold extrusion, the Stop button. It has to be a Python command: Klipper macros cannot catch an error, and an error that reaches an SD print makes Klipper run `on_error_gcode` (Mainsail: `CANCEL_PRINT`). With gco-routines, `OAMSM_TOOLCHANGE` runs the chain, and then its own recovery, in gco-routines' *handled regions*; without them gco-routines would fault the print's run at the failing line, whatever OpenAMS did next. An older gco-routines without regions still ends the print on a failure, and Klipper's log says so. On a failure `OAMSM_TOOLCHANGE`:
 
 1. records the fault on the lane: what was being loaded or unloaded, the step that was running, the reason, and whether the AMS had already fed the filament to the gears;
-2. puts the toolhead back where the toolchange started;
+2. puts the toolhead back where the toolchange started (not when the toolchange had to home first: the position before homing means nothing, so the toolhead stays where it failed);
 3. stops the AMS follower once it is safe (never under a print that is still printing);
 4. in a print, runs `PAUSE` and writes the reason to the console; from the panel, or outside a print, raises the error instead.
 
@@ -122,6 +122,10 @@ Starting values for your toolhead: `python3 ~/openams/tools/toolhead_defaults.py
 | the target group out past its hub, but never fed to the gears | a rewind of that bay (`OAMSM_UNLOAD_FILAMENT`), then the toolchange |
 | another group loaded | the whole swap, from the cut |
 | nothing loaded | the feed and the toolhead part |
+
+With gco-routines, the retry runs inside RESUME, where gco-routines starts no routines: OpenAMS runs `_TX` there in a `legacy_in_recovery()` region and it takes its serial path (feed, then the toolhead part, without the overlap). That needs gco-routines with `legacy_in_recovery()` (2026-11-08, evening); an older one refuses the retry with `Recovery macros cannot start managed routines`, and the print stays paused.
+
+A retry from the panel or the console while the print is paused belongs to the print too: if it fails, `RESUME` still retries it, and the fault goes when the print ends.
 
 When that works, Klipper's resume returns to the print. When it fails, the print stays paused, the console says why, and `RESUME` can be pressed again. OpenAMS never retries on its own: the AMS retries before it reports a failure.
 

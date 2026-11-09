@@ -177,7 +177,7 @@ digraph macros {
   // ---- what "fail" does, and the other flows --------------------------------
   node [shape=box, style="rounded,filled", fillcolor="#fde2e2", color="#c62828", fontcolor="#2b2f36",
         fontsize=11, margin="0.14,0.06"];
-  failnote [label=<<b>fail</b>: the error goes up to <font face="Courier"><b>OAMSM_TOOLCHANGE</b></font><br/><font point-size="10">which records the fault on the lane, puts the toolhead back where the<br/>toolchange started and stops the follower once it is safe. In a print it runs<br/>PAUSE, and RESUME finishes the toolchange from where it stopped (the next<br/>drawing). From the panel, an error: Retry, Unload or Reset. The Stop button<br/>fails the running step the same way. The heater stays on.</font>>];
+  failnote [label=<<b>fail</b>: the error goes up to <font face="Courier"><b>OAMSM_TOOLCHANGE</b></font><br/><font point-size="10">which records the fault on the lane, puts the toolhead back where the<br/>toolchange started (unless it had to home first) and stops the follower once it is safe. In a print it runs<br/>PAUSE, and RESUME finishes the toolchange from where it stopped (the next<br/>drawing). From the panel, an error: Retry, Unload or Reset. The Stop button<br/>fails the running step the same way. The heater stays on.</font>>];
 
   subgraph cluster_bare {
     label=<<b>Without the cutter</b>>; labeljust=l;

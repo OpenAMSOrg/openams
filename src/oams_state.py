@@ -556,7 +556,7 @@ def reduce(system, action, world, now):
                         if record[0] in system.lanes else {})
         lanes = dict(system.lanes)
         for fps, old in targets.items():
-            lane = _resync_lane(world.lane(fps), now)
+            lane = _resync_lane(world.lane(fps), now, old)
             if old.uncertain_follower_units:
                 lane = replace(lane, following=None,
                                uncertain_follower_units=old.uncertain_follower_units)
@@ -569,7 +569,7 @@ def reduce(system, action, world, now):
             if action.keep_in_flight and _in_flight(old):
                 lanes[fps] = old
                 continue
-            lane = _resync_lane(world.lane(fps), now)
+            lane = _resync_lane(world.lane(fps), now, old)
             if old.uncertain_follower_units:
                 lane = replace(lane, following=None,
                                uncertain_follower_units=
@@ -630,8 +630,13 @@ def _in_flight(lane):
             or (lane.op == OP_LOADED and lane.runout == RUNOUT_LOADING))
 
 
-def _resync_lane(lw, now):
-    """Recompute a lane purely from the hardware snapshot (ClearErrors/startup)."""
+def _resync_lane(lw, now, old=None):
+    """Recompute a lane purely from the hardware snapshot (ClearErrors/startup).
+
+    The generation keeps counting from the old lane's: the next op must not
+    reuse a generation the unit already saw, or its arrival acknowledgement
+    is dropped as a repeat and a stale completion could match it."""
+    gen = old.op_gen if old is not None else 0
     for group, bays in lw.group_bays.items():
         for unit in bays:
             if lw.loaded.get(unit):
@@ -646,8 +651,8 @@ def _resync_lane(lw, now):
                 # a side effect on this shared, deliberately effect-free path
                 # (the fault-clear resync asserts it returns no effects).
                 return LaneState(op=OP_LOADED, group=group, unit=unit,
-                                 following=None, since=now)
-    return LaneState(op=OP_UNLOADED, since=now)
+                                 following=None, since=now, op_gen=gen)
+    return LaneState(op=OP_UNLOADED, since=now, op_gen=gen)
 
 
 def _group_of(lw, unit):

@@ -238,7 +238,10 @@ gco-routines is recent enough to offer *handled regions* (2026-11-08 or later;
 the toolchange in one, so a failure reaches it instead of faulting the print's
 gco-routines run. With an older gco-routines a failed toolchange ends the print,
 and Klipper's log says `this gco-routines has no handled_errors()`; update it
-with `git -C ~/gco-routines pull`, then restart Klipper.
+with `git -C ~/gco-routines pull`, then restart Klipper. RESUME retrying a
+toolchange that has to feed again also needs its `legacy_in_recovery()`
+(2026-11-08, evening); without it Klipper's log says `this gco-routines has no
+legacy_in_recovery()` and that retry stays paused.
 
 It needs Python 3.9 or newer in Klipper's environment, and it works only on a
 Klipper it was tested against. It identifies one by the SHA-256 of
