@@ -697,6 +697,11 @@ class OAMS(oams_ext.UnitHooks):
                 and getattr(self, "ams_tray_read_cmd", None) is not None):
             # A unit that decodes its own tags: a read only if it takes one.
             actions.append("rfid_scan")
+        elif (getattr(self, "tag_reader", None) is not None
+                and self.tag_reader.has_host_reader()
+                and self.capabilities.get("rfid", True)):
+            # Host-driven readers ([mfrc522]): OAMS_RFID_SCAN BAY= re-reads.
+            actions.append("rfid_scan")
         return self._ext_actions(actions)
 
     @staticmethod
@@ -910,7 +915,21 @@ class OAMS(oams_ext.UnitHooks):
             measured = (getattr(self, "measured_path_mm", None) or {}).get(bay)
             entry["measured_path_mm"] = (round(measured, 1)
                                          if measured is not None else None)
+        tag_reader = getattr(self, "tag_reader", None)
+        if tag_reader is not None and tag_reader.attributes():
+            # C2 §4.5: on a unit whose reads the host attributes, the bay's
+            # attribution state (a candidate is never published in `tag`).
+            entry["tag_state"] = tag_reader.tag_state_for(bay)
         return entry
+
+    def _published_capabilities(self):
+        """The capabilities as published: the attached readers' real
+        coverage (C2 §4.4.1 ``rfid_coverage``) over the profile's default."""
+        caps = dict(self.capabilities)
+        tag_reader = getattr(self, "tag_reader", None)
+        if tag_reader is not None and tag_reader.has_host_reader():
+            caps["rfid_coverage"] = tag_reader.coverage()
+        return caps
 
     def get_webhook_status(self):
 
@@ -940,7 +959,7 @@ class OAMS(oams_ext.UnitHooks):
             "gen_matched_protocol": self._use_gen_protocol,
             "family": self.device_family,
             "bay_count": self.bay_count,
-            "capabilities": dict(self.capabilities),
+            "capabilities": self._published_capabilities(),
             "capability_warnings": list(self.capability_warnings),
             "identity": {
                 "serial": getattr(self, "unit_serial", None),
@@ -2755,7 +2774,45 @@ class OAMS(oams_ext.UnitHooks):
             self._cmd_tray_read(gcmd)       # unit-decoded tags (C1 4.7.1)
             return
         self._require_rfid(gcmd)
+        tag_reader = getattr(self, "tag_reader", None)
+        if (tag_reader is not None and tag_reader.has_host_reader()
+                and gcmd.get("BAY", None) is not None):
+            self._cmd_attributed_scan(gcmd)  # [mfrc522] readers (C3)
+            return
         self._ext_rfid_scan(gcmd)
+
+    def rfid_scan_args(self, gcmd):
+        """``(bay, assert_)`` of ``OAMS_RFID_SCAN BAY= [ASSERT=] [TURN=]``
+        on a unit whose reads the host attributes. ``TURN=1`` (the identify
+        turn, C3) needs a unit operation no unit offers yet."""
+        raw_bay = gcmd.get("BAY", None)
+        bay = None if raw_bay is None else int(raw_bay)
+        if bay is not None and not 0 <= bay < self.bay_count:
+            raise gcmd.error(
+                "BAY must be between 0 and %d" % (self.bay_count - 1))
+        assert_ = int(gcmd.get("ASSERT", 0) or 0)
+        turn = int(gcmd.get("TURN", 0) or 0)
+        if assert_ not in (0, 1) or turn not in (0, 1):
+            raise gcmd.error("ASSERT and TURN take 0 or 1")
+        if turn:
+            # No unit offers a bounded identify turn (C1 §4.7), and the host
+            # never borrows a load or a calibration drive for one.
+            raise gcmd.error("This unit cannot turn a spool to read its tag")
+        if bay is None and assert_:
+            raise gcmd.error("ASSERT=1 needs BAY")
+        return bay, bool(assert_)
+
+    def _cmd_attributed_scan(self, gcmd):
+        """``OAMS_RFID_SCAN BAY=<i> [ASSERT=1]`` through host-driven readers:
+        a fresh sample of the bay's reader, answered with the bay's
+        attribution (C3): ``attributed <key>``, ``candidate <key>``,
+        ``conflict <reason>`` or ``no tag in the field``."""
+        bay, assert_ = self.rfid_scan_args(gcmd)
+        outcome = self.tag_reader.scan_bay(bay, assert_=assert_)
+        ok, text = self.tag_reader.describe(bay, outcome)
+        if not ok:
+            raise gcmd.error(text)
+        gcmd.respond_info(text)
 
     def _cmd_tray_read(self, gcmd):
         """``OAMS_RFID_SCAN BAY=`` on a unit that decodes its own tags.

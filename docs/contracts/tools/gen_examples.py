@@ -76,10 +76,11 @@ TELEMETRY_CHANNELS = {"ams1": [], "ams2": ["domain", "dryer"],
 AMS_UNITS = ("ams1", "ams2", "ams_ht")
 
 # Unit supported_actions exactly as oams.py:_supported_actions builds them for
-# a connected gen-protocol unit of each family (oams.py:358-406).
+# a connected gen-protocol unit of each family (oams.py:358-406); the AMS 1
+# has its [mfrc522] readers attached, so OAMS_RFID_SCAN BAY= re-reads.
 UNIT_ACTIONS = {
     "ams1": ["clear_errors", "load", "unload", "follower", "configure_pid",
-             "calibrate_ptfe", "calibrate_hub_hes"],
+             "calibrate_ptfe", "calibrate_hub_hes", "rfid_scan"],
     "ams2": ["clear_errors", "load", "unload", "follower", "dryer_start",
              "dryer_stop", "clear_fault", "rfid_scan"],
     "ams_ht": ["clear_errors", "load", "unload", "follower", "dryer_start",
@@ -186,6 +187,7 @@ class Unit:
         self.loaded = [False] * self.bays
         self.spool = [None] * self.bays           # (spool_id, source)
         self.tag = [None] * self.bays
+        self.tag_state = [None] * self.bays      # C2 §4.5, host-attributed
         self.calibrating_bay = None
         self.positioning = [False] * self.bays   # C2 §4.5, H16
         self.env = None
@@ -290,6 +292,9 @@ def build_device(u, lane):
             "spool_hint": None,
             "supported_actions": bay_actions(u, b, lane),
         })
+        if u.tag_state[b] is not None:
+            # Only on a unit whose reads the host attributes (C2 §4.5).
+            bays[-1]["tag_state"] = u.tag_state[b]
     dryer = None
     if u.dryer is not None:
         dryer = {k: v for k, v in u.dryer.items() if not k.startswith("_")}
@@ -525,9 +530,18 @@ def project_ui(status, unit_name):
         # RESOLVED (review, C2 4/7): the link only (spool_id +
         # link_source); the material/color/vendor/remaining summary lives in
         # the C4 openams_spoolman status, which the display merges in.
+        ts = bd.get("tag_state") or {}
+        tg = {"attributed": "a", "candidate": "c", "conflict": "x",
+              "unknown": "u"}.get(ts.get("state"))
         sp = None
         if bd["link_source"] != "none":
-            sp = {"id": bd["spool_id"], "src": bd["link_source"][0]}
+            src = bd["link_source"][0]
+            if bd["link_source"] == "tag" and "tag_state" in bd:
+                src = "t" if tg == "a" else "m"     # only attributed tags
+            elif (bd["link_source"] == "tag" and bd.get("tag")
+                    and bd["tag"].get("format") == "unit_summary"):
+                src = "m"                           # the unit's own setting
+            sp = {"id": bd["spool_id"], "src": src}
         acts = "".join(code for name, code in (
             ("load", "l"), ("unload", "u"), ("calibrate_ptfe", "c"),
             ("set_spool", "a"), ("clear_spool", "d"),
@@ -537,7 +551,22 @@ def project_ui(status, unit_name):
                "calibrating": "p"}[bd["calibration_state"]]
         sid = next(sl["id"] for au in status["units"] if au["name"] == unit_name
                    for sl in au["slots"] if sl["bay"] == b)
-        bays.append({"id": sid, "s": s, "cal": cal, "a": acts, "sp": sp})
+        entry = {"id": sid, "s": s, "cal": cal, "a": acts, "sp": sp}
+        if tg is not None:
+            entry["tg"] = tg
+        if tg == "c":
+            entry["tc"] = [{"m": c["material"],
+                            "c": (None if c["color_argb"] is None
+                                  else "%06X" % (c["color_argb"] & 0xFFFFFF))}
+                           for c in ts["candidates"][:2]]
+        if tg == "x":
+            entry["tr"] = ts["reason"]
+            if ts["reason"] == "claimed_twice" and ts["other_bay"] is not None:
+                entry["to"] = next(
+                    sl["id"] for au in status["units"]
+                    if au["name"] == unit_name for sl in au["slots"]
+                    if sl["bay"] == ts["other_bay"])
+        bays.append(entry)
     stage = ln["stage"]
     faults = []
     for uname, uinfo in status["topology"]["oams"].items():
@@ -603,12 +632,32 @@ def project_ui(status, unit_name):
 
 # ------------------------------------------------------------------ scenarios
 
+def tag_state(state, candidates=(), reason=None, other_bay=None, reader=0):
+    """A bay's tag attribution (C2 §4.5): state, reason, candidates."""
+    return {"state": state, "reason": reason,
+            "candidates": [dict(spool_key=k, uid=u, material=m, color_argb=c)
+                           for k, u, m, c in candidates],
+            "other_bay": other_bay, "reader": reader}
+
+
 def ams1_base(name="oams1", idx=0, lane_name="fps"):
     u = Unit(name, idx, "ams1", lane=lane_name)
     u.ready = [True, True, True, False]
     u.spool = [(12, "tag"), (15, "manual"), None, None]
-    u.tag = [bambu_tag(12, "PLA", "PLA Basic", 0xFF0A2989, "8a3f12c4",
-                       "5c2e8d0a9f1b4e7c8a2d6f0e3b9c1a47"), None, None, None]
+    tag = bambu_tag(12, "PLA", "PLA Basic", 0xFF0A2989, "8a3f12c4",
+                    "5c2e8d0a9f1b4e7c8a2d6f0e3b9c1a47")
+    # Two readers for four bays ([mfrc522]): bay 0's tag was attributed by
+    # spool motion, bay 1's spool has not passed its reader yet, and bay 2
+    # was just inserted next to it: a tag seen, the bay not confirmed.
+    tag.update({"spool_key": "bambu:5c2e8d0a9f1b4e7c8a2d6f0e3b9c1a47",
+                "uids": ["8A3F12C4", "8A3F12C5"], "evidence": "motion",
+                "confirmed_at": 1530.1})
+    u.tag = [tag, None, None, None]
+    u.tag_state = [
+        tag_state("attributed"), tag_state("unknown"),
+        tag_state("candidate", [("bambu:" + "7d" * 16, "41c2a0de", "PETG",
+                                 0xFF1C1C1C)], reader=1),
+        tag_state("none", reader=1)]
     u.env = {"temp_c": 24.3, "rh_pct": 31.0, "source": "hdc1080"}
     return u
 

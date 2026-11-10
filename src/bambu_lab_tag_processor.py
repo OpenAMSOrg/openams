@@ -16,6 +16,8 @@ class BambuLabTagError(Exception):
 class BambuLabTagProcessor:
     # Blocks containing the public filament fields used by the decoder.
     READ_BLOCKS = (2, 4, 5, 6, 8, 9, 10, 12, 14)
+    # The tray UUID: the spool's serial, the same on both of its tags.
+    IDENTITY_BLOCK = 9
 
     def __init__(self, config):
         value = re.sub(r"[^0-9a-fA-F]", "", config.get("key"))
@@ -85,6 +87,20 @@ class BambuLabTagProcessor:
             "tray_uid": data[144:160].hex(),
             "production": self._string(data, 192, 16),
         }
+
+    def read_identity(self, reader, uid):
+        """The spool's tray UUID, from block 9 alone: one authentication and
+        one read (C2 §4.6.1). Both tags of a spool carry the same value, so
+        it gives the spool key without a full decode. Returned as lower-case
+        hex, verbatim: a blank block 9 (all zero, or all F) is rejected where
+        the spool key is made (tag_identity.valid_tray), not here."""
+        keys = self.derive_sector_keys(uid)
+        payload = reader.read_block(
+            self.IDENTITY_BLOCK, keys[self.IDENTITY_BLOCK // 4], uid)
+        if len(payload) != 16:
+            raise BambuLabTagError(
+                "invalid MIFARE block %d length" % self.IDENTITY_BLOCK)
+        return bytes(payload).hex()
 
     def read_tag(self, reader, uid):
         keys = self.derive_sector_keys(uid)

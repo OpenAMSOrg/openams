@@ -138,6 +138,9 @@ class StubWebRequest(object):
     def get_float(self, key, default=_MISSING):
         return self._get(key, default, float)
 
+    def get_args(self):
+        return dict(self.args)
+
 
 class StubKlippyApis(object):
     def __init__(self, subscribe_result=None, fail_subscribe=False):
@@ -898,6 +901,105 @@ class LaneDataTest(unittest.IsolatedAsyncioTestCase):
         # The pass still ran: the bay is linked and the status was sent.
         self.assertEqual(h.bay("solo-0")["state"], "linked")
         self.assertTrue(h.server.sent_events)
+
+
+class DuplicatesAndMergeRouteTest(unittest.IsolatedAsyncioTestCase):
+    """The two-tag maintenance routes (C4 §9.2): a read-only duplicates
+    report, and a merge that writes only when confirmed."""
+
+    TRAY = BAMBU["tray_uid"]
+
+    def endpoint(self, h, path):
+        for entry in h.server.endpoints:
+            if entry[0] == path:
+                return entry
+        self.fail("no endpoint " + path)
+
+    async def spool(self, api, extra):
+        vendor = await api.request("POST", "/v1/vendor", body={"name": "T"})
+        filament = await api.request(
+            "POST", "/v1/filament",
+            body={"name": "T", "vendor_id": vendor["id"], "material": "PLA"})
+        spool = await api.request(
+            "POST", "/v1/spool", body={"filament_id": filament["id"],
+                                       "initial_weight": 1000,
+                                       "remaining_weight": 1000})
+        return await api.request("PATCH", "/v1/spool/%d" % spool["id"],
+                                 body={"extra": extra})
+
+    async def setup_pair(self):
+        api = A.FakeSpoolman()
+        h = await Harness(api=api).init()
+        x = await self.spool(api, {"card_uids": '"0A0B0C0D"'})
+        y = await self.spool(api, {"card_uids": '"55667788"',
+                                   "tray_uid": '"%s"' % self.TRAY})
+        await h.ready([bay(tag=bambu_tag())])
+        return h, x, y
+
+    async def test_the_routes_are_registered(self):
+        h = Harness()
+        self.assertEqual(
+            self.endpoint(h, "/server/openams_spoolman/duplicates")[1],
+            ["GET"])
+        self.assertEqual(
+            self.endpoint(h, "/server/openams_spoolman/merge")[1], ["POST"])
+
+    async def test_the_report_lists_the_pair_a_read_found(self):
+        h, x, y = await self.setup_pair()
+        self.assertEqual(h.bay()["spool_id"], x["id"])
+        handler = self.endpoint(h, "/server/openams_spoolman/duplicates")[2]
+        report = await handler(StubWebRequest({}))
+        self.assertEqual([entry["spools"] for entry in report["duplicates"]],
+                         [[x["id"], y["id"]]])
+        self.assertEqual(report["duplicates"][0]["reason"], "other_tag")
+
+    async def test_merge_previews_then_writes_on_confirm(self):
+        h, x, y = await self.setup_pair()
+        handler = self.endpoint(h, "/server/openams_spoolman/merge")[2]
+        preview = await handler(StubWebRequest(
+            {"keep": y["id"], "merge": str(x["id"])}))
+        self.assertFalse(preview["confirmed"])
+        self.assertFalse([s for s in h.api.spools if s["archived"]])
+        events = len(h.server.sent_events)
+        done = await handler(StubWebRequest(
+            {"keep": y["id"], "merge": x["id"], "confirm": "true"}))
+        await h.flush()
+        self.assertTrue(done["confirmed"])
+        self.assertEqual([s["id"] for s in h.api.spools if s["archived"]],
+                         [x["id"]])
+        self.assertGreater(len(h.server.sent_events), events)
+        self.assertIn("OAMSM_SET_BAY_SPOOL OAMS=oams1 BAY=0 SPOOL=%d "
+                      "SOURCE=tag" % y["id"], h.klippy_apis.gcode)
+        report = await self.endpoint(
+            h, "/server/openams_spoolman/duplicates")[2](StubWebRequest({}))
+        self.assertEqual(report["duplicates"], [])
+
+    async def test_merge_errors(self):
+        h, x, y = await self.setup_pair()
+        handler = self.endpoint(h, "/server/openams_spoolman/merge")[2]
+        cases = (({"keep": y["id"]}, 400),
+                 ({"keep": "y", "merge": x["id"]}, 400),
+                 ({"keep": y["id"], "merge": y["id"]}, 400),
+                 ({"keep": y["id"], "merge": 999, "confirm": True}, 404))
+        for args, code in cases:
+            with self.subTest(args=args):
+                with self.assertRaises(ServerErrorStub) as ctx:
+                    await handler(StubWebRequest(args))
+                self.assertEqual(ctx.exception.status_code, code)
+        z = await self.spool(h.api, {"tray_uid": '"%s"' % ("1" * 32)})
+        with self.assertRaises(ServerErrorStub) as ctx:
+            await handler(StubWebRequest(
+                {"keep": y["id"], "merge": z["id"], "confirm": True}))
+        self.assertEqual(ctx.exception.status_code, 409)
+        h.api.online = False
+        for path, args in (("duplicates", {}),
+                           ("merge", {"keep": y["id"], "merge": x["id"]})):
+            with self.assertRaises(ServerErrorStub) as ctx:
+                await self.endpoint(
+                    h, "/server/openams_spoolman/" + path)[2](
+                        StubWebRequest(args))
+            self.assertEqual(ctx.exception.status_code, 503)
+        self.assertFalse([s for s in h.api.spools if s["archived"]])
 
 
 if __name__ == "__main__":

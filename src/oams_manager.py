@@ -598,6 +598,25 @@ class OAMSManager(oams_ext.ManagerHooks):
                     return True
         return False
 
+    def turning_bays(self, oams_idx):
+        """The bays of this unit whose spool the unit is turning for a lane
+        right now: the bay of a load, unload or calibration in flight, and a
+        runout's reload target while it loads. The tag reader service takes
+        a tag change seen while exactly one covered bay turns as that bay's
+        (``src/oams_tags.py``, C2 §4.6). A loaded bay that only follows the
+        extruder is not counted."""
+        bays = set()
+        for lane in self.runtime.get_state().lanes.values():
+            if (lane.unit is not None and lane.unit[0] == oams_idx
+                    and lane.op in (S.OP_LOADING, S.OP_UNLOADING,
+                                    S.OP_CALIBRATING)):
+                bays.add(lane.unit[1])
+            target = lane.reload_target
+            if (target is not None and target[0] == oams_idx
+                    and lane.runout == S.RUNOUT_LOADING):
+                bays.add(target[1])
+        return bays
+
     def bay_in_use(self, oams_idx, bay):
         """Is this exact bay the one a lane has loaded, loading or unloading?
 
@@ -1688,6 +1707,12 @@ class OAMSManager(oams_ext.ManagerHooks):
                                                       "reload failed")
                             else ["clear_errors"]),
                 "source": "lane"})
+        # Tag attribution (C2 §4.6): two bays holding one tag identity, the
+        # clone case, as `info` faults; a tag never blocks a print.
+        tag_reader = getattr(unit, "tag_reader", None)
+        tag_faults = getattr(tag_reader, "faults", None)
+        if callable(tag_faults):
+            faults.extend(tag_faults())
         return faults
 
     @staticmethod

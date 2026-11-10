@@ -382,6 +382,107 @@ class SpoolmanWinsOfflineTest(unittest.TestCase):
         self.assertEqual(online.bay()["spool"]["vendor"], "Polymaker")
 
 
+class TwoTagsOfflineTest(unittest.TestCase):
+    """Offline, the cache and the queued-create replay resolve in the order
+    of C4 §4, so the two tags of one spool end as one spool (C4 §6)."""
+
+    TRAY = "a" * 32
+
+    def test_two_queued_creations_for_one_spools_two_tags_end_as_one(self):
+        h = Harness().start()
+        h.api.down = True
+        first = bambu_tag(uid="0A0B0C0D", tray=self.TRAY)
+        second = bambu_tag(uid="11111111", read_at=2.0, tray=self.TRAY)
+        h.send([bay(tag=first), bay(tag=second)])
+        self.assertEqual(h.linker.status()["queued_writes"], 2)
+        h.api.down = False
+        h.clock.advance(6)
+        h.send([bay(tag=first), bay(tag=second)])
+        spools = h.spools()
+        self.assertEqual(len(spools), 1)
+        spool_id = spools[0]["id"]
+        self.assertEqual(ops.decode_extra(spools[0]["extra"]["card_uids"]),
+                         "0A0B0C0D,11111111")
+        self.assertEqual(h.bay("oams1-1")["spool_id"], spool_id)
+        self.assertEqual(h.bay("oams1-1")["state"], "linked")
+        self.assertEqual(h.linker.status()["queued_writes"], 0)
+
+    def test_the_cache_finds_the_other_tag_by_tray_in_any_case(self):
+        h = Harness().start()
+        h.send([bay(tag=bambu_tag(uid="0A0B0C0D", tray=self.TRAY.upper()))])
+        spool_id = h.bay()["spool_id"]
+        h.api.down = True
+        h.send([bay(tag=bambu_tag(uid="0A0B0C0D", tray=self.TRAY.upper())),
+                bay(tag=bambu_tag(uid="22222222", read_at=2.0,
+                                  tray=" " + self.TRAY))])
+        self.assertEqual(h.bay("oams1-1")["spool_id"], spool_id)
+        # The new UID and the location mirror wait; back online, both land.
+        self.assertEqual(h.linker.status()["queued_writes"], 2)
+        h.api.down = False
+        h.clock.advance(6)
+        h.send([bay(tag=bambu_tag(uid="0A0B0C0D", tray=self.TRAY.upper())),
+                bay(tag=bambu_tag(uid="22222222", read_at=2.0,
+                                  tray=" " + self.TRAY),
+                    spool_id=spool_id, link_source="tag")])
+        self.assertEqual(ops.decode_extra(
+            h.get_spool(spool_id)["extra"]["card_uids"]), "0A0B0C0D,22222222")
+        self.assertEqual(len(h.spools()), 1)
+
+    def test_a_blank_tray_is_never_a_cache_key(self):
+        h = Harness().start()
+        h.send([bay(tag=bambu_tag(uid="0A0B0C0D", tray="0" * 32))])
+        h.api.down = True
+        h.send([bay(tag=bambu_tag(uid="0A0B0C0D", tray="0" * 32)),
+                bay(tag=bambu_tag(uid="33333333", read_at=2.0,
+                                  tray="0" * 32))])
+        self.assertEqual(h.bay("oams1-1")["state"], "resolving")
+        self.assertNotIn("tray:" + "0" * 32,
+                         self.h_keys(h))
+
+    @staticmethod
+    def h_keys(h):
+        return h.store["state"]["keys"]
+
+    def test_a_bare_uid_offline_queues_nothing_and_retries(self):
+        h = Harness().start()
+        h.api.down = True
+        bare = {"uid": "44444444", "format": "bambu", "read_at": 1.0,
+                "spoolman_id": None, "bambu": None}
+        h.send([bay(tag=bare)])
+        self.assertEqual(h.bay()["state"], "resolving")
+        self.assertEqual(h.bay()["error"], "Spoolman offline")
+        self.assertEqual(h.linker.status()["queued_writes"], 0)
+        # Back online: the UID is looked up once more, then the bay waits
+        # for the decode without asking again.
+        h.api.down = False
+        h.send([bay(tag=bare)])
+        self.assertEqual(h.bay()["state"], "resolving")
+        self.assertIsNone(h.bay()["error"])
+        self.assertEqual(h.spools(), [])
+        h.api.calls.clear()
+        h.send([bay(tag=bare)])
+        self.assertEqual(h.api.calls, [])
+
+    def test_a_replay_suggests_a_legacy_spool_instead_of_creating(self):
+        h = Harness().start()
+        h.api.down = True
+        t = bambu_tag(uid="55555555", tray=self.TRAY)
+        h.send([bay(tag=t)])
+        h.api.down = False
+        legacy = run(_make_spool(h.api, "Bambu Lab", {
+            "card_uids": ops.encode_extra("66666666")}))
+        run(h.api.request("PATCH", "/v1/filament/%d"
+                          % legacy["filament"]["id"],
+                          body={"color_hex": "000000"}))
+        h.clock.advance(6)
+        h.send([bay(tag=t)])
+        self.assertEqual(len(h.spools()), 1)
+        self.assertEqual(h.bay()["state"], "unlinked")
+        self.assertEqual([s["spool_id"] for s in h.bay()["suggestions"]],
+                         [legacy["id"]])
+        self.assertEqual(h.linker.status()["queued_writes"], 0)
+
+
 async def _make_matching_spool(api, uid, tray_uid):
     vendor = await api.request("POST", "/v1/vendor", body={"name": "Bambu Lab"})
     filament = await api.request(

@@ -43,7 +43,11 @@ _PROFILES = {
         "hub_hes_calibration": True, "rfid": True,
         "host_sensor_configuration": True, "runtime_pid_tuning": True,
         "logger_control": True, "error_led_control": True,
-        "rfid_reader_scope": "per_bay", "rfid_uid_inventory": True,
+        # Two readers on the mainboard ([mfrc522] rfid_a / rfid_b), each
+        # shared by two bays: the host attributes every read (C2 §4.6).
+        # [mfrc522] bays_a / bays_b override this default coverage.
+        "rfid_reader_scope": "shared", "rfid_coverage": [[0, 1], [2, 3]],
+        "rfid_uid_inventory": True,
         "rfid_material_metadata": "host_owned",
     },
     "ams_ht": {
@@ -64,7 +68,8 @@ _PROFILES = {
         "hub_hes_calibration": False, "rfid": False,
         "host_sensor_configuration": False, "runtime_pid_tuning": True,
         "logger_control": False, "error_led_control": False,
-        "rfid_reader_scope": "single_bay", "rfid_uid_inventory": False,
+        "rfid_reader_scope": "single_bay", "rfid_coverage": [[0]],
+        "rfid_uid_inventory": False,
         "rfid_material_metadata": "host_owned",
     },
     "ams2": {
@@ -86,6 +91,9 @@ _PROFILES = {
         "hub_hes_calibration": True, "rfid": False,
         "host_sensor_configuration": False, "runtime_pid_tuning": True,
         "logger_control": False, "error_led_control": False,
+        # As the host sees it: the unit reads and decodes its own tags and
+        # reports them per bay (C1 section 4.7.1), so the host attributes
+        # nothing. How its antennas cover the bays is not recorded.
         "rfid_reader_scope": "per_bay", "rfid_uid_inventory": False,
         "rfid_material_metadata": "device_synchronized",
     },
@@ -211,6 +219,9 @@ def profile(family):
         family = "ams1"       # safe, backward-compatible pre-connect shape
     result = dict(_PROFILES[family])
     result.update(oams_ext.FAMILY.profile_extras(family))
+    if result.get("rfid_coverage") is not None:
+        result["rfid_coverage"] = [list(bays)
+                                   for bays in result["rfid_coverage"]]
     result["schema_version"] = SCHEMA_VERSION
     return result
 
@@ -377,6 +388,12 @@ def resolve_capabilities(configured, constants):
     if "AMS_DRYER" in constants:
         result["dryer"] = bool(_int_constant(constants, "AMS_DRYER", 0))
     oams_ext.FAMILY.refine(result, constants)
+    if result.get("tray_info"):
+        # A unit that reads and decodes its own tags reports them per bay
+        # (C1 section 4.7.1): it attributes its reads, the host does not.
+        if result.get("rfid_reader_scope") == "shared":
+            result["rfid_reader_scope"] = "per_bay"
+        result.pop("rfid_coverage", None)
     if result.get("normal_motion") is False:
         result["autonomous_follower"] = False
         result["ptfe_calibration"] = False

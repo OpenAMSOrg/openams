@@ -180,7 +180,11 @@ class FakeSpoolman(SpoolmanAPI):
 
     def _spool(self, method, rest, query, body):
         if method == "GET" and not rest:
-            return [self._spool_view(s) for s in self.spools if not s["archived"]]
+            # As Spoolman: archived spools only with ``allow_archived``.
+            everything = str((query or {}).get("allow_archived", "")).lower() \
+                in ("true", "1")
+            return [self._spool_view(s) for s in self.spools
+                    if everything or not s["archived"]]
         if method == "GET" and len(rest) == 1:
             return self._spool_view(self._find(self.spools, rest[0]))
         if method == "POST" and not rest:

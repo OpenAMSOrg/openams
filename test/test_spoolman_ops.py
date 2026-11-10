@@ -416,6 +416,237 @@ class ExtruderTempTableTest(unittest.TestCase):
         self.assertIsNone(ops.material_name_of(None))
 
 
+class SpoolKeyTest(unittest.TestCase):
+    """``spool_key``/``valid_tray`` against the vectors of the two-tag
+    interfaces (§1), identical in the host's ``src/tag_codec.py``."""
+
+    TRAY = "0123456789abcdef0123456789abcdef"
+    VECTORS = (
+        ({"format": "bambu", "uid": "04a1b2c3",
+          "bambu": {"tray_uid": "0123456789ABCDEF0123456789abcdef"}},
+         "bambu:0123456789abcdef0123456789abcdef"),
+        ({"format": "bambu", "uid": "04a1b2c3",
+          "bambu": {"tray_uid": " 0123456789abcdef0123456789abcdef "}},
+         "bambu:0123456789abcdef0123456789abcdef"),
+        ({"format": "bambu", "uid": "04a1b2c3",
+          "bambu": {"tray_uid": "00000000000000000000000000000000"}},
+         "uid:04A1B2C3"),
+        ({"format": "bambu", "uid": "04a1b2c3",
+          "bambu": {"tray_uid": "ffffffffffffffffffffffffffffffff"}},
+         "uid:04A1B2C3"),
+        ({"format": "bambu", "uid": "04a1b2c3", "bambu": {"tray_uid": "0123"}},
+         "uid:04A1B2C3"),
+        ({"format": "bambu", "uid": "04a1b2c3", "bambu": None},
+         "uid:04A1B2C3"),
+        ({"format": "spoolman_link", "uid": "99887766", "spoolman_id": 12},
+         "uid:99887766"),
+        ({"format": "unit_summary", "uid": None,
+          "summary": {"material": "ABS"}}, None),
+        (None, None),
+    )
+
+    def test_the_interface_vectors(self):
+        for tag, key in self.VECTORS:
+            with self.subTest(tag=tag):
+                self.assertEqual(ops.spool_key(tag), key)
+
+    def test_valid_tray(self):
+        self.assertTrue(ops.valid_tray(self.TRAY))
+        self.assertTrue(ops.valid_tray(" " + self.TRAY.upper() + "\n"))
+        for bad in ("0" * 32, "f" * 32, "F" * 32, "fF" * 16, "0123",
+                    self.TRAY + "0", "g" * 32, "", None, 12345):
+            with self.subTest(bad=bad):
+                self.assertFalse(ops.valid_tray(bad))
+
+    def test_the_hosts_key_and_uids_are_used_when_published(self):
+        tag = {"format": "bambu", "uid": "04a1b2c3", "bambu": None,
+               "spool_key": "bambu:" + self.TRAY,
+               "uids": ["11aa22bb", "04A1B2C3"]}
+        self.assertEqual(ops.tag_key(tag), "bambu:" + self.TRAY)
+        self.assertEqual(ops.tag_uids(tag), ["11AA22BB", "04A1B2C3"])
+        # Without them, both are computed from the tag.
+        bare = {"format": "bambu", "uid": "04a1b2c3", "bambu": None}
+        self.assertEqual(ops.tag_key(bare), "uid:04A1B2C3")
+        self.assertEqual(ops.tag_uids(bare), ["04A1B2C3"])
+        self.assertEqual(ops.tag_key({"format": "unit_summary", "uid": None,
+                                      "spool_key": None}), None)
+
+    def test_a_tag_is_decoded_only_with_bambu_content(self):
+        self.assertTrue(ops.tag_decoded(bambu_tag()))
+        for tag in ({"format": "bambu", "uid": "AA", "bambu": None},
+                    {"format": "bambu", "uid": "AA", "bambu": {}},
+                    {"format": "unknown", "uid": "AA", "bambu": None}):
+            self.assertFalse(ops.tag_decoded(tag))
+
+
+def tagged(spool_id, uids=None, tray=None, **fields):
+    extra = {}
+    if uids is not None:
+        extra["card_uids"] = ops.encode_extra(uids)
+    if tray is not None:
+        extra["tray_uid"] = ops.encode_extra(tray)
+    return dict({"id": spool_id, "extra": extra, "location": ""}, **fields)
+
+
+class MatchTagTest(unittest.TestCase):
+    """The resolution order of C4 §4.2 (``ops.match_tag``)."""
+
+    TRAY = "00ff11ee22dd33cc44bb55aa66997788"
+
+    def test_the_read_uid_then_the_tray_then_a_sibling(self):
+        by_uid = tagged(1, uids="A1B2C3D4")
+        by_tray = tagged(2, tray=self.TRAY)
+        sibling = tagged(3, uids="11AA22BB")
+        tag = dict(bambu_tag(), uids=["A1B2C3D4", "11AA22BB"])
+        self.assertEqual(ops.match_tag(tag, [sibling, by_tray, by_uid]),
+                         (by_uid, "uid"))
+        self.assertEqual(ops.match_tag(tag, [sibling, by_tray]),
+                         (by_tray, "tray"))
+        self.assertEqual(ops.match_tag(tag, [sibling]), (sibling, "sibling"))
+        self.assertEqual(ops.match_tag(tag, []), (None, None))
+
+    def test_a_tray_uid_matches_in_any_case_and_trimmed(self):
+        stored = tagged(5, tray="  " + self.TRAY.upper() + " ")
+        self.assertEqual(ops.match_tag(bambu_tag(), [stored])[0], stored)
+        tag = bambu_tag(tray_uid=" " + self.TRAY.upper())
+        self.assertEqual(ops.match_tag(tag, [tagged(6, tray=self.TRAY)])[0]
+                         ["id"], 6)
+
+    def test_a_blank_tray_never_matches(self):
+        for blank in ("0" * 32, "f" * 32, "F" * 32):
+            spools = [tagged(1, tray=blank), tagged(2, tray=self.TRAY)]
+            tag = bambu_tag(tray_uid=blank)
+            self.assertEqual(ops.match_tag(tag, spools), (None, None))
+
+    def test_a_sibling_on_a_spool_of_another_tray_or_a_shared_key_is_not(self):
+        other = tagged(3, uids="11AA22BB", tray="1" * 32)
+        tag = dict(bambu_tag(), uids=["A1B2C3D4", "11AA22BB"])
+        self.assertEqual(ops.match_tag(tag, [other]), (None, None))
+        mine = tagged(4, uids="11AA22BB")
+        self.assertEqual(
+            ops.match_tag(dict(tag, shared_identity=True), [mine]),
+            (None, None))
+
+    def test_tag_extra_adds_the_uid_and_backfills_normalised(self):
+        spool = tagged(1, uids="a1b2c3d4", tray=None)
+        extra = ops.tag_extra(spool, "11aa22bb", self.TRAY.upper())
+        self.assertEqual(ops.decode_extra(extra["card_uids"]),
+                         "11AA22BB,A1B2C3D4")
+        self.assertEqual(ops.decode_extra(extra["tray_uid"]), self.TRAY)
+        # Nothing new: no write.
+        done = tagged(1, uids="A1B2C3D4,11AA22BB", tray=self.TRAY)
+        self.assertIsNone(ops.tag_extra(done, "11AA22BB", self.TRAY))
+        # A spool that has a tray UUID keeps it.
+        own = tagged(1, uids="A1B2C3D4", tray="1" * 32)
+        extra = ops.tag_extra(own, "11AA22BB", self.TRAY)
+        self.assertEqual(ops.decode_extra(extra["tray_uid"]), "1" * 32)
+
+    def test_create_spool_writes_only_a_valid_tray(self):
+        api = A.FakeSpoolman()
+        vendor = run(ops.get_or_create_vendor(api, "Bambu Lab"))
+        filament = run(ops.find_or_create_filament(api, vendor["id"],
+                                                   bambu_tag()["bambu"]))
+        blank = run(ops.create_spool(api, filament["id"],
+                                     bambu_tag(tray_uid="0" * 32), "oams1-0"))
+        self.assertNotIn("tray_uid", blank["extra"])
+        upper = run(ops.create_spool(api, filament["id"],
+                                     bambu_tag(tray_uid=self.TRAY.upper()),
+                                     "oams1-1"))
+        self.assertEqual(spool_extra(upper)["tray_uid"], self.TRAY)
+
+
+class LegacyAndDuplicatesTest(unittest.TestCase):
+    """The legacy check (C4 §4.2 step 6), the duplicates report and the merge
+    plan (C4 §9.2)."""
+
+    TRAY = "00ff11ee22dd33cc44bb55aa66997788"
+
+    def filament(self, vendor="Bambu Lab", material="PLA", name="PLA Basic",
+                 color_hex="0a2989"):
+        return {"name": name, "material": material, "color_hex": color_hex,
+                "vendor": {"name": vendor}}
+
+    def test_a_legacy_spool_is_found_by_filament(self):
+        legacy = tagged(1, uids="11AA22BB", filament=self.filament())
+        found = ops.legacy_spools([legacy], bambu_tag(), "oams1-0")
+        self.assertEqual(found, [legacy])
+
+    def test_what_is_not_a_legacy_spool(self):
+        cases = {
+            "has a tray": tagged(1, uids="11AA22BB", tray="1" * 32,
+                                 filament=self.filament()),
+            "no uid": tagged(2, filament=self.filament()),
+            "another bay": tagged(3, uids="11AA22BB", location="oams1-3",
+                                  filament=self.filament()),
+            "archived": tagged(4, uids="11AA22BB", archived=True,
+                               filament=self.filament()),
+            "colour": tagged(5, uids="11AA22BB",
+                             filament=self.filament(color_hex="000000")),
+            "vendor": tagged(6, uids="11AA22BB",
+                             filament=self.filament(vendor="Polymaker")),
+            "name": tagged(7, uids="11AA22BB",
+                           filament=self.filament(name="PLA Matte")),
+        }
+        for reason, spool in cases.items():
+            with self.subTest(reason=reason):
+                self.assertEqual(
+                    ops.legacy_spools([spool], bambu_tag(), "oams1-0"), [])
+        here = tagged(8, uids="11AA22BB", location="oams1-0",
+                      filament=self.filament())
+        self.assertEqual(ops.legacy_spools([here], bambu_tag(), "oams1-0"),
+                         [here])
+        self.assertEqual(ops.legacy_spools([here], bambu_tag(), "oams1-0",
+                                           excluded={8}), [])
+
+    def test_duplicate_pairs(self):
+        spools = [tagged(1, uids="AA", tray=self.TRAY),
+                  tagged(2, uids="BB", tray=self.TRAY.upper()),
+                  tagged(3, uids="AA,CC"),
+                  tagged(4, uids="CC", archived=True),
+                  tagged(5, tray="0" * 32), tagged(6, tray="0" * 32)]
+        self.assertEqual(ops.duplicate_pairs(spools), [
+            {"spools": [1, 2], "reason": "shared_tray",
+             "tray_uid": self.TRAY, "uid": None},
+            {"spools": [1, 3], "reason": "shared_uid", "tray_uid": None,
+             "uid": "AA"}])
+
+    def test_tag_gaps(self):
+        enc = ops.encode_extra
+        spools = [
+            {"id": 1, "extra": {"card_uids": enc("AA")}},
+            {"id": 2, "extra": {"card_uids": enc("BB"),
+                                "tray_uid": enc("ab" * 16)}},
+            {"id": 3, "extra": {"card_uids": enc("CC"),
+                                "tray_uid": enc("0" * 32)}},
+            {"id": 4, "extra": {"tray_uid": enc("nonsense")}},
+            {"id": 5, "extra": {}},
+            {"id": 6, "archived": True, "extra": {"card_uids": enc("DD")}},
+        ]
+        self.assertEqual(ops.tag_gaps(spools),
+                         {"without_tray": [1], "invalid_tray": [3, 4]})
+
+    def test_merge_plan(self):
+        keep = tagged(1, uids="AA")
+        other = tagged(2, uids="BB", tray=self.TRAY)
+        self.assertEqual(ops.merge_plan(keep, other),
+                         {"card_uids": ["AA", "BB"], "tray_uid": self.TRAY})
+        with self.assertRaises(ValueError):
+            ops.merge_plan(tagged(1, tray="1" * 32), other)
+
+    def test_find_archived(self):
+        api = A.FakeSpoolman()
+        vendor = run(ops.get_or_create_vendor(api, "Bambu Lab"))
+        filament = run(ops.find_or_create_filament(api, vendor["id"],
+                                                   bambu_tag()["bambu"]))
+        spool = run(ops.create_spool(api, filament["id"], bambu_tag(), ""))
+        self.assertIsNone(run(ops.find_archived(api, bambu_tag())))
+        run(api.request("PATCH", "/v1/spool/%d" % spool["id"],
+                        body={"archived": True}))
+        self.assertEqual(run(api.request("GET", "/v1/spool")), [])
+        self.assertEqual(run(ops.find_archived(api, bambu_tag()))["id"],
+                         spool["id"])
+
+
 class FailureTest(unittest.TestCase):
     def test_offline_spoolman_raises_unavailable(self):
         fake = A.FakeSpoolman()

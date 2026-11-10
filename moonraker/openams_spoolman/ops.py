@@ -228,6 +228,323 @@ def _split_uids(value):
     return [str(item).strip().upper() for item in items if str(item).strip()]
 
 
+# ------------------------------------------------ two-tag identity (C4 §4.3)
+#
+# ``valid_tray`` and ``spool_key`` are a copy of ``src/tag_codec.py``'s, with
+# the same behaviour (the two-tag interfaces, §1): the host, the display and
+# this component derive the same spool identity from one tag, with no registry.
+
+_HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
+
+
+def valid_tray(value):
+    """Whether ``value`` is a usable Bambu tray UUID: a string of exactly 32
+    hex digits once trimmed, not all ``0`` and not all ``f``/``F``. A blank
+    block 9 (all zero or all F) would otherwise make every such tag the same
+    spool."""
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if len(text) != 32 or any(char not in _HEX_DIGITS for char in text):
+        return False
+    text = text.lower()
+    return text != "0" * 32 and text != "f" * 32
+
+
+def spool_key(tag):
+    """The spool a tag belongs to: ``bambu:<tray UUID>`` (lower case) for a
+    Bambu tag with a valid tray UUID, shared by both tags of one spool; else
+    ``uid:<UID>`` (upper case); else None (a ``unit_summary`` has no UID)."""
+    if not isinstance(tag, dict):
+        return None
+    if tag.get("format") == "bambu":
+        bambu = tag.get("bambu")
+        tray = bambu.get("tray_uid") if isinstance(bambu, dict) else None
+        if valid_tray(tray):
+            return "bambu:" + tray.strip().lower()
+    uid = tag.get("uid")
+    if uid is not None and str(uid).strip():
+        return "uid:" + str(uid).strip().upper()
+    return None
+
+
+def tag_key(tag):
+    """The tag's spool key: the host's ``spool_key`` when it publishes one
+    (C2, additive), else computed by ``spool_key``."""
+    key = tag.get("spool_key") if isinstance(tag, dict) else None
+    if isinstance(key, str) and key.strip():
+        return key.strip()
+    return spool_key(tag)
+
+
+def tag_uids(tag):
+    """The tag's UIDs in upper case, the one read on this bay first: the
+    host's ``uids`` when it publishes them (every UID it knows for the spool
+    key, the read one first), else the read ``uid`` alone. A ``uid`` the
+    host list lacks comes after it."""
+    if not isinstance(tag, dict):
+        return []
+    uids = []
+    host = tag.get("uids")
+    for uid in (host if isinstance(host, (list, tuple)) else []):
+        value = str(uid or "").strip().upper()
+        if value and value not in uids:
+            uids.append(value)
+    read = str(tag.get("uid") or "").strip().upper()
+    if read and read not in uids:
+        uids.append(read)
+    return uids
+
+
+def tag_tray(tag):
+    """The tag's tray UUID, trimmed and lower case, or None when the tag is
+    not a decoded Bambu tag or the tray UUID is not valid."""
+    if not isinstance(tag, dict) or tag.get("format") != "bambu":
+        return None
+    bambu = tag.get("bambu")
+    tray = bambu.get("tray_uid") if isinstance(bambu, dict) else None
+    return tray.strip().lower() if valid_tray(tray) else None
+
+
+def tag_decoded(tag):
+    """Whether a tag carries decoded Bambu content to create a spool from. A
+    tag seen while passing the reader is attributed by its UID before it is
+    decoded (``bambu`` null or empty): nothing is ever created from it."""
+    if not isinstance(tag, dict) or tag.get("format") != "bambu":
+        return False
+    bambu = tag.get("bambu")
+    return isinstance(bambu, dict) and \
+        any(value not in (None, "") for value in bambu.values())
+
+
+def spool_uids(spool):
+    """A spool's ``card_uids`` as a list of upper-case UIDs."""
+    extra = (spool or {}).get("extra") or {}
+    return _split_uids(decode_extra(extra.get("card_uids")))
+
+
+def spool_tray(spool):
+    """A spool's ``tray_uid``, trimmed and lower case, or None when it has
+    none or the value is not a valid tray UUID (blank or malformed)."""
+    extra = (spool or {}).get("extra") or {}
+    tray = decode_extra(extra.get("tray_uid"))
+    return tray.strip().lower() if valid_tray(tray) else None
+
+
+def match_tag(tag, spools):
+    """The spool a tag belongs to, by the resolution order of C4 §4.2:
+    ``(spool, how)``, or ``(None, None)``.
+
+    1. ``uid``: a spool whose ``card_uids`` lists the UID read on the bay. A
+       UID a person put on a spool wins, which keeps two clones apart.
+    2. ``tray``: a spool whose ``tray_uid`` is the tag's tray UUID, compared
+       trimmed and in any case, and only for a valid tray UUID.
+    3. ``sibling``: a spool whose ``card_uids`` lists another UID the host
+       publishes for this spool key (``tag.uids``), when that spool has no
+       other tray UUID and the host does not report two bays sharing the key.
+    """
+    live = [spool for spool in spools or []
+            if isinstance(spool, dict) and spool.get("id") is not None]
+    uids = tag_uids(tag)
+    tray = tag_tray(tag)
+    if uids:
+        for spool in live:
+            if uids[0] in spool_uids(spool):
+                return spool, "uid"
+    if tray:
+        for spool in live:
+            if spool_tray(spool) == tray:
+                return spool, "tray"
+    if not (tag or {}).get("shared_identity"):
+        for uid in uids[1:]:
+            for spool in live:
+                if uid in spool_uids(spool) and \
+                        spool_tray(spool) in (None, tray):
+                    return spool, "sibling"
+    return None, None
+
+
+def tray_holder(spools, tray, other_than=None):
+    """The first spool (not ``other_than``) whose tray UUID is ``tray``."""
+    if not tray:
+        return None
+    for spool in spools or []:
+        if isinstance(spool, dict) and spool.get("id") is not None \
+                and spool.get("id") != other_than \
+                and spool_tray(spool) == tray:
+            return spool
+    return None
+
+
+def tag_extra(spool, uid=None, tray=None):
+    """The spool's whole ``extra`` with ``uid`` added to ``card_uids`` and
+    ``tray`` written as ``tray_uid`` when the spool has none (C4 §4.2 step 4),
+    or None when neither is new. A write normalises both values: UIDs upper
+    case, sorted, comma separated; the tray UUID lower case."""
+    extra = dict((spool or {}).get("extra") or {})
+    uids = spool_uids(spool)
+    own = spool_tray(spool)
+    value = str(uid or "").strip().upper()
+    add_uid = bool(value) and value not in uids
+    add_tray = bool(tray) and own is None
+    if not add_uid and not add_tray:
+        return None
+    if add_uid:
+        uids.append(value)
+    extra["card_uids"] = encode_extra(",".join(sorted(set(uids))))
+    tray_value = tray if add_tray else own
+    if tray_value:
+        extra["tray_uid"] = encode_extra(tray_value.strip().lower())
+    return extra
+
+
+def _same_text(first, second):
+    return str(first or "").strip().lower() == \
+        str(second or "").strip().lower()
+
+
+def filament_matches_tag(spool, bambu, vendor_name=BAMBU_VENDOR):
+    """Whether a spool's filament is the one a Bambu tag decodes to, as §5.4
+    finds it: vendor (the ``tag_vendor`` option), material, name
+    (``detailed``) and colour. Text is compared trimmed and in any case."""
+    filament = (spool or {}).get("filament") or {}
+    vendor = (filament.get("vendor") or {}).get("name")
+    if not _same_text(vendor, vendor_name):
+        return False
+    if not same_material(filament.get("material"), bambu.get("type")):
+        return False
+    if not _same_text(filament.get("name"), bambu.get("detailed")):
+        return False
+    color_hex = "%06X" % (int(bambu.get("color_argb") or 0) & 0xFFFFFF)
+    return str(filament.get("color_hex") or "").strip().upper() == color_hex
+
+
+def legacy_spools(spools, tag, bay_key, excluded=(),
+                  vendor_name=BAMBU_VENDOR):
+    """The spools a decoded tag may be the *other* tag of (C4 §4.2 step 6):
+    not archived, not linked to another bay, with the tag's filament, at least
+    one ``card_uids`` entry, no tray UUID, and no location or this bay's.
+    Such a spool was made from its other tag by a tool that keeps no tray
+    UUID (AFC, by hand): it is suggested, never linked or merged silently."""
+    bambu = (tag or {}).get("bambu")
+    if not isinstance(bambu, dict):
+        return []
+    found = []
+    for spool in spools or []:
+        if not isinstance(spool, dict) or spool.get("id") is None \
+                or spool.get("archived") or spool.get("id") in excluded:
+            continue
+        if not spool_uids(spool) or spool_tray(spool) is not None:
+            continue
+        location = str(spool.get("location") or "").strip()
+        if location and location != bay_key:
+            continue
+        if filament_matches_tag(spool, bambu, vendor_name):
+            found.append(spool)
+    return found
+
+
+async def find_archived(api, tag):
+    """An archived spool the tag belongs to, by ``match_tag``'s order, or
+    None (C4 §4.2 step 5): ``GET /v1/spool`` leaves archived spools out, so a
+    finished spool put back in a bay would otherwise be created again."""
+    spools = await api.request("GET", "/v1/spool",
+                               query={"allow_archived": "true"}) or []
+    archived = [spool for spool in spools
+                if isinstance(spool, dict) and spool.get("archived")]
+    return match_tag(tag, archived)[0]
+
+
+def duplicate_pairs(spools):
+    """Spools that claim one identity (C4 §9.2): two that hold one tray UUID
+    (``shared_tray``), or that list one tag UID (``shared_uid``). Archived
+    spools are left out. Each unordered pair once, the first reason wins."""
+    live = [spool for spool in spools or []
+            if isinstance(spool, dict) and spool.get("id") is not None
+            and not spool.get("archived")]
+    pairs, seen = [], set()
+
+    def add(first, second, reason, tray=None, uid=None):
+        pair = frozenset((first, second))
+        if first == second or pair in seen:
+            return
+        seen.add(pair)
+        pairs.append({"spools": [first, second], "reason": reason,
+                      "tray_uid": tray, "uid": uid})
+
+    trays, uids = {}, {}
+    for spool in live:
+        tray = spool_tray(spool)
+        if tray:
+            trays.setdefault(tray, []).append(spool["id"])
+        for uid in spool_uids(spool):
+            if spool["id"] not in uids.setdefault(uid, []):
+                uids[uid].append(spool["id"])
+    for tray, ids in trays.items():
+        for other in ids[1:]:
+            add(ids[0], other, "shared_tray", tray=tray)
+    for uid, ids in uids.items():
+        for other in ids[1:]:
+            add(ids[0], other, "shared_uid", uid=uid)
+    return pairs
+
+
+def tag_gaps(spools):
+    """The spools whose tag identity is incomplete (C4 §9.2), archived ones
+    left out: ``without_tray`` lists a tag UID but holds no tray UUID (made
+    from one tag by a tool that keeps none: the next read of that tag
+    completes it, and until then its other tag is only suggested);
+    ``invalid_tray`` holds a ``tray_uid`` that is not a tray UUID (blank or
+    malformed: it never matches a tag). Spool ids, in Spoolman's order."""
+    without, invalid = [], []
+    for spool in spools or []:
+        if not isinstance(spool, dict) or spool.get("id") is None \
+                or spool.get("archived"):
+            continue
+        raw = decode_extra(((spool.get("extra") or {}).get("tray_uid")))
+        if spool_tray(spool) is None:
+            if raw not in (None, "") and str(raw).strip():
+                invalid.append(spool["id"])
+            elif spool_uids(spool):
+                without.append(spool["id"])
+    return {"without_tray": without, "invalid_tray": invalid}
+
+
+def merge_plan(keep, other):
+    """What merging spool ``other`` into ``keep`` writes (C4 §9.2): the union
+    of both ``card_uids`` and the one tray UUID. Raises ValueError when they
+    hold two different tray UUIDs: they are then two spools, not one."""
+    keep_tray, other_tray = spool_tray(keep), spool_tray(other)
+    if keep_tray and other_tray and keep_tray != other_tray:
+        raise ValueError("spools %s and %s hold different tray UIDs; they "
+                         "are two spools" % (keep.get("id"), other.get("id")))
+    return {"card_uids": sorted(set(spool_uids(keep)) |
+                                set(spool_uids(other))),
+            "tray_uid": keep_tray or other_tray}
+
+
+async def merge_spools(api, keep, other, plan):
+    """Write a merge (C4 §9.2): the kept spool first gets every UID and the
+    tray UUID, then the other is archived with its ``card_uids``,
+    ``tray_uid`` and ``location`` cleared, so an archived spool never claims
+    a tag. Kept first: a failure half way leaves both listing the UIDs, which
+    the duplicates report shows and a second merge finishes. Returns both
+    spools as Spoolman now holds them."""
+    extra = dict(keep.get("extra") or {})
+    extra["card_uids"] = encode_extra(",".join(plan["card_uids"]))
+    if plan.get("tray_uid"):
+        extra["tray_uid"] = encode_extra(plan["tray_uid"])
+    kept = await api.request("PATCH", "/v1/spool/%d" % keep["id"],
+                             body={"extra": extra})
+    cleared = dict(other.get("extra") or {})
+    cleared["card_uids"] = encode_extra("")
+    cleared["tray_uid"] = encode_extra("")
+    archived = await api.request(
+        "PATCH", "/v1/spool/%d" % other["id"],
+        body={"archived": True, "location": "", "extra": cleared})
+    return kept, archived
+
+
 async def ensure_fields(api):
     """POST the extra fields Spoolman does not have yet (C4 §5.2).
 
@@ -380,11 +697,16 @@ async def create_spool(api, filament_id, tag, location):
         "initial_weight": weight,
         "remaining_weight": weight})
     extra = {}
-    if bambu.get("tray_uid"):
-        extra["tray_uid"] = encode_extra(bambu["tray_uid"])
-    uid = str(tag.get("uid") or "").strip().upper()
-    if uid:
-        extra["card_uids"] = encode_extra(uid)
+    tray = tag_tray(tag)
+    if tray:
+        # Only a valid tray UUID, normalised: a blank one would make the
+        # spool claim every tag with a blank block 9 (C4 §4.2).
+        extra["tray_uid"] = encode_extra(tray)
+    uids = tag_uids(tag)
+    if uids:
+        # The UID read on the bay only: another UID the host knows for the
+        # key may be a clone's (C4 §4.2).
+        extra["card_uids"] = encode_extra(uids[0])
     body = {"location": location or ""}
     lot_nr = normalize_lot(bambu.get("production"))
     if lot_nr:
@@ -395,26 +717,16 @@ async def create_spool(api, filament_id, tag, location):
 
 
 async def find_spool_by_tag(api, tag, spools=None):
-    """The spool a Bambu tag belongs to (C4 §4): a spool that lists the tag's
-    UID in ``card_uids`` first, then the one with its ``tray_uid``.
+    """The spool a tag belongs to (C4 §4.2), by ``match_tag``'s order: a spool
+    that lists the tag's UID in ``card_uids`` first, then the one with its
+    valid tray UUID (any case, trimmed), then one that lists a sibling UID.
 
     A UID somebody put on a spool is a deliberate choice; a tray UID is shared
     by every clone of one tag dump and by both tags of one genuine spool.
     """
     if spools is None:
         spools = await api.request("GET", "/v1/spool") or []
-    uid = str(tag.get("uid") or "").strip().upper()
-    if uid:
-        for spool in spools:
-            extra = spool.get("extra") or {}
-            if uid in _split_uids(decode_extra(extra.get("card_uids"))):
-                return spool
-    tray_uid = (tag.get("bambu") or {}).get("tray_uid")
-    if tray_uid:
-        for spool in spools:
-            if decode_extra((spool.get("extra") or {}).get("tray_uid")) == tray_uid:
-                return spool
-    return None
+    return match_tag(tag, spools)[0]
 
 
 async def add_card_uid(api, spool, uid):

@@ -38,7 +38,8 @@
       "sp": {
         "id": 12,
         "src": "t"
-      }
+      },
+      "tg": "a"
     },
     {
       "id": 1,
@@ -48,14 +49,22 @@
       "sp": {
         "id": 15,
         "src": "m"
-      }
+      },
+      "tg": "u"
     },
     {
       "id": 2,
       "s": "r",
       "cal": "c",
       "a": "a",
-      "sp": null
+      "sp": null,
+      "tg": "c",
+      "tc": [
+        {
+          "m": "PETG",
+          "c": "1C1C1C"
+        }
+      ]
     },
     {
       "id": 3,
@@ -89,5 +98,7 @@
   "dryer": null,
   "fault": null,
   "nf": 0,
-  "act": []
+  "act": [
+    "rfid_scan"
+  ]
 }

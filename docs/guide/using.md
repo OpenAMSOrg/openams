@@ -227,6 +227,15 @@ none, to create one. It never changes a spool Spoolman already has.
   dump all share it, and so does a spool OpenAMS created from an earlier read).
   The tray UID is only the fallback, and it is what lets both tags of one
   genuine spool find the same spool.
+- **Both tags of a Bambu spool are one spool.** Whichever tag the reader sees,
+  the same Spoolman spool is linked, its other UID is added, and moving or
+  flipping the spool keeps its weight without asking. A spool another tool made
+  from one tag is offered as a suggestion ("Same spool as #12?") instead of a
+  second spool, and an archived spool is offered for restoring. Two spools
+  already made for one spool's two tags are listed by
+  `GET /server/openams_spoolman/duplicates` and merged only when you confirm
+  (`POST /server/openams_spoolman/merge` with `keep`, `merge` and
+  `confirm: true`; see [C4 §9.2](../contracts/C4_spool_linking.md)).
 - **Your edits show.** Change a spool, its filament, or the filament's vendor,
   color or material in Spoolman's own web page, or in the spool editor. The
   editor shows at once; Spoolman's page is re-read about once a minute while

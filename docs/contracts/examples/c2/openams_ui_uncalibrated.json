@@ -66,5 +66,7 @@
   "dryer": null,
   "fault": null,
   "nf": 0,
-  "act": []
+  "act": [
+    "rfid_scan"
+  ]
 }

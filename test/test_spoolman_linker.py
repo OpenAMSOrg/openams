@@ -269,8 +269,8 @@ class KnownSpoolTest(unittest.TestCase):
 
     def test_a_different_uid_is_a_new_physical_spool(self):
         h = Harness().start()
-        first = h.make_spool({"tray_uid": ops.encode_extra("0" * 32)})
-        h.send([bay(tag=bambu_tag(bambu={"tray_uid": "0" * 32}))])
+        first = h.make_spool({"tray_uid": ops.encode_extra("2" * 32)})
+        h.send([bay(tag=bambu_tag(bambu={"tray_uid": "2" * 32}))])
         self.assertEqual(h.bay()["spool_id"], first["id"])
         h.send([bay(tag=bambu_tag(uid="cafebabe", read_at=2.0,
                                   bambu={"tray_uid": "1" * 32}))])
@@ -279,8 +279,8 @@ class KnownSpoolTest(unittest.TestCase):
 
     def test_relinking_by_tag_clears_the_old_spools_location(self):
         h = Harness().start()
-        first = h.make_spool({"tray_uid": ops.encode_extra("0" * 32)})
-        h.send([bay(tag=bambu_tag(bambu={"tray_uid": "0" * 32}))])
+        first = h.make_spool({"tray_uid": ops.encode_extra("2" * 32)})
+        h.send([bay(tag=bambu_tag(bambu={"tray_uid": "2" * 32}))])
         self.assertEqual(h.bay()["spool_id"], first["id"])
         self.assertEqual(h.get_spool(first["id"])["location"], "oams1-0")
 
@@ -865,6 +865,567 @@ class SpoolmanWinsTest(unittest.TestCase):
         run(self.h.linker.refresh_linked())
         self.assertEqual([c[:2] for c in self.h.api.calls],
                          [("GET", "/v1/spool")])
+
+
+TRAY = BAMBU["tray_uid"]
+
+
+def sibling_tag(uid, read_at=1.0, others=(), bambu=None, **fields):
+    """A decoded tag as the two-tag host publishes it: ``spool_key`` and
+    ``uids`` (the read one first)."""
+    tag = bambu_tag(uid=uid, read_at=read_at, bambu=bambu)
+    tag["spool_key"] = ops.spool_key(tag)
+    tag["uids"] = [uid.upper()] + [other.upper() for other in others]
+    tag.update(fields)
+    return tag
+
+
+def bare_tag(uid, read_at=1.0):
+    """A tag attributed by its UID before it was decoded (C4 §4.2 step 8)."""
+    return {"uid": uid, "format": "bambu", "read_at": read_at,
+            "spoolman_id": None, "bambu": None}
+
+
+def legacy_spool(h, uids="04A1B2C3", location="", vendor="Bambu Lab",
+                 name="PETG HF", color_hex="000000"):
+    """A spool another tool made from one tag: card_uids, no tray_uid."""
+    async def build():
+        found = await h.api.request("GET", "/v1/vendor",
+                                    query={"name": vendor})
+        maker = found[0] if found else await h.api.request(
+            "POST", "/v1/vendor", body={"name": vendor})
+        filament = await h.api.request(
+            "POST", "/v1/filament",
+            body={"name": name, "vendor_id": maker["id"], "material": "PETG",
+                  "color_hex": color_hex})
+        spool = await h.api.request(
+            "POST", "/v1/spool", body={"filament_id": filament["id"],
+                                       "initial_weight": 1000,
+                                       "remaining_weight": 640})
+        return await h.api.request(
+            "PATCH", "/v1/spool/%d" % spool["id"],
+            body={"location": location,
+                  "extra": {"card_uids": ops.encode_extra(uids)}})
+    return run(build())
+
+
+def extras(h, spool_id):
+    spool = [s for s in h.api.spools if s["id"] == spool_id][0]
+    return dict((key, ops.decode_extra(value))
+                for key, value in spool["extra"].items())
+
+
+class TwoTagsOneSpoolTest(unittest.TestCase):
+    """Both tags of one Bambu spool are one Spoolman spool (C4 §4.2-§4.4)."""
+
+    def test_the_second_tag_read_first_and_later_is_never_a_second_spool(self):
+        h = Harness().start()
+        # Tag B is read first: it creates the spool, with the tray UUID.
+        h.send([bay(tag=bambu_tag(uid="11223344"))])
+        spool_id = h.bay()["spool_id"]
+        self.assertEqual(h.bay()["state"], "pending_confirmation")
+        run(h.linker.confirm("oams1-0", 600))
+        h.send([bay(ready=False, spool_id=spool_id, link_source="tag")])
+        # Tag A, later, in another bay: the same spool, no confirmation.
+        h.send([bay(ready=False),
+                bay(tag=bambu_tag(uid="04a1b2c3", read_at=2.0))])
+        self.assertEqual(h.bay("oams1-1")["spool_id"], spool_id)
+        self.assertEqual(h.bay("oams1-1")["state"], "linked")
+        # And B again, back in the first bay.
+        h.send([bay(tag=bambu_tag(uid="11223344", read_at=3.0)),
+                bay(ready=False, spool_id=spool_id, link_source="tag")])
+        self.assertEqual(h.bay()["spool_id"], spool_id)
+        self.assertEqual(len(h.spools()), 1)
+        self.assertEqual(extras(h, spool_id)["card_uids"], "04A1B2C3,11223344")
+        self.assertEqual(h.get_spool(spool_id)["remaining_weight"], 600)
+
+    def test_a_flip_relinks_the_same_spool_and_keeps_its_weight(self):
+        h = Harness().start()
+        h.send([bay(tag=bambu_tag())])
+        spool_id = h.bay()["spool_id"]
+        run(h.linker.confirm("oams1-0", 420))
+        linked = dict(spool_id=spool_id, link_source="tag")
+        h.send([bay(tag=bambu_tag(), **linked)])
+        h.send([bay(ready=False, **linked)])           # lifted out: unlinked
+        self.assertEqual(h.get_spool(spool_id)["location"], "")
+        h.sent.clear()
+        # Put back the other way round: the reader sees the sibling.
+        h.send([bay(tag=sibling_tag("55667788", read_at=4.0,
+                                    others=["04a1b2c3"]))])
+        self.assertEqual(h.bay()["state"], "linked")
+        self.assertEqual(h.bay()["spool_id"], spool_id)
+        self.assertEqual(h.get_spool(spool_id)["location"], "oams1-0")
+        self.assertEqual(h.get_spool(spool_id)["remaining_weight"], 420)
+        self.assertEqual(len(h.spools()), 1)
+
+    def test_a_spool_found_by_uid_gets_its_tray_uuid_backfilled(self):
+        h = Harness().start()
+        known = h.make_spool({"card_uids": ops.encode_extra("04A1B2C3")})
+        h.send([bay(tag=bambu_tag())])
+        self.assertEqual(h.bay()["spool_id"], known["id"])
+        self.assertEqual(h.bay()["state"], "linked")
+        self.assertEqual(extras(h, known["id"])["tray_uid"], TRAY)
+        # From now on the other tag finds it by the tray UUID.
+        h.send([bay(ready=False), bay(tag=bambu_tag(uid="99aabbcc",
+                                                    read_at=2.0))])
+        self.assertEqual(h.bay("oams1-1")["spool_id"], known["id"])
+        self.assertEqual(len(h.spools()), 1)
+
+    def test_a_tray_uuid_stored_in_another_case_matches(self):
+        h = Harness().start()
+        stored = h.make_spool({"tray_uid": ops.encode_extra(
+            " " + TRAY.upper() + " ")})
+        h.send([bay(tag=bambu_tag(uid="cafebabe"))])
+        self.assertEqual(h.bay()["spool_id"], stored["id"])
+        self.assertEqual(h.bay()["state"], "linked")
+        self.assertEqual(len(h.spools()), 1)
+        # The tag in upper case too.
+        h.send([bay(ready=False), bay(tag=bambu_tag(
+            uid="deadbeef", read_at=2.0, bambu={"tray_uid": TRAY.upper()}))])
+        self.assertEqual(h.bay("oams1-1")["spool_id"], stored["id"])
+        self.assertEqual(len(h.spools()), 1)
+
+    def test_a_blank_tray_uuid_never_matches_another_spool(self):
+        h = Harness().start()
+        for blank in ("0" * 32, "f" * 32):
+            h.make_spool({"tray_uid": ops.encode_extra(blank)})
+        h.send([bay(tag=bambu_tag(uid="0a0a0a0a",
+                                  bambu={"tray_uid": "0" * 32})),
+                bay(tag=bambu_tag(uid="0b0b0b0b",
+                                  bambu={"tray_uid": "F" * 32}))])
+        first, second = h.bay()["spool_id"], h.bay("oams1-1")["spool_id"]
+        self.assertNotIn(first, (1, 2))
+        self.assertNotIn(second, (1, 2, first))
+        self.assertEqual(h.bay()["state"], "pending_confirmation")
+        # A created spool carries no blank tray UUID.
+        self.assertNotIn("tray_uid", extras(h, first))
+        self.assertEqual(extras(h, first)["card_uids"], "0A0A0A0A")
+
+    def test_only_the_uid_read_on_the_bay_is_written(self):
+        h = Harness().start()
+        h.send([bay(tag=sibling_tag("04a1b2c3", others=["0c0c0c0c"]))])
+        self.assertEqual(extras(h, h.bay()["spool_id"])["card_uids"],
+                         "04A1B2C3")
+
+
+class SiblingReadTest(unittest.TestCase):
+    """A sibling UID read on a bay that holds its spool is no new tag (C4
+    §4.2): it never overrides a manual link and never re-links."""
+
+    def test_a_sibling_on_a_manually_linked_bay_keeps_the_manual_link(self):
+        h = Harness().start()
+        tagged = h.make_spool({"tray_uid": ops.encode_extra(TRAY)})
+        manual = h.make_spool()
+        first = sibling_tag("04a1b2c3", read_at=1.0)
+        h.send([bay(tag=first, spool_id=manual["id"], link_source="manual")])
+        self.assertEqual(h.bay()["spool_id"], manual["id"])
+        # The host sees the other tag of the same spool: uids grow, read_at
+        # and the spool key stay.
+        h.send([bay(tag=sibling_tag("55667788", read_at=1.0,
+                                    others=["04a1b2c3"]),
+                    spool_id=manual["id"], link_source="manual")])
+        self.assertEqual(h.bay()["spool_id"], manual["id"])
+        self.assertEqual(h.bay()["source"], "manual")
+        self.assertEqual(h.sets(), [])
+        self.assertNotIn("card_uids", extras(h, tagged["id"]))
+        # A real re-read (a new read_at) still re-applies the tag.
+        h.send([bay(tag=sibling_tag("55667788", read_at=2.0,
+                                    others=["04a1b2c3"]),
+                    spool_id=manual["id"], link_source="manual")])
+        self.assertEqual(h.bay()["spool_id"], tagged["id"])
+
+    def test_a_sibling_on_a_tag_linked_bay_only_adds_its_uid(self):
+        h = Harness().start()
+        h.send([bay(tag=sibling_tag("04a1b2c3"))])
+        spool_id = h.bay()["spool_id"]
+        linked = dict(spool_id=spool_id, link_source="tag")
+        h.send([bay(tag=sibling_tag("04a1b2c3"), **linked)])
+        h.sent.clear()
+        h.api.calls.clear()
+        h.send([bay(tag=sibling_tag("55667788", others=["04a1b2c3"]),
+                    **linked)])
+        self.assertEqual(h.sets(), [])
+        self.assertEqual(h.bay()["state"], "pending_confirmation")
+        self.assertEqual(extras(h, spool_id)["card_uids"], "04A1B2C3,55667788")
+        location_writes = [call for call in h.api.calls
+                           if call[0] == "PATCH" and call[3]
+                           and "location" in call[3]]
+        self.assertEqual(location_writes, [])
+        # Seen once: the next pass costs nothing.
+        h.api.calls.clear()
+        h.send([bay(tag=sibling_tag("55667788", others=["04a1b2c3"]),
+                    **linked)])
+        self.assertEqual(h.api.calls, [])
+
+    def test_an_older_host_bumping_read_at_on_a_sibling_does_not_relink(self):
+        h = Harness().start()
+        h.send([bay(tag=bambu_tag())])
+        spool_id = h.bay()["spool_id"]
+        run(h.linker.confirm("oams1-0", 900))
+        linked = dict(spool_id=spool_id, link_source="tag")
+        h.send([bay(tag=bambu_tag(), **linked)])
+        h.sent.clear()
+        h.send([bay(tag=bambu_tag(uid="55667788", read_at=7.0), **linked)])
+        self.assertEqual(h.sets(), [])
+        self.assertEqual(extras(h, spool_id)["card_uids"], "04A1B2C3,55667788")
+
+
+class ActiveSpoolUntouchedTest(unittest.TestCase):
+    """A confirmation or a sibling read on the loaded bay changes no link, so
+    the active spool is not set again (C4 §4.4)."""
+
+    def test_confirmation_and_sibling_read_on_the_loaded_bay(self):
+        from openams_spoolman.active import ActiveSpool
+        h = Harness().start()
+        calls = []
+
+        async def set_active(spool_id):
+            calls.append(spool_id)
+
+        active = ActiveSpool(h.api, h._gcode, set_active)
+
+        def loaded(bays):
+            report = status(bays)
+            report["lanes_by_fps"]["fps1"].update({"op": "LOADED",
+                                                   "unit": [1, 0]})
+            return report
+
+        def send(bays):
+            report = loaded(bays)
+            run(h.linker.on_status(report))
+            run(active.on_status(report, extruder="extruder"))
+
+        send([bay(tag=sibling_tag("04a1b2c3"))])
+        spool_id = h.bay()["spool_id"]
+        linked = dict(spool_id=spool_id, link_source="tag")
+        send([bay(tag=sibling_tag("04a1b2c3"), **linked)])
+        self.assertEqual(calls, [None, spool_id])
+        run(h.linker.confirm("oams1-0", 700))
+        send([bay(tag=sibling_tag("04a1b2c3"), **linked)])
+        send([bay(tag=sibling_tag("55667788", others=["04a1b2c3"]),
+                  **linked)])
+        send([bay(tag=sibling_tag("55667788", others=["04a1b2c3"]),
+                  **linked)])
+        self.assertEqual(calls, [None, spool_id])
+
+
+class TagStateTest(unittest.TestCase):
+    """A bay whose tag is a candidate or in conflict still holds its spool
+    (C2 ``tag_state``; C4 §3): its link stays, and the tag coming back is no
+    new read."""
+
+    def test_a_candidate_after_a_host_restart_keeps_the_links(self):
+        h = Harness().start()
+        tagged = h.make_spool({"tray_uid": ops.encode_extra(TRAY)})
+        manual = h.make_spool()
+        first = sibling_tag("04a1b2c3", read_at=1.0)
+        h.send([bay(tag=first), bay(tag=bambu_tag(uid="0d0d0d0d", read_at=1.0,
+                                                  bambu={"tray_uid": "3" * 32}),
+                                    spool_id=manual["id"],
+                                    link_source="manual")])
+        self.assertEqual(h.bay()["spool_id"], tagged["id"])
+        linked = [dict(spool_id=tagged["id"], link_source="tag"),
+                  dict(spool_id=manual["id"], link_source="manual")]
+        candidate = {"state": "candidate", "reason": None, "candidates": [],
+                     "other_bay": None, "reader": 0}
+        h.sent.clear()
+        # Klipper restarted: the host restores both bays as candidates.
+        h.send([dict(bay(**linked[0]), tag_state=candidate),
+                dict(bay(**linked[1]), tag_state=candidate)])
+        self.assertEqual(h.clears(), [])
+        self.assertEqual(h.bay()["state"], "linked")
+        # Confirmed: the same tags with their read_at; nothing happens, and
+        # the manual link is not overridden.
+        attributed = dict(candidate, state="attributed")
+        h.send([dict(bay(tag=first, **linked[0]), tag_state=attributed),
+                dict(bay(tag=bambu_tag(uid="0d0d0d0d", read_at=1.0,
+                                       bambu={"tray_uid": "3" * 32}),
+                         **linked[1]), tag_state=attributed)])
+        self.assertEqual(h.sets(), [])
+        self.assertEqual(h.bay("oams1-1")["spool_id"], manual["id"])
+        self.assertEqual(h.bay("oams1-1")["source"], "manual")
+
+    def test_a_candidate_after_both_restarted_keeps_a_manual_link(self):
+        # A power cycle: the host restores the bay as a candidate of its
+        # tag and this component starts with no memory. The tag confirmed
+        # (at the first load) is no new read: the manual link stands. A
+        # different spool's tag there is a new read and takes the bay.
+        key = "bambu:" + "3" * 32
+        tag = bambu_tag(uid="0d0d0d0d", read_at=1.0,
+                        bambu={"tray_uid": "3" * 32})
+        attributed = {"state": "attributed", "reason": None,
+                      "candidates": [], "other_bay": None, "reader": 0}
+        candidate = dict(attributed, state="candidate", candidates=[
+            {"spool_key": key, "uid": "0d0d0d0d", "material": "PLA",
+             "color_argb": None}])
+        for other in (False, True):
+            with self.subTest(other=other):
+                h = Harness().start()
+                tagged = h.make_spool({"tray_uid": ops.encode_extra(TRAY)})
+                manual = h.make_spool()
+                linked = dict(spool_id=manual["id"], link_source="manual")
+                h.send([dict(bay(**linked), tag_state=candidate)])
+                self.assertEqual(h.bay()["source"], "manual")
+                h.sent.clear()
+                if other:
+                    h.send([dict(bay(tag=sibling_tag("04a1b2c3", read_at=9.0),
+                                     **linked), tag_state=attributed)])
+                    self.assertEqual(len(h.sets()), 1)
+                    self.assertIn("SPOOL=%d SOURCE=tag" % tagged["id"],
+                                  h.sets()[0])
+                else:
+                    h.send([dict(bay(tag=tag, **linked),
+                                 tag_state=attributed)])
+                    self.assertEqual(h.sets(), [])
+                    self.assertEqual(h.bay()["spool_id"], manual["id"])
+                    self.assertEqual(h.bay()["source"], "manual")
+
+    def test_an_unknown_bay_whose_tag_went_still_unlinks(self):
+        h = Harness().start()
+        h.send([bay(tag=bambu_tag())])
+        spool_id = h.bay()["spool_id"]
+        unknown = {"state": "unknown", "reason": None, "candidates": [],
+                   "other_bay": None, "reader": 0}
+        h.send([dict(bay(spool_id=spool_id, link_source="tag"),
+                     tag_state=unknown)])
+        self.assertEqual(h.clears(), ["OAMSM_CLEAR_BAY_SPOOL OAMS=oams1 BAY=0"])
+
+
+class UidOnlyTagTest(unittest.TestCase):
+    """A tag attributed before it is decoded links a known spool by its UID
+    and never creates one (C4 §4.2 step 8)."""
+
+    def test_a_known_uid_links(self):
+        h = Harness().start()
+        known = h.make_spool({"card_uids": ops.encode_extra("04A1B2C3")})
+        h.send([bay(tag=bare_tag("04a1b2c3"))])
+        self.assertEqual(h.bay()["state"], "linked")
+        self.assertEqual(h.bay()["spool_id"], known["id"])
+
+    def test_an_unknown_uid_waits_and_creates_nothing(self):
+        h = Harness().start()
+        h.send([bay(tag=bare_tag("04a1b2c3"))])
+        self.assertEqual(h.bay()["state"], "resolving")
+        self.assertIsNone(h.bay()["error"])
+        self.assertEqual(h.spools(), [])
+        self.assertEqual(h.sets(), [])
+        # Waiting costs nothing per pass.
+        h.api.calls.clear()
+        h.send([bay(tag=bare_tag("04a1b2c3"))])
+        self.assertEqual(h.api.calls, [])
+        # The decode arrives (a new spool key): now the whole order runs.
+        h.send([bay(tag=bambu_tag(read_at=1.0))])
+        self.assertEqual(h.bay()["state"], "pending_confirmation")
+        self.assertEqual(len(h.spools()), 1)
+
+    def test_a_bare_uid_does_not_unlink_a_linked_bay(self):
+        h = Harness().start()
+        h.send([bay(tag=bambu_tag())])
+        spool_id = h.bay()["spool_id"]
+        linked = dict(spool_id=spool_id, link_source="tag")
+        h.send([bay(tag=bambu_tag(), **linked)])
+        h.send([bay(tag=bare_tag("99999999", read_at=5.0), **linked)])
+        self.assertEqual(h.bay()["spool_id"], spool_id)
+        self.assertEqual(h.clears(), [])
+
+    def test_a_tag_this_host_cannot_decode_links_by_its_uid_only(self):
+        h = Harness().start()
+        known = h.make_spool({"card_uids": ops.encode_extra("A0A0A0A0")})
+        h.send([bay(tag={"uid": "a0a0a0a0", "format": "unknown",
+                         "read_at": 1.0, "spoolman_id": None, "bambu": None})])
+        self.assertEqual(h.bay()["spool_id"], known["id"])
+        h.send([bay(), bay(tag={"uid": "b0b0b0b0", "format": "unknown",
+                                "read_at": 1.0, "spoolman_id": None,
+                                "bambu": None})])
+        self.assertEqual(h.bay("oams1-1")["state"], "unlinked")
+        self.assertEqual(len(h.spools()), 1)
+
+
+class LegacySuggestionTest(unittest.TestCase):
+    """A spool made from the spool's other tag by a tool that keeps no tray
+    UUID is suggested, not duplicated (C4 §4.2 step 6, §4.5)."""
+
+    def test_the_other_tag_suggests_the_legacy_spool(self):
+        h = Harness().start()
+        legacy = legacy_spool(h, uids="04A1B2C3")
+        h.send([bay(tag=bambu_tag(uid="55667788"))])
+        b = h.bay()
+        self.assertEqual(b["state"], "unlinked")
+        self.assertEqual([s["spool_id"] for s in b["suggestions"]],
+                         [legacy["id"]])
+        self.assertIn("#%d" % legacy["id"], b["error"])
+        self.assertEqual(len(h.spools()), 1)
+        self.assertEqual(h.sets(), [])
+        if jsonschema is not None:
+            path = os.path.join(ROOT, "docs", "contracts", "schemas",
+                                "openams_spoolman_status_v1.schema.json")
+            with open(path) as handle:
+                jsonschema.validate(h.linker.status(), json.load(handle))
+
+    def test_accepting_links_it_adds_the_uid_and_backfills_the_tray(self):
+        h = Harness().start()
+        legacy = legacy_spool(h, uids="04A1B2C3")
+        t = bambu_tag(uid="55667788")
+        h.send([bay(tag=t)])
+        # The user picks the suggestion: an ordinary manual link.
+        h.send([bay(tag=t, spool_id=legacy["id"], link_source="manual")])
+        self.assertEqual(h.bay()["state"], "linked")
+        self.assertNotIn("suggestions", h.bay())
+        self.assertEqual(extras(h, legacy["id"]),
+                         {"card_uids": "04A1B2C3,55667788", "tray_uid": TRAY})
+        self.assertEqual(h.get_spool(legacy["id"])["remaining_weight"], 640)
+        # Either tag finds it from now on.
+        h.send([bay(ready=False, spool_id=legacy["id"],
+                    link_source="manual"),
+                bay(tag=bambu_tag(uid="04a1b2c3", read_at=3.0))])
+        self.assertEqual(h.bay("oams1-1")["spool_id"], legacy["id"])
+        self.assertEqual(len(h.spools()), 1)
+
+    def test_a_legacy_spool_located_in_another_bay_is_no_candidate(self):
+        h = Harness().start()
+        legacy_spool(h, uids="04A1B2C3", location="oams1-3")
+        h.send([bay(tag=bambu_tag(uid="55667788"))])
+        self.assertEqual(h.bay()["state"], "pending_confirmation")
+        self.assertEqual(len(h.spools()), 2)
+
+    def test_the_suggestion_goes_with_the_tag(self):
+        h = Harness().start()
+        legacy_spool(h, uids="04A1B2C3")
+        h.send([bay(tag=bambu_tag(uid="55667788"))])
+        self.assertIn("suggestions", h.bay())
+        h.send([bay(ready=False)])
+        self.assertNotIn("suggestions", h.bay())
+
+    def test_with_creation_off_the_suggestion_still_shows(self):
+        h = Harness(auto_create=False).start()
+        legacy = legacy_spool(h, uids="04A1B2C3")
+        h.send([bay(tag=bambu_tag(uid="55667788"))])
+        self.assertEqual([s["spool_id"] for s in h.bay()["suggestions"]],
+                         [legacy["id"]])
+
+
+class ArchivedSpoolTest(unittest.TestCase):
+    """An archived spool a tag belongs to is offered, not linked silently
+    (C4 §4.2 step 5)."""
+
+    def archived(self, h):
+        spool = h.make_spool({"card_uids": ops.encode_extra("04A1B2C3"),
+                              "tray_uid": ops.encode_extra(TRAY)})
+        run(h.api.request("PATCH", "/v1/spool/%d" % spool["id"],
+                          body={"archived": True}))
+        return spool
+
+    def test_an_archived_spool_is_offered(self):
+        h = Harness().start()
+        spool = self.archived(h)
+        h.send([bay(tag=bambu_tag(uid="55667788"))])
+        b = h.bay()
+        self.assertEqual(b["state"], "unlinked")
+        self.assertEqual([s["spool_id"] for s in b["suggestions"]],
+                         [spool["id"]])
+        self.assertIn("Archived spool #%d" % spool["id"], b["error"])
+        self.assertEqual(h.sets(), [])
+        self.assertEqual(len(h.api.spools), 1)
+
+    def test_accepting_restores_it(self):
+        h = Harness().start()
+        spool = self.archived(h)
+        t = bambu_tag(uid="55667788")
+        h.send([bay(tag=t)])
+        h.send([bay(tag=t, spool_id=spool["id"], link_source="manual")])
+        self.assertFalse(h.api.spools[0]["archived"])
+        self.assertEqual(extras(h, spool["id"])["card_uids"],
+                         "04A1B2C3,55667788")
+
+
+class DuplicatesAndMergeTest(unittest.TestCase):
+    """Two spools for one spool's two tags are reported and merged only on
+    the owner's confirmed command (C4 §9.2)."""
+
+    def setUp(self):
+        self.h = Harness().start()
+        # X was made from tag A by another tool; Y from tag B by this one.
+        self.x = self.h.make_spool({"card_uids": ops.encode_extra("04A1B2C3")})
+        self.y = self.h.make_spool({"card_uids": ops.encode_extra("55667788"),
+                                    "tray_uid": ops.encode_extra(TRAY)})
+        self.h.send([bay(tag=bambu_tag())])
+
+    def test_found_by_uid_while_another_holds_the_tray_is_reported(self):
+        h = self.h
+        self.assertEqual(h.bay()["spool_id"], self.x["id"])
+        self.assertNotIn("tray_uid", extras(h, self.x["id"]))
+        report = run(h.linker.duplicates_report())
+        self.assertEqual(report["duplicates"], [
+            {"spools": [self.x["id"], self.y["id"]], "reason": "other_tag",
+             "tray_uid": TRAY, "uid": "04A1B2C3"}])
+        # The migration report: X lists a UID and has no tray UUID yet.
+        self.assertEqual(report["without_tray"], [self.x["id"]])
+        self.assertEqual(report["invalid_tray"], [])
+        self.assertEqual(len(h.spools()), 2)
+
+    def test_merge_needs_confirmation(self):
+        h = self.h
+        before = [dict(s, extra=dict(s["extra"])) for s in h.api.spools]
+        preview = run(h.linker.merge(self.y["id"], self.x["id"]))
+        self.assertFalse(preview["confirmed"])
+        self.assertEqual(preview["card_uids"], ["04A1B2C3", "55667788"])
+        self.assertEqual(preview["relink"], ["oams1-0"])
+        self.assertEqual([dict(s, extra=dict(s["extra"]))
+                          for s in h.api.spools], before)
+
+    def test_a_confirmed_merge_keeps_one_and_archives_the_other(self):
+        h = self.h
+        linked = dict(spool_id=self.x["id"], link_source="tag")
+        h.send([bay(tag=bambu_tag(), **linked)])
+        h.sent.clear()
+        result = run(h.linker.merge(self.y["id"], self.x["id"], confirm=True))
+        self.assertTrue(result["confirmed"])
+        self.assertEqual(extras(h, self.y["id"]),
+                         {"card_uids": "04A1B2C3,55667788", "tray_uid": TRAY})
+        other = [s for s in h.api.spools if s["id"] == self.x["id"]][0]
+        self.assertTrue(other["archived"])
+        self.assertEqual(extras(h, self.x["id"]),
+                         {"card_uids": "", "tray_uid": ""})
+        self.assertEqual(other["location"], "")
+        self.assertEqual(h.sets(), ["OAMSM_SET_BAY_SPOOL OAMS=oams1 BAY=0 "
+                                    "SPOOL=%d SOURCE=tag" % self.y["id"]])
+        self.assertEqual(h.get_spool(self.y["id"])["location"], "oams1-0")
+        self.assertEqual(run(h.linker.duplicates_report())["duplicates"], [])
+        # Both tags now find the kept spool, and nothing finds the other.
+        h.send([bay(tag=bambu_tag(), spool_id=self.y["id"],
+                    link_source="tag"),
+                bay(tag=bambu_tag(uid="55667788", read_at=2.0))])
+        self.assertEqual(h.bay("oams1-1")["spool_id"], self.y["id"])
+
+    def test_two_tray_uuids_are_never_merged(self):
+        h = self.h
+        z = h.make_spool({"tray_uid": ops.encode_extra("1" * 32)})
+        with self.assertRaises(ValueError):
+            run(h.linker.merge(self.y["id"], z["id"], confirm=True))
+        self.assertFalse([s for s in h.api.spools if s["archived"]])
+
+
+class MoveTest(unittest.TestCase):
+    """Location follows the link on a move (C4 §4.4)."""
+
+    def test_the_new_bay_keeps_the_location_when_it_linked_first(self):
+        h = Harness().start()
+        h.send([bay(tag=bambu_tag())])
+        spool_id = h.bay()["spool_id"]
+        run(h.linker.confirm("oams1-0", 800))
+        h.send([bay(tag=bambu_tag(), spool_id=spool_id, link_source="tag")])
+        # Bay 1 reads the spool's other tag before bay 0 reports it empty.
+        h.send([bay(tag=bambu_tag(), spool_id=spool_id, link_source="tag"),
+                bay(tag=bambu_tag(uid="55667788", read_at=3.0))])
+        self.assertEqual(h.bay("oams1-1")["spool_id"], spool_id)
+        # The host moved the link; bay 0 is empty now.
+        h.send([bay(ready=False),
+                bay(tag=bambu_tag(uid="55667788", read_at=3.0),
+                    spool_id=spool_id, link_source="tag")])
+        self.assertEqual(h.get_spool(spool_id)["location"], "oams1-1")
+        self.assertEqual(h.get_spool(spool_id)["remaining_weight"], 800)
+        self.assertEqual(h.bay("oams1-1")["state"], "linked")
+        self.assertEqual(len(h.spools()), 1)
 
 
 if __name__ == "__main__":

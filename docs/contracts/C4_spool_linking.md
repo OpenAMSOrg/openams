@@ -2,7 +2,10 @@
 
 **Version: v1 (2026-09-28).** The host bay↔spool link (H3) and the
 Moonraker `openams_spoolman` component (H4/S1–S3) are implemented and
-tested end to end.
+tested end to end. **Two tags, one spool (2026-11-09):** the resolution
+order of §4.2, the spool key of §4.3, location and the active spool on a
+move or flip (§4.4), the migration of existing spools (§4.5) and the
+duplicates report and merge routes (§9.2), additive.
 
 Status: v1, review resolutions applied.
 The evidence is the design (`ARCHITECTURE.md` §4, §5 C4, §6.3-6.4, §7.4; the
@@ -40,7 +43,9 @@ From the host (`oams_manager` v2, C2):
 | Field | Used for |
 |---|---|
 | `devices.<u>.bays[i].ready` | insertion (rises) and removal (falls) |
-| `devices.<u>.bays[i].tag` (`uid` (null for `unit_summary`), `format`, `spoolman_id`, `bambu{…}`, `summary{…}`) | resolution (§4, §4.1) |
+| `devices.<u>.bays[i].tag` (`uid` (null for `unit_summary`), `format`, `spoolman_id`, `bambu{…}`, `summary{…}`) | resolution (§4, §4.1, §4.2) |
+| `devices.<u>.bays[i].tag.spool_key`, `.uids`, `.shared_identity` (C2, additive, two-tag hosts) | the spool key and the spool's other UIDs (§4.3); computed from the tag when absent |
+| `devices.<u>.bays[i].tag_state.state` (C2, additive, two-tag hosts) | `candidate` or `conflict` with no `tag`: the bay still holds its spool, so its link stays (§3) |
 | `devices.<u>.bays[i].spool_id`, `.link_source` | the current link; manual links made by a UI |
 | `lanes_by_fps.<l>.op`, `.unit`, `.runout`, `.reload_target`, `.extruder` | active-spool switching and PA (§7) |
 | `settings.auto_create_spoolman_spools`, `settings.apply_pa_on_load` | policy (D3) |
@@ -65,10 +70,13 @@ confirming edit, a manual link, a relink to another spool or an unlink clears it
 |---|---|---|---|---|
 | any | component start or manager `ready` | the host holds a link for the bay | `linked` (host's source) | nothing; the host's persisted link is authoritative |
 | `unlinked` | tag read, `format: spoolman_link` | the id resolves in Spoolman, or Spoolman is offline | `linked` (tag) | `OAMSM_SET_BAY_SPOOL … SPOOL=<id> SOURCE=tag`; mirror `location` (§5.6) |
-| `unlinked` | tag read, `format: bambu` | — | `resolving` | look up (§4) |
-| `resolving` | a spool lists the tag's UID, or has its `tray_uid` (§4) | — | `linked` (tag) | `OAMSM_SET_BAY_SPOOL`; mirror `location`; add the UID if new (§5.7) |
+| `unlinked` | tag read, `format: bambu`, or another tag with a UID | — | `resolving` | look up (§4.2) |
+| `resolving` | a spool lists the tag's UID, has its tray UUID, or lists a sibling UID (§4.2 steps 1-3) | — | `linked` (tag) | `OAMSM_SET_BAY_SPOOL`; mirror `location`; add the UID if new, backfill the tray UUID (§4.2 step 4). Never `pending_confirmation`: a known spool's weight is Spoolman's |
+| `resolving` | no match; an archived spool or a spool made from the other tag matches (§4.2 steps 5, 6) | — | `unlinked` with `suggestions` | nothing is created or linked; the user's manual link to the suggestion completes step 4 |
 | `resolving` | no match | `auto_create_spoolman_spools`, online | `pending_confirmation` | create vendor, filament, spool (§5.3-5.5); `OAMSM_SET_BAY_SPOOL … SOURCE=tag` |
 | `resolving` | no match | creation off | `unlinked` | `error`: no Spoolman spool for this tag; UIs offer Assign spool |
+| `unlinked`, `resolving` | a bare UID (a Bambu tag not decoded yet) that no spool lists (§4.2 step 8) | — | `resolving` | nothing; waits for the decode, which is a new read |
+| `linked` (tag) | the bay's tag shows another UID of the same spool key (§4.3) | — | unchanged | the UID is added to the spool; no link command, no `location` write, no active-spool change |
 | any | tag read, `format: unit_summary` | — | by §4.1: unchanged (Keep), `linked` (tag), `unlinked` with suggestions, or `pending_confirmation` (Create) | the Keep / Match / Create policy of §4.1; never a guess |
 | `resolving` | Spoolman offline | the cache knows the tag | `linked` (tag) | `OAMSM_SET_BAY_SPOOL` from the cache; queue the `location` mirror (§6) |
 | `resolving` | Spoolman offline | the cache does not know the tag | `resolving` | queue the creation (§6); `error` says so |
@@ -76,8 +84,9 @@ confirming edit, a manual link, a relink to another spool or an unlink clears it
 | `linked` (tag) | a UI assigns another spool (host `link_source` becomes `manual`) | — | `linked` (manual) | mirror `location` for the new spool, clear it on the old one |
 | `linked` (manual), tagged bay | a re-read is requested | — | `resolving` | re-apply the tag (manual wins until re-read: gap analysis step 5) |
 | `linked`, `pending_confirmation` | removal: `ready` falls **and** the tag is gone | — | `unlinked` | `OAMSM_CLEAR_BAY_SPOOL`; clear `location` |
-| `linked` (tag), `pending_confirmation` | `ready` true and the bay's tag disappears (a re-read found no tag) | — | `unlinked` | `OAMSM_CLEAR_BAY_SPOOL`; clear `location` |
-| any | tag read with `format` `unknown`, or OpenSpool without an id | — | unchanged | nothing; UIs offer Assign spool |
+| `linked` (tag), `pending_confirmation` | `ready` true and the bay's tag disappears (a re-read found no tag) | `tag_state.state` is not `candidate` or `conflict` | `unlinked` | `OAMSM_CLEAR_BAY_SPOOL`; clear `location` |
+| any | `tag` absent while `tag_state.state` is `candidate` (restored after a host restart) or `conflict` | — | unchanged | nothing: a two-tag host publishes only an attributed tag; the spool is still in the bay. The tag coming back with the same key and `read_at` is no new read. When the component itself started with the bay in that state (a power cycle: no read remembered), the bay's one candidate key (`tag_state.candidates[0].spool_key`) is the tag it waits for: that key confirmed is no new read either, so a manual link the host kept is not overridden; another key is a new read |
+| any | tag read with `format` `unknown`, or OpenSpool without an id | — | unchanged, unless a spool lists its UID (§4.2 step 8): then `linked` (tag) | nothing else; UIs offer Assign spool |
 | any | `OAMSM_SET_BAY_SPOOL` names a spool already linked to another bay | — | `linked` on the new bay | **RESOLVED (C4 13): move.** The component clears the old bay's link (`OAMSM_CLEAR_BAY_SPOOL`) and reports the move in its response, rather than refusing |
 
 Two rules follow from the hardware:
@@ -98,9 +107,10 @@ From the linking policy and ARCHITECTURE §6.4:
 
 1. **Spoolman-link tag** (`tag.format == "spoolman_link"`, NDEF `web+spoolman:s-<id>`):
    link `tag.spoolman_id`.
-2. **Bambu tag** (`tag.format == "bambu"`): find the spool whose `card_uids` extra
-   contains the tag's UID, else the spool whose `tray_uid` extra equals
-   `tag.bambu.tray_uid` (both tags of one Bambu spool share it, so either side
+2. **Bambu tag** (`tag.format == "bambu"`), **or any other tag with a UID**:
+   the resolution order of §4.2. In short: the spool whose `card_uids` extra
+   contains the tag's UID, else the spool whose `tray_uid` extra is the tag's
+   valid tray UUID (both tags of one Bambu spool share it, so either side
    finds it). **A UID in Spoolman wins:** a UID somebody put on a spool is a
    deliberate choice, while a tray UID is shared by every clone of one tag dump
    and by an earlier auto-created spool, so the tray UID is only the fallback.
@@ -108,7 +118,8 @@ From the linking policy and ARCHITECTURE §6.4:
    UID, and the second UID is then added (§5.7). Spoolman offers no
    query on extra fields; like AFC_RFID, the component matches over
    `GET /v1/spool` results and its cache (`afc:AFC_RFID.py:122-128`, `:1242-1292`).
-   Found: link. Not found: create (§5.3-5.5) when `auto_create_spoolman_spools`.
+   Found: link. Not found: an archived spool or a spool made from the other
+   tag is suggested, else create (§5.3-5.5) when `auto_create_spoolman_spools`.
 3. **Unit summary** (`tag.format == "unit_summary"`, no UID): the Keep / Match / Create policy of §4.1, which never links ambiguously.
 4. **No tag, unreadable, or unknown format:** nothing automatic. UIs offer Assign
    spool, which sends `OAMSM_SET_BAY_SPOOL … SOURCE=manual` to the host.
@@ -126,9 +137,10 @@ itself reaches the status).
 **RESOLVED (review, C4 8):** a queued creation that meets a spool
 created meanwhile (another tool, the web UI) must de-duplicate by `card_uids`
 when the write queue replays (H4), rather than creating a second spool for the
-same physical tag. The replay finds that spool in the same order as step 2
-(`card_uids` first, then `tray_uid`), and the offline cache (§6) uses the same
-order.
+same physical tag. The replay runs the whole order of §4.2 (`card_uids` first,
+then the tray UUID, then a sibling UID; then the archived and legacy checks),
+and the offline cache (§6) looks up in the same order, so two queued creations
+for the two tags of one spool end as one spool (2026-11-09).
 
 ### 4.1 Unit-decoded summaries (`format: "unit_summary"`)
 
@@ -213,6 +225,158 @@ silently attribute usage and remaining weight to the wrong one, which is worse
 than asking: so the component links only on a unique answer, prefers the spool
 the user already located at the bay, and otherwise offers the candidates.
 
+### 4.2 Tags with a UID: the resolution order
+
+A tag with a spool key (§4.3), that is every tag but a `unit_summary` and a
+`spoolman_link`, resolves in this order (2026-11-09). Steps 1 to 3 run over one
+`GET /v1/spool` (non-archived spools), or over the cache's keys offline (§6):
+
+1. **UID.** A spool whose `card_uids` lists the UID read on the bay (the
+   first of `tag.uids`, else `tag.uid`, upper case). A UID a person put on a
+   spool wins: this is what keeps two clones apart when the user wants them
+   apart.
+2. **Tray UUID.** Else a spool whose `tray_uid` is the tag's
+   `bambu.tray_uid`, both trimmed and compared in any case, and **only for a
+   valid tray UUID**: 32 hex digits, not all `0`, not all `F` (§4.3). A blank
+   block 9 never matches anything, on either side.
+3. **Sibling UID.** Else a spool whose `card_uids` lists another UID the host
+   publishes for this spool key (`tag.uids`), when that spool holds no other
+   tray UUID and the host does not report the key on two bays
+   (`shared_identity`). The host lists a UID there only after decoding it to
+   the same tray UUID, so such a spool was made from the spool's other tag by a
+   tool that keeps no tray UUID.
+4. **On a hit:** add the read UID to `card_uids` if it is new (§5.7) and
+   **backfill `tray_uid`** if the spool has none and no other spool holds that
+   tray UUID; if another spool holds it, nothing is backfilled and the pair is
+   reported as a duplicate (§4.5, §9.2). One PATCH, only when something is new;
+   it normalises both values (UIDs upper case and sorted, the tray UUID lower
+   case). Link `SOURCE=tag`. **No pending confirmation:** it is a known spool,
+   its remaining weight is Spoolman's.
+5. **Archived spool.** Else, for a decoded tag, one more
+   `GET /v1/spool?allow_archived=true`: an archived spool that steps 1-3 match
+   is **offered, not linked**: the bay goes `unlinked` with that spool in
+   `suggestions` and `error` "Archived spool #7 matches this tag; assign it to
+   restore it". A manual link to it (the user's answer) un-archives it and runs
+   step 4.
+6. **Legacy check before creating.** Else, for a decoded tag, the spools with
+   the tag's filament (vendor = `tag_vendor`, material, name = `detailed`,
+   colour, as §5.4 finds a filament; text trimmed, any case), at least one
+   `card_uids` entry, **no** valid `tray_uid`, not archived, not linked to
+   another bay, and no `location` or this bay's. If there is one, nothing is
+   created: the bay goes `unlinked` with them as `suggestions` (at most ten) and
+   `error` "Same spool as #12? This may be its other tag" (or how many may be).
+   A manual link to one runs step 4 for it.
+7. **Create** (§5.3 to §5.5) when `auto_create_spoolman_spools` is on, with the
+   read UID as `card_uids` and the tray UUID only when it is valid; state
+   `pending_confirmation`. With creation off: `unlinked`, `error`: no Spoolman
+   spool for this tag.
+8. **A bare UID** — a tag the host attributed before decoding it
+   (`format: "bambu"`, `bambu` null or empty), or a tag the host cannot decode
+   (`unknown`, `openspool`) — runs steps 1 to 4 only. **Nothing is ever created
+   from a bare UID**, and no archived or legacy spool is suggested for it. A
+   Bambu bare UID that no spool lists leaves an unlinked bay `resolving` until
+   the decode arrives (a new spool key, so a new read, §4.3), without asking
+   Spoolman again meanwhile; on a linked bay the link stays. Any other bare UID
+   leaves the bay as it was.
+
+Suggestions belong to the tag they were made for: a new tag on the bay, or the
+bay emptying, drops them. Spoolman offline, steps 1-3 run on the cache; a miss
+of a decoded tag queues the creation (one per bay, §6), whose replay runs this
+whole order, so a spool made meanwhile is linked or suggested instead of
+duplicated. A bare UID queues nothing.
+
+### 4.3 Two tags, one spool: the spool key
+
+A Bambu spool carries two tags. Their UIDs differ; block 9, the tray UUID, is
+the same on both. The component, the host (`src/tag_codec.py`) and the display
+derive the same **spool key** from a tag, so no registry is needed:
+
+```
+valid_tray(t): a string of exactly 32 hex digits after strip(); not all '0'; not all 'f'/'F'
+spool_key(tag):
+    tag is None                                                     -> None
+    tag.format == "bambu" and valid_tray(tag.bambu.tray_uid)        -> "bambu:" + tray_uid.strip().lower()
+    tag.uid not empty                                               -> "uid:" + uid.strip().upper()
+    otherwise (unit_summary)                                        -> None
+```
+
+The component uses the host's `tag.spool_key` and `tag.uids` when the host
+publishes them (C2, additive) and computes them from the tag otherwise.
+
+- **A new tag is a new spool key.** The linker remembers each bay's read as
+  `(spool_key, read_at)` and the key its tag link came from. A read is new
+  when either changes; a tag-sourced link is re-resolved only for a different
+  key. The host adds a sibling UID it reads on a bay that holds the spool to
+  `uids` without a new `read_at` (C2), so the spool's other tag is **not** a new
+  tag: it never overrides a manual link, never relinks, and never re-sets the
+  active spool. Its UID is added to the tag-linked spool once (no link
+  command, no `location` write). An explicit re-read (a new `read_at`) still
+  re-applies the tag over a manual link (§4 step 6).
+- **Only the UID read on the bay is written** to a spool. `tag.uids` lists
+  every UID the host knows for the key, which may include a clone's; it is used
+  to find a spool (§4.2 step 3), never written.
+- **Clones** (`shared_identity`, two bays with one key): both resolve to one
+  spool, and the host's move rule (§3, last row) keeps one link per spool: the
+  bay that resolved last holds it, the other ends unlinked until the user
+  assigns a spool by hand. Sibling matching (§4.2 step 3) is off for such a tag.
+
+### 4.4 Location and the active spool on a move or flip
+
+- **Move to another bay:** the new bay's tag (either one) resolves to the same
+  spool; the link moves (§3, last row) and `location` becomes the new
+  `<unit>-<bay>`, without a "new spool" prompt and without touching the weight.
+  A bay that lets go of a spool clears its `location` only when no other bay
+  links it, so the new bay keeps its location whichever bay reports first.
+- **Flip in the same bay:** `ready` falls (unlinked, `location` cleared), rises,
+  the sibling UID resolves to the same spool by its tray UUID (§4.2 step 2), the
+  link and `location` come back and the UID is added. No prompt.
+- **Active spool** (§7.2) follows the loaded bay's link only. A confirmation
+  (§5.8) or a sibling read changes no link, so `set_active_spool` is not called
+  again (which would rebase Moonraker's usage position for nothing).
+
+### 4.5 Existing spools: migration, and what the owner configures
+
+Nothing needs a migration run; spools converge as their tags are read:
+
+- **A spool with `tray_uid`** (made by this component): nothing to do; its
+  other UID is added the first time it is read.
+- **A spool with `card_uids` only** (made by AFC, another tool, or by hand):
+  its tray UUID is backfilled (§4.2 step 4) the next time its known tag is
+  read. If its *other* tag is read first, §4.2 step 3 links it when the host
+  already knows the two UIDs as siblings, else step 6 suggests it instead of
+  creating a twin.
+- **Already duplicated** (one spool per tag): found when a spool is matched by
+  its UID while another holds the tag's tray UUID. Never merged automatically,
+  since the two have separate usage histories and remaining weights: the bay
+  links by step 1 as before, the pair is reported (§9.2, and a warning in
+  Moonraker's log) and merged only by the owner's confirmed command.
+- **Archived spools** are found and offered (§4.2 step 5), never linked
+  silently. A merge clears the archived spool's `card_uids` and `tray_uid`, so
+  it never claims a tag again.
+- **Blank or mixed-case values:** a blank or malformed `tray_uid` counts as
+  none and is replaced by a backfill; mixed case is normalised by the next
+  write. A spool created from a tag with a blank block 9 gets no `tray_uid`.
+
+**What the owner configures in Spoolman:**
+
+- Nothing by hand for the extras: the component creates `card_uids` and
+  `tray_uid` (spool, text) and the filament extras at start (§5.2). Do not
+  rename them or change their type; a number-typed `card_uids` breaks every
+  write.
+- Keep the Bambu vendor as one record whose name equals the `tag_vendor`
+  option (default `Bambu Lab`); a second spelling files new filaments under the
+  wrong vendor and hides spools from the legacy check (§4.2 step 6).
+- Filament matching is vendor + material + name (`PLA Basic`) + colour. Edit a
+  filament's colour or name freely *after* its spools exist (a tag never
+  rewrites a known spool), but expect a new filament record the next time a new
+  spool of that colour is created, unless the original name and colour are
+  kept.
+- Never copy a `tray_uid` from one spool to another, and do not type UIDs with
+  separators; use the merge route (§9.2) for duplicates.
+- Do not archive a spool that is still in a bay.
+- A refill (new filament on a reused Bambu core with its old tags) is still the
+  old Spoolman spool; reset its weight or assign another spool by hand.
+
 ## 5. What the component writes to Spoolman
 
 All requests go through Moonraker's proxy (`POST /server/spoolman/proxy`, JSON-RPC
@@ -233,8 +397,8 @@ actual keys achieve.
 
 | Key | On | Spoolman type | Value | Written | Prior art |
 |---|---|---|---|---|---|
-| `card_uids` (extra) | spool | text | comma-separated uppercase-hex tag UIDs, sorted; a spool can carry several | on create, and when a known spool shows a new UID | AFC_RFID's own key and encoding, unchanged (`afc:AFC_RFID.py:233-236`, `:339-345`, `:727-734`). **Was `tag_uids` in the earlier draft; corrected.** |
-| `tray_uid` (extra) | spool | text | `tag.bambu.tray_uid` as the host publishes it (32 lowercase hex digits, `src/bambu_lab_tag_processor.py:85`) | on create | none (new; AFC_RFID has no Bambu-specific tray concept) |
+| `card_uids` (extra) | spool | text | comma-separated uppercase-hex tag UIDs, sorted; a spool can carry several (a Bambu spool two, once both tags were read) | on create (the read UID only), and when a known spool shows a new UID (§4.2 step 4, §4.3) | AFC_RFID's own key and encoding, unchanged (`afc:AFC_RFID.py:233-236`, `:339-345`, `:727-734`). **Was `tag_uids` in the earlier draft; corrected.** |
+| `tray_uid` (extra) | spool | text | `tag.bambu.tray_uid`, trimmed, 32 lowercase hex digits (`src/bambu_lab_tag_processor.py:85`); only a valid one (§4.3); matched in any case | on create, and backfilled on a known spool that has none (§4.2 step 4) | none (new; AFC_RFID has no Bambu-specific tray concept) |
 | `location` (built-in) | spool | string | `"<unit>-<bay>"`, e.g. `"oams1-0"` (D2) | on link; **cleared to `""` on unlink (RESOLVED, C4 3)** | none: AFC_RFID never writes `location` |
 | `lot_nr` (built-in) | spool | string | the tag's manufacturing date, normalized by **AFC_RFID's normalizer** (RESOLVED, C4 6): handles `YYYYMMDD` and ISO dates, passes anything else through (`afc:AFC_U1_rfid.py:976-992`). The Bambu `production` string (`src/bambu_lab_tag_processor.py:86`, e.g. `"230115"`) is 6-digit `YYMMDD`; the normalizer's `YYYYMMDD` path does not match it as-is, so the component front-pads the century (`20` + the 6 digits) before normalizing | on create | `afc:AFC_RFID.py:316-348`, `afc:AFC_U1_rfid.py:976-992` |
 | `initial_weight`, `remaining_weight` (built-in) | spool | number, g | `tag.bambu.weight_g`; a new spool starts full | on create | AFC_RFID ignores the tag weight and writes 1000 g (`afc:AFC_RFID.py:1346`, `:1525-1526`); this design uses the tag's actual weight since OpenAMS decodes it |
@@ -357,12 +521,12 @@ blocks printing.
 
 | Part | Behavior | Prior art |
 |---|---|---|
-| **Read cache** | tag key → `{spool_id, filament summary}`, keys `uid:<UID>` and `tray:<tray_uid>`; pre-warmed by one full `GET /v1/spool` scan on the first contact with Spoolman; refreshed on every successful resolution. A lookup tries the UID first, then the tray UID, the order of §4. A `tray:` key is cached only for a spool that carries that tray UID, and each scan (the pre-warm and the refresh below) rebuilds the tag keys from what Spoolman holds now: a UID or tray UID belongs to the first spool that lists it, and a key whose spool no longer carries the tag is dropped (a UID write still waiting in the queue keeps its key) | `afc:AFC_RFID.py:1083-1292` (keys `uid:`/`sku:`, one-shot pre-warm, write-back on every hit) |
-| **Write queue** | creations, `location` mirrors, and UID additions are queued in order and replayed when Spoolman returns; the depth is `queued_writes`; a replayed creation de-duplicates by `card_uids` against what Spoolman now holds (RESOLVED, C4 8) | **new**: AFC_RFID has no replay queue and skips writes while offline (`afc:AFC_RFID.py:1358-1364`) |
+| **Read cache** | tag key → `{spool_id, filament summary}`, keys `uid:<UID>` and `tray:<tray_uid>` (lower case, valid tray UUIDs only); pre-warmed by one full `GET /v1/spool` scan on the first contact with Spoolman; refreshed on every successful resolution. A lookup tries the read UID first, then the tray UUID, then a sibling UID, the order of §4.2. A hit by the tray UUID or a sibling queues the read UID for the spool (§4.2 step 4). A `tray:` key is cached only for a spool that carries that tray UID, and each scan (the pre-warm and the refresh below) rebuilds the tag keys from what Spoolman holds now: a UID or tray UID belongs to the first spool that lists it, and a key whose spool no longer carries the tag is dropped (a UID write still waiting in the queue keeps its key) | `afc:AFC_RFID.py:1083-1292` (keys `uid:`/`sku:`, one-shot pre-warm, write-back on every hit) |
+| **Write queue** | creations, `location` mirrors, and UID additions are queued in order and replayed when Spoolman returns; the depth is `queued_writes`; a replayed creation runs the whole order of §4.2 against what Spoolman now holds (RESOLVED, C4 8), so it links a spool made meanwhile (also by the replay of the spool's other tag), or suggests an archived or legacy spool, instead of creating one. A bare UID is never queued | **new**: AFC_RFID has no replay queue and skips writes while offline (`afc:AFC_RFID.py:1358-1364`) |
 | **Refresh of the linked spools** | Spoolman tells nobody about an edit made in its web UI (a spool's filament, the filament's vendor, colour or material, a UID moved to another spool), so the cached summaries of the linked spools would stay as the component last read them. While any bay is linked the component re-reads them every **`refresh_interval`** seconds (an `[openams_spoolman]` option, default **60**; **0** turns it off; a smaller positive value is raised to **10**; a value that is not a number is logged and replaced by 60). One refresh is **one `GET /v1/spool`** whatever the number of bays, and none while nothing is linked. It rewrites a cached summary only when it differs and then asks for a status pass, the same pass that follows any host status: that pushes the bay's material and temperature (§7.4), the `lane_data` lanes (§7.4.1) and a unit's stored setting (§7.5) when they changed, and sends `notify_openams_spoolman_status` when the status object differs, so a web edit reaches the display and the slicer within one interval, without reading the tag again. Spoolman failing to answer sets `spoolman_online: false` (notified), and answering again clears it and lets the queue replay. Nothing is queued by a refresh | Moonraker's own `[spoolman]` component offers no such hook for a component to use |
 | **Reachability** | Moonraker's `spoolman_connected`, with `notify_spoolman_status_changed` (`moonraker:89-91`, `:396-411`), or a `GET /v1/info` probe | `afc:AFC_RFID.py:84-94` |
 | **Active spool** | works offline: Moonraker's active spool is local and its usage reports queue in Moonraker | `moonraker:282-294` |
-| **Storage** | persisted by the component (a Moonraker database namespace or a file; not a contract surface) | `afc:AFC_RFID.py:1106-1192` (a JSON file, atomic replace) |
+| **Storage** | persisted by the component (a Moonraker database namespace or a file; not a contract surface), with the duplicate pairs reads found (§9.2) | `afc:AFC_RFID.py:1106-1192` (a JSON file, atomic replace) |
 
 ## 7. What the component sends to the host and to Moonraker
 
@@ -622,7 +786,7 @@ remaining), per bay, since Spoolman — not the host — owns those facts:
 | `.pending_confirmation` | true exactly in `pending_confirmation` (the schema enforces it) |
 | `.error` | human text for the last failure, else null |
 | `.tray_sync` | **additive, optional (§7.5).** Present only on a bay §7.5 keeps in step: `{state, error}`, `state` one of `in_sync` (the unit holds the spool's filament), `pending` (a write waits, or was sent and its report is awaited), `kept` (the unit holds another setting that is left alone: it decided the link, or it changed after the bay was in step, and the spool has not changed since), `failed` (the writes for the spool's latest change did not take); `error` the last write's failure, else null |
-| `.suggestions` | **additive, optional (§4.1).** Present only on an `unlinked` bay whose unit-decoded tag matches several spools: up to ten `{spool_id, material, color_hex, vendor, remaining_g, location}` entries a UI may offer. Absent otherwise |
+| `.suggestions` | **additive, optional (§4.1, §4.2).** Present only on an `unlinked` bay: whose unit-decoded tag matches several spools (§4.1), or whose tag no spool claims while an archived spool or a spool made from the spool's other tag may be it (§4.2 steps 5, 6; `error` then says which: "Archived spool #7 …", "Same spool as #12? …"). Up to ten `{spool_id, material, color_hex, vendor, remaining_g, location}` entries a UI may offer; the user's answer is an ordinary manual link (`OAMSM_SET_BAY_SPOOL … SOURCE=manual`). Absent otherwise |
 | `.spool` | the linked spool's summary (material, color_hex, vendor, remaining_g, remaining_pct), or null when unlinked/resolving/not yet known — the display merges this with `openams_ui <unit>` (C2 §6). It is Spoolman's data as last read (a tag read, an edit through §9, or the refresh of §6), never the tag's |
 | `.spool.initial_g` | the spool's `initial_weight`, else the filament's nominal `weight`, else null; a UI prefills the edit form's initial weight from it (§9). Additive |
 | `.spool.flow_k` | the spool's `extra.flow_k` pressure advance, decoded exactly as §7.2 applies it, so a value that is not a number is null; a UI prefills the edit form's pressure advance from it (§9). Additive |
@@ -642,7 +806,9 @@ Served as a Moonraker endpoint and pushed as a notification on every change.
 **RESOLVED (review, C4 12): the draft's proposed names are
 accepted:** `GET /server/openams_spoolman/status`
 (`server.openams_spoolman.status`), `POST /server/openams_spoolman/confirm`
-(the §5.8 endpoint), `POST /server/openams_spoolman/edit` (§9), and
+(the §5.8 endpoint), `POST /server/openams_spoolman/edit` (§9),
+`GET /server/openams_spoolman/duplicates` and
+`POST /server/openams_spoolman/merge` (§9.2), and
 `notify_openams_spoolman_status`, registered with an
 explicit notification name (Moonraker's default-from-event-suffix pattern,
 e.g. `spoolman:active_spool_set` → `notify_active_spool_set`,
@@ -748,6 +914,72 @@ least one lane was running a sequence, else `{"result": "nothing running"}`
 (also for an unknown lane). It never errors for "nothing to stop", so a UI may
 send it unconditionally. The step that was running ends failed and the lane's
 `message` is `Stopped by the user` (C2 §5.3).
+
+### 9.2 Duplicate spools: report and merge
+
+Two Spoolman spools for the two tags of one spool (made before this component
+kept the tray UUID, by another tool, or by hand) are **reported, and merged
+only by the owner's explicit, confirmed command** (§4.5). Nothing merges on its
+own: the two may have separate usage histories and remaining weights.
+
+**Report.** JSON-RPC `server.openams_spoolman.duplicates` (HTTP
+`GET /server/openams_spoolman/duplicates`), no params, read only, one
+`GET /v1/spool`:
+
+```json
+{"duplicates": [
+  {"spools": [12, 15], "reason": "other_tag",
+   "tray_uid": "00ff11ee22dd33cc44bb55aa66997788", "uid": "11AA22BB"},
+  {"spools": [3, 9], "reason": "shared_tray",
+   "tray_uid": "0123456789abcdef0123456789abcdef", "uid": null},
+  {"spools": [4, 7], "reason": "shared_uid", "tray_uid": null,
+   "uid": "55EE66FF"}],
+ "without_tray": [12, 21], "invalid_tray": [30]}
+```
+
+`without_tray` and `invalid_tray` are the migration report: the non-archived
+spools that list a tag UID but hold no tray UUID (the next read of that tag
+completes them, §4.2 step 4; until then their other tag is only suggested,
+step 6), and those whose `tray_uid` is not a tray UUID (blank or malformed: it
+never matches a tag, and is replaced when a read backfills it).
+
+| `reason` | Meaning |
+|---|---|
+| `other_tag` | found by a read: spool `spools[0]` was matched by the tag's UID (`uid`) and has no tray UUID, while `spools[1]` holds the tag's `tray_uid` (§4.2 step 4). Kept with the cache (§6) while it stays true |
+| `shared_tray` | two non-archived spools hold one valid tray UUID |
+| `shared_uid` | two non-archived spools list one tag UID |
+
+Each unordered pair appears once. Errors: `Spoolman is offline` (503),
+`Spoolman refused the request: …` (502).
+
+**Merge.** JSON-RPC `server.openams_spoolman.merge` (HTTP
+`POST /server/openams_spoolman/merge`):
+
+| Param | Type | Rule |
+|---|---|---|
+| `keep` | integer, required | the spool that stays (normally the one with the usage history) |
+| `merge` | integer, required | the spool that is archived; not `keep` |
+| `confirm` | boolean, default `false` | only `true` writes; anything else answers what would be written and changes nothing |
+
+**Result:** `{"keep", "merge", "card_uids": [<the union, sorted>], "tray_uid":
+<the one tray UUID or null>, "relink": [<bay keys linked to merge>],
+"confirmed": <bool>}`.
+
+With `confirm: true`, in this order: the kept spool gets the union of both
+`card_uids` and the tray UUID (its own, else the other's); the other spool is
+archived with `card_uids`, `tray_uid` and `location` cleared (an archived spool
+that still listed a UID would win §4.2 step 1 if archived spools were ever
+included); each bay the host links to the archived spool is relinked to the
+kept one with the same source (`OAMSM_SET_BAY_SPOOL … SOURCE=<tag|manual>`) and
+its `location` mirrored; the report forgets pairs with the archived spool, and
+`notify_openams_spoolman_status` goes out. Weights and usage are not touched.
+A failure after the first write leaves both spools listing the UIDs, which the
+report still shows and a second merge finishes.
+
+Errors: a bad or missing id, or `keep` equal to `merge` (400); `Spoolman has no
+spool …` (404); the two hold different tray UUIDs (they are two spools), or
+`keep` is archived (409); `Spoolman is offline` (503, nothing queued);
+`Spoolman refused the merge: …` (502).
 
 ## 10. Open questions
 

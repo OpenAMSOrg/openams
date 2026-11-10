@@ -238,6 +238,23 @@ MCU**; pins on two MCUs fail with `both OpenAMS RFID readers must use one MCU`.
 Readers cover bays `0,1` and `2,3` by default; `bays_a:` and `bays_b:` change
 that.
 
+Each reader sits between two bays, so a tag in its field could be either
+bay's spool. OpenAMS decides by motion: a tag that comes or goes while only
+one of the reader's bays is turning (positioning after you insert a spool, a
+load, an unload) is that bay's. A spool whose tag did not pass the reader yet
+shows no tag until its first load; a tag seen without motion shows as "not
+confirmed", and `OAMS_RFID_SCAN OAMS=<n> BAY=<bay> ASSERT=1` confirms it.
+Turning a spool by hand, or a tag leaving the field, never removes a bay's
+tag; taking the spool out does. The two tags of one Bambu spool count as one
+spool. Decoded tags are remembered in `openams_tag_cache.json` next to
+`oams.cfg`. These options tune the attribution (the defaults are starting
+values): `focus_poll_interval:` (default `0.1` s, how often the reader of a
+turning bay is read), `field_debounce:` (default `2` reads before a tag counts
+as arrived or gone), `handling_window:` (default `30` s after an insertion),
+`orphan_window:` (default `120` s), `static_samples:` (default `8`) and
+`no_tag_turn_time:` (default `30` s of turning with no tag seen before a spool
+counts as having none).
+
 `key:` is the Bambu Lab master key, exactly 32 hex characters; it derives each
 tag's MIFARE sector keys. Anything else fails with
 `bambu_lab_tag_processor key must contain exactly 16 hexadecimal bytes`. The

@@ -162,6 +162,44 @@ def _bay_state(bd):
     return "r" if bd.get("ready") else "e"
 
 
+# bays[].tg letters (C2 §6.2): the bay's tag attribution state, on a unit
+# whose reads the host attributes. `none` publishes no letter.
+_TAG_STATE_CODES = {"attributed": "a", "candidate": "c", "conflict": "x",
+                    "unknown": "u"}
+
+
+def _rgb_hex(argb):
+    """"RRGGBB" of a 0xAARRGGBB colour (alpha dropped), or None."""
+    if not isinstance(argb, int) or isinstance(argb, bool) or argb < 0:
+        return None
+    return "%06X" % (argb & 0xFFFFFF)
+
+
+def _tag_state_keys(status, unit_name, bd):
+    """The optional tg / tc / tr / to keys of one bay (C2 §6.2)."""
+    tag_state = bd.get("tag_state")
+    if not isinstance(tag_state, dict):
+        return {}
+    tg = _TAG_STATE_CODES.get(tag_state.get("state"))
+    if tg is None:
+        return {}
+    if tg == "u" and tag_state.get("reason") == "no_tag_after_turn":
+        # The spool turned past the reader and showed no tag: there is
+        # nothing left to wait for, so nothing to say.
+        return {}
+    keys = {"tg": tg}
+    if tg == "c":
+        keys["tc"] = [{"m": c.get("material"),
+                       "c": _rgb_hex(c.get("color_argb"))}
+                      for c in (tag_state.get("candidates") or ())[:2]]
+    elif tg == "x":
+        keys["tr"] = tag_state.get("reason")
+        if (tag_state.get("reason") == "claimed_twice"
+                and tag_state.get("other_bay") is not None):
+            keys["to"] = _slot_id(status, unit_name, tag_state["other_bay"])
+    return keys
+
+
 def _read_from_a_tag(tag):
     """False only when the bay's tag record is a unit's stored setting
     (format `unit_summary`, an AMS 2 Pro's tray summary: no tag was read).
@@ -184,10 +222,17 @@ def project(status, unit_name):
         # The link only (spool_id + link_source); the material/color/vendor/
         # remaining summary lives in the C4 openams_spoolman status.
         link = bd.get("link_source") or "none"
+        tag_keys = _tag_state_keys(status, unit_name, bd)
+        attributing = isinstance(bd.get("tag_state"), dict)
         spool = None
         if link != "none":
             src = link[0]
-            if link == "tag" and not _read_from_a_tag(bd.get("tag")):
+            if link == "tag" and attributing:
+                # A host-attributed bay shows a tag link as a tag read only
+                # while its tag is attributed (not a candidate, not a
+                # conflict, not yet confirmed after a restart, not gone).
+                src = "t" if tag_keys.get("tg") == "a" else "m"
+            elif link == "tag" and not _read_from_a_tag(bd.get("tag")):
                 # Linked from the unit's own stored setting (an AMS 2 Pro's
                 # tray summary: no tag UID), not from a tag: a display must
                 # not show it as an RFID read. The setting is the unit's
@@ -196,10 +241,12 @@ def project(status, unit_name):
             spool = {"id": bd.get("spool_id"), "src": src}
         acts = "".join(code for name, code in _BAY_ACTION_CODES
                        if name in (bd.get("supported_actions") or ()))
-        bays.append({"id": _slot_id(status, unit_name, bd.get("index")),
-                     "s": state,
-                     "cal": _CAL_CODES.get(bd.get("calibration_state"), "u"),
-                     "a": acts, "sp": spool})
+        entry = {"id": _slot_id(status, unit_name, bd.get("index")),
+                 "s": state,
+                 "cal": _CAL_CODES.get(bd.get("calibration_state"), "u"),
+                 "a": acts, "sp": spool}
+        entry.update(tag_keys)
+        bays.append(entry)
     groups = []
     for name, info in sorted(status["topology"]["groups"].items()):
         # A group with no bay is on no lane yet (lane None): any lane may fill

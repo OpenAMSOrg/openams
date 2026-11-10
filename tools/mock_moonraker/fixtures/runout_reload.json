@@ -105,7 +105,17 @@
                 "runtime_pid_tuning": true,
                 "logger_control": true,
                 "error_led_control": true,
-                "rfid_reader_scope": "per_bay",
+                "rfid_reader_scope": "shared",
+                "rfid_coverage": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    2,
+                    3
+                  ]
+                ],
                 "rfid_uid_inventory": true,
                 "rfid_material_metadata": "host_owned",
                 "schema_version": 1,
@@ -204,7 +214,17 @@
               "runtime_pid_tuning": true,
               "logger_control": true,
               "error_led_control": true,
-              "rfid_reader_scope": "per_bay",
+              "rfid_reader_scope": "shared",
+              "rfid_coverage": [
+                [
+                  0,
+                  1
+                ],
+                [
+                  2,
+                  3
+                ]
+              ],
               "rfid_uid_inventory": true,
               "rfid_material_metadata": "host_owned",
               "schema_version": 1,
@@ -250,12 +270,26 @@
                     "length_m": 330,
                     "tray_uid": "5c2e8d0a9f1b4e7c8a2d6f0e3b9c1a47",
                     "production": "2024_05_12_10_30"
-                  }
+                  },
+                  "spool_key": "bambu:5c2e8d0a9f1b4e7c8a2d6f0e3b9c1a47",
+                  "uids": [
+                    "8A3F12C4",
+                    "8A3F12C5"
+                  ],
+                  "evidence": "motion",
+                  "confirmed_at": 1530.1
                 },
                 "spool_hint": null,
                 "supported_actions": [
                   "clear_spool"
-                ]
+                ],
+                "tag_state": {
+                  "state": "attributed",
+                  "reason": null,
+                  "candidates": [],
+                  "other_bay": null,
+                  "reader": 0
+                }
               },
               {
                 "index": 1,
@@ -272,7 +306,14 @@
                 "supported_actions": [
                   "set_spool",
                   "clear_spool"
-                ]
+                ],
+                "tag_state": {
+                  "state": "unknown",
+                  "reason": null,
+                  "candidates": [],
+                  "other_bay": null,
+                  "reader": 0
+                }
               },
               {
                 "index": 2,
@@ -288,7 +329,21 @@
                 "spool_hint": null,
                 "supported_actions": [
                   "set_spool"
-                ]
+                ],
+                "tag_state": {
+                  "state": "candidate",
+                  "reason": null,
+                  "candidates": [
+                    {
+                      "spool_key": "bambu:7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d",
+                      "uid": "41c2a0de",
+                      "material": "PETG",
+                      "color_argb": 4280032284
+                    }
+                  ],
+                  "other_bay": null,
+                  "reader": 1
+                }
               },
               {
                 "index": 3,
@@ -302,7 +357,14 @@
                 "link_source": "none",
                 "tag": null,
                 "spool_hint": null,
-                "supported_actions": []
+                "supported_actions": [],
+                "tag_state": {
+                  "state": "none",
+                  "reason": null,
+                  "candidates": [],
+                  "other_bay": null,
+                  "reader": 1
+                }
               }
             ],
             "telemetry": {},
@@ -313,7 +375,8 @@
               "follower",
               "configure_pid",
               "calibrate_ptfe",
-              "calibrate_hub_hes"
+              "calibrate_hub_hes",
+              "rfid_scan"
             ],
             "identity": {
               "serial": "000000000000000000000001",
@@ -445,7 +508,8 @@
             "sp": {
               "id": 12,
               "src": "t"
-            }
+            },
+            "tg": "a"
           },
           {
             "id": 1,
@@ -455,14 +519,22 @@
             "sp": {
               "id": 15,
               "src": "m"
-            }
+            },
+            "tg": "u"
           },
           {
             "id": 2,
             "s": "r",
             "cal": "c",
             "a": "a",
-            "sp": null
+            "sp": null,
+            "tg": "c",
+            "tc": [
+              {
+                "m": "PETG",
+                "c": "1C1C1C"
+              }
+            ]
           },
           {
             "id": 3,
@@ -496,7 +568,9 @@
         "dryer": null,
         "fault": null,
         "nf": 0,
-        "act": []
+        "act": [
+          "rfid_scan"
+        ]
       }
     },
     {

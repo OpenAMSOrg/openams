@@ -13,11 +13,37 @@ try:
 except (ImportError, ValueError):
     import bus
 
+try:
+    from . import oams_tags
+    from . import tag_identity
+except (ImportError, ValueError):
+    import oams_tags
+    import tag_identity
+
+
+# A MIFARE Classic SAK: 1K (0x08, 0x88 on some clones) or 4K (0x18).
+_MIFARE_SAKS = (0x08, 0x88, 0x18)
+# A tag whose decode failed is not tried again for this long.
+_DECODE_RETRY_S = 10.0
 
 _RFID_DEBUG_RESPONSE = (
     "oams_rfid_debug_response gpiob_moder=%u gpiob_levels=%u "
     "gpiod_moder=%u gpiod_levels=%u spi0_config=%u spi0_last=%u "
     "spi1_config=%u spi1_last=%u")
+
+
+def _bits_to_bytes(bits):
+    """Pack bits (LSB first within each byte) into bytes."""
+    out = bytearray((len(bits) + 7) // 8)
+    for index, bit in enumerate(bits):
+        if bit:
+            out[index >> 3] |= 1 << (index & 7)
+    return bytes(out)
+
+
+def _bytes_to_bits(data):
+    """Unpack bytes into bits, LSB first within each byte."""
+    return [(byte >> k) & 1 for byte in data for k in range(8)]
 
 
 class Mfrc522Error(Exception):
@@ -62,7 +88,15 @@ class Mfrc522:
     CMD_SOFT_RESET = 0x0F
 
     PICC_REQA = 0x26
+    PICC_WUPA = 0x52
+    PICC_HLTA = 0x50
     PICC_ANTICOLL = (0x93, 0x95, 0x97)
+    PICC_CASCADE_TAG = 0x88
+    # ErrorReg CollErr; CollReg CollPosNotValid and CollPos.
+    ERR_COLL = 0x08
+    COLL_POS_NOT_VALID = 0x20
+    #: At most this many tags are enumerated from one field (C2 §4.6.1).
+    MAX_TAGS = 4
     PICC_MF_AUTH_KEY_A = 0x60
     PICC_MF_AUTH_KEY_B = 0x61
     PICC_MF_READ = 0x30
@@ -73,6 +107,8 @@ class Mfrc522:
     def __init__(self, spi, reactor=None):
         self.spi = spi
         self.reactor = reactor
+        # The SAK of every tag the last read_uids() enumerated.
+        self.saks = {}
 
     # These two methods are the transport-neutral contract used by the
     # OpenAMS RFID stack.
@@ -151,7 +187,10 @@ class Mfrc522:
         return [crc & 0xFF, crc >> 8]
 
     def _communicate(self, command, send_data, tx_last_bits=0,
-                     rx_align=0, check_crc=False):
+                     rx_align=0, check_crc=False, collision=False):
+        """One command. With ``collision`` the result is ``(response,
+        bit_length, coll_pos)``: ``coll_pos`` is None, or CollReg's position
+        (1..32) of the first bit collision (several tags answered)."""
         wait_irq = 0x10 if command == self.CMD_MF_AUTHENT else 0x30
         self.reg_write(self.COMMAND, self.CMD_IDLE)
         self.reg_write(self.COM_IRQ, 0x7F)
@@ -192,41 +231,167 @@ class Mfrc522:
                 raise Mfrc522Error("response has no valid CRC")
             if self._calculate_crc(response[:-2]) != response[-2:]:
                 raise Mfrc522Error("response CRC mismatch")
-        return response, bit_length
+        if not collision:
+            return response, bit_length
+        coll_pos = None
+        if error & self.ERR_COLL:
+            coll = self.reg_read(self.COLL)
+            if coll & self.COLL_POS_NOT_VALID:
+                raise Mfrc522Error("collision outside the UID bits")
+            coll_pos = (coll & 0x1F) or 32
+        return response, bit_length, coll_pos
 
-    def request(self):
+    def request(self, command=None):
+        """REQA (or WUPA, which also wakes a halted tag): the ATQA."""
+        command = self.PICC_REQA if command is None else command
         response, bits = self._communicate(
-            self.CMD_TRANSCEIVE, [self.PICC_REQA], tx_last_bits=7)
+            self.CMD_TRANSCEIVE, [command], tx_last_bits=7)
         if len(response) != 2 or bits != 16:
             raise Mfrc522Error("invalid ATQA response")
         return response
 
-    def read_uid(self):
-        self.request()
+    def halt(self):
+        """HLTA: the selected tag stops answering REQA. A tag acknowledges
+        nothing, so the command's timeout is its success."""
+        frame = [self.PICC_HLTA, 0x00]
+        frame += self._calculate_crc(frame)
+        try:
+            self._communicate(self.CMD_TRANSCEIVE, frame)
+        except Mfrc522NoCard:
+            return
+        raise Mfrc522Error("tag answered HLTA")
+
+    def _select(self, cascade_command, part):
+        """SELECT one cascade level with its 4 UID bytes + BCC: the SAK."""
+        select = [cascade_command, 0x70] + list(part)
+        select += self._calculate_crc(select)
+        sak, _ = self._communicate(
+            self.CMD_TRANSCEIVE, select, check_crc=True)
+        if len(sak) != 3:
+            raise Mfrc522Error("invalid SAK response")
+        return sak[0]
+
+    def _anticollision(self, cascade_command):
+        """ISO/IEC 14443-3 bit-wise anticollision for one cascade level.
+
+        Walks the UID bit tree as ``klipper_rf``'s
+        ``iso14443a._resolve_level`` does: each collision fixes the bits
+        received before it, takes the 0-branch at the colliding bit, and asks
+        again with the known bits, until exactly one tag answers all 40 bits
+        (UID + BCC). Returns those 5 bytes. A wrong guess of where the
+        collision is can only lose the tag (an error), never invent a UID:
+        the BCC and the SELECT both check what was resolved."""
+        known = []
+        for _ in range(33):
+            nbits = len(known)
+            tx_last = nbits % 8
+            frame = [cascade_command, ((2 + nbits // 8) << 4) | tx_last]
+            frame += list(_bits_to_bytes(known))
+            # ValuesAfterColl = 0: bits received after a collision read 0.
+            self.reg_write(self.COLL, 0x00)
+            try:
+                response, bit_length, coll_pos = self._communicate(
+                    self.CMD_TRANSCEIVE, frame, tx_last_bits=tx_last,
+                    rx_align=tx_last, collision=True)
+            except Mfrc522NoCard:
+                if nbits:
+                    raise Mfrc522Error("anticollision lost the tag")
+                raise
+            received = _bytes_to_bits(response)[tx_last:bit_length]
+            if coll_pos is None:
+                full = known + received
+                if len(full) < 40:
+                    raise Mfrc522Error("short anticollision response")
+                part = _bits_to_bytes(full[:40])
+                if part[0] ^ part[1] ^ part[2] ^ part[3] != part[4]:
+                    raise Mfrc522Error("UID BCC mismatch")
+                return list(part)
+            index = self._collision_index(coll_pos, nbits, len(received))
+            known = known + received[:index] + [0]
+            if len(known) > 32:
+                raise Mfrc522Error("anticollision overflow")
+        raise Mfrc522Error("anticollision did not converge")
+
+    @staticmethod
+    def _collision_index(coll_pos, nbits, received):
+        """Where in this answer's bits the collision is.
+
+        CollPos counts from 1. How it counts once the request carried known
+        bits is not settled for this chip (to be measured): read as the bit
+        position in the whole UID (the common MFRC522 drivers), then as the
+        position in this answer's FIFO bits, then as the position among the
+        bits received. The first that falls inside the answer is used; a
+        wrong one only makes the walk lose the tag (an error sample)."""
+        for index in (coll_pos - 1 - nbits, coll_pos - 1 - nbits % 8,
+                      coll_pos - 1):
+            if 0 <= index < received:
+                return index
+        raise Mfrc522Error("collision position %d out of range" % coll_pos)
+
+    def _select_cascade(self):
+        """Anticollision and SELECT through every cascade level of one tag:
+        ``(uid bytes, sak)``."""
         uid = []
         for cascade_command in self.PICC_ANTICOLL:
-            self.reg_write(self.COLL, 0x80)
-            part, bits = self._communicate(
-                self.CMD_TRANSCEIVE, [cascade_command, 0x20])
-            if len(part) != 5 or bits != 40:
-                raise Mfrc522Error("invalid anticollision response")
-            if part[0] ^ part[1] ^ part[2] ^ part[3] != part[4]:
-                raise Mfrc522Error("UID BCC mismatch")
-
-            select = [cascade_command, 0x70] + part
-            select += self._calculate_crc(select)
-            sak, _ = self._communicate(
-                self.CMD_TRANSCEIVE, select, check_crc=True)
-            if len(sak) != 3:
-                raise Mfrc522Error("invalid SAK response")
-
-            if part[0] == 0x88:
+            part = self._anticollision(cascade_command)
+            sak = self._select(cascade_command, part)
+            if part[0] == self.PICC_CASCADE_TAG:
                 uid.extend(part[1:4])
             else:
                 uid.extend(part[:4])
-            if not sak[0] & 0x04:
-                return bytes(uid)
+            if not sak & 0x04:
+                return bytes(uid), sak
         raise Mfrc522Error("UID cascade did not terminate")
+
+    def read_uids(self, max_tags=None):
+        """Every tag in the field (C2 §4.6.1): WUPA, then anticollision,
+        SELECT and HLTA for one tag at a time, REQA again (a halted tag stays
+        silent), until no tag answers or ``max_tags``. Returns the UIDs as
+        bytes, ``[]`` for an empty field. Raises Mfrc522Error for a sample
+        that went wrong: that is an error, never an empty field."""
+        max_tags = self.MAX_TAGS if max_tags is None else max_tags
+        uids = []
+        self.saks = {}
+        command = self.PICC_WUPA
+        while len(uids) < max_tags:
+            try:
+                self.request(command)
+            except Mfrc522NoCard:
+                break
+            command = self.PICC_REQA
+            try:
+                uid, sak = self._select_cascade()
+            except Mfrc522NoCard:
+                raise Mfrc522Error("tag lost during anticollision")
+            if uid in uids:
+                raise Mfrc522Error("tag %s answered twice" % uid.hex())
+            uids.append(uid)
+            self.saks[uid] = sak
+            self.halt()
+        return uids
+
+    def select_uid(self, uid):
+        """WUPA, then SELECT the tag with this UID at every cascade level
+        (no anticollision: only that tag answers). Returns its SAK, ready
+        for authentication and block reads; halt() it afterwards."""
+        uid = bytes(uid)
+        if len(uid) == 4:
+            levels = [list(uid)]
+        elif len(uid) == 7:
+            levels = [[self.PICC_CASCADE_TAG] + list(uid[0:3]),
+                      list(uid[3:7])]
+        elif len(uid) == 10:
+            levels = [[self.PICC_CASCADE_TAG] + list(uid[0:3]),
+                      [self.PICC_CASCADE_TAG] + list(uid[3:6]),
+                      list(uid[6:10])]
+        else:
+            raise ValueError("a UID has 4, 7 or 10 bytes")
+        self.request(self.PICC_WUPA)
+        sak = 0
+        for cascade_command, part in zip(self.PICC_ANTICOLL, levels):
+            bcc = part[0] ^ part[1] ^ part[2] ^ part[3]
+            sak = self._select(cascade_command, part + [bcc])
+        return sak
 
     def authenticate(self, block, key, uid, key_b=False):
         if len(key) != 6 or len(uid) < 4:
@@ -325,14 +490,18 @@ class OpenAmsMfrc522:
         self.key = owner.key
         self.key_b = owner.key_b
         self.version = None
+        # Every UID the last good sample enumerated (bytes), the first of
+        # them as `uid`, and the decoded Bambu data of each (hex -> dict).
+        self.uids = []
         self.uid = None
+        self.records = {}
         self.block_data = None
         self.tag_data = None
         self.tag_processor = None
         self.last_error = None
         self.last_read_status = "NOT_READ"
         self.last_read_time = None
-        self.misses = 0
+        self._decode_failed = {}
         self._firmware_debug_reported = False
 
         gcode = self.printer.lookup_object("gcode")
@@ -412,61 +581,119 @@ class OpenAmsMfrc522:
             logging.exception("MFRC522 %s initialization failed", self.name)
             self._log_firmware_debug()
 
-    def _read_card(self):
-        uid = self.reader.read_uid()
-        data = None
-        if self.read_block_number is not None:
-            data = self.reader.read_block(
-                self.read_block_number, self.key, uid, self.key_b)
-        tag_data = self.tag_data if uid == self.uid else None
-        if self.tag_processor is not None and tag_data is None:
-            tag_data = self.tag_processor.read_tag(self.reader, uid)
-        return uid, data, tag_data
+    def _decode(self, uid):
+        """The decoded Bambu record of ``uid``, or None (not a Bambu tag,
+        no processor, already known, a failed read).
 
-    def _remove_cached_card(self):
-        if self.uid is None:
-            return
-        old_uid = self.uid
-        self.uid = self.block_data = self.tag_data = None
-        self.printer.send_event("mfrc522:removed", self, old_uid)
+        A tag is decoded only while no bay this reader covers is turning
+        (a read that loses the tag half way is useless, C2 §4.6.1), once
+        (the tag cache keeps it), and not again for 10 s after a failure.
+        Block 9 (the spool's tray UUID) is read first: a tag whose sibling
+        on the same spool was decoded before takes that record."""
+        if self.tag_processor is None:
+            return None
+        tag_reader = self.owner.tag_reader()
+        uid_hex = uid.hex()
+        if tag_reader is not None:
+            if not tag_reader.needs_record(uid_hex):
+                return None
+            if not tag_reader.reader_at_rest(self.rfid_card):
+                return None
+        failed = self._decode_failed.get(uid_hex)
+        now = self.reactor.monotonic()
+        if failed is not None and now - failed < _DECODE_RETRY_S:
+            return None
+        try:
+            sak = self.reader.select_uid(uid)
+            if sak not in _MIFARE_SAKS:
+                return None
+            data = None
+            identity = getattr(self.tag_processor, "read_identity", None)
+            if identity is not None and tag_reader is not None:
+                key = tag_identity.spool_key(
+                    {"format": "bambu", "uid": uid_hex,
+                     "bambu": {"tray_uid": identity(self.reader, uid)}})
+                known = tag_reader.record_for_key(key)
+                if known is not None:
+                    data = known["bambu"]
+            if data is None:
+                data = self.tag_processor.read_tag(self.reader, uid)
+        except Exception as exc:
+            self._decode_failed[uid_hex] = now
+            if tag_reader is not None:
+                tag_reader.note_decode_failed(uid_hex)
+            logging.info("MFRC522 %s: tag %s not decoded: %s",
+                         self.name, uid_hex, exc)
+            return None
+        finally:
+            try:
+                self.reader.halt()
+            except Exception:
+                pass
+        self._decode_failed.pop(uid_hex, None)
+        return {"format": "bambu", "bambu": data, "spoolman_id": None,
+                "openspool": None}
 
-    def _sample(self, eventtime, debounce_removal):
+    def _sample(self, eventtime):
+        """One sample of this reader: every UID in its field, handed on as
+        one ``mfrc522:field`` event. A sample that went wrong is an error
+        (None), never an empty field (C2 §4.6.1)."""
         self.last_read_time = eventtime
         try:
             self.version = self.owner.activate_reader(self)
-            uid, data, tag_data = self._read_card()
-            changed = (uid != self.uid or data != self.block_data
-                       or tag_data != self.tag_data)
-            self.uid, self.block_data, self.tag_data = uid, data, tag_data
-            self.last_read_status = "PRESENT"
-            self.last_error = None
-            self.misses = 0
-            if changed:
-                logging.info("MFRC522 %s card %s", self.name, uid.hex())
-                self.printer.send_event("mfrc522:card", self, uid, data)
-        except Mfrc522NoCard:
-            self.last_read_status = "EMPTY"
-            self.last_error = None
-            self.misses += 1
-            if not debounce_removal or self.misses >= 2:
-                self._remove_cached_card()
+            uids = self.reader.read_uids()
+            records = {}
+            tag_reader = self.owner.tag_reader()
+            for uid in uids:
+                record = self._decode(uid)
+                if (record is None and self.tag_processor is not None
+                        and tag_reader is not None
+                        and self.reader.saks.get(uid) in _MIFARE_SAKS
+                        and tag_reader.needs_record(uid.hex())):
+                    # Not decoded yet (seen while passing): a Bambu tag
+                    # whose content is pending (C2 §4.6).
+                    record = tag_reader.pending_record(uid.hex())
+                if record is not None:
+                    records[uid.hex()] = record
+            block = None
+            if self.read_block_number is not None and uids:
+                self.reader.select_uid(uids[0])
+                try:
+                    block = self.reader.read_block(
+                        self.read_block_number, self.key, uids[0], self.key_b)
+                finally:
+                    self.reader.halt()
         except Mfrc522Error as exc:
             self.last_read_status = "ERROR"
             self.last_error = str(exc)
-            self.misses += 1
-            if not debounce_removal or self.misses >= 2:
-                self._remove_cached_card()
+            self.printer.send_event("mfrc522:field", self, None, {})
+            return None
         except Exception as exc:
             self.last_read_status = "ERROR"
             self.last_error = str(exc)
             logging.exception("MFRC522 %s polling failed", self.name)
-
-    def _poll(self, eventtime):
-        self._sample(eventtime, debounce_removal=True)
-        return eventtime + self.poll_interval
+            self.printer.send_event("mfrc522:field", self, None, {})
+            return None
+        if [u.hex() for u in uids] != [u.hex() for u in self.uids]:
+            logging.info("MFRC522 %s field: %s", self.name,
+                         ",".join(u.hex() for u in uids) or "empty")
+        self.uids = list(uids)
+        self.uid = uids[0] if uids else None
+        self.records.update(records)
+        self.records = dict((u.hex(), self.records[u.hex()]) for u in uids
+                            if u.hex() in self.records)
+        self.block_data = block
+        self.tag_data = (None if self.uid is None
+                         else self.records.get(self.uid.hex(), {}).get(
+                             "bambu"))
+        self.last_read_status = "PRESENT" if uids else "EMPTY"
+        self.last_error = None
+        hexes = [u.hex() for u in uids]
+        self.printer.send_event("mfrc522:field", self, hexes, records)
+        return hexes
 
     def read_now(self):
-        self._sample(self.reactor.monotonic(), debounce_removal=False)
+        return self._sample(self.reactor.monotonic())
 
     def get_status(self, eventtime):
         return {
@@ -474,6 +701,7 @@ class OpenAmsMfrc522:
             "rfid_card": self.rfid_card,
             "present": self.uid is not None,
             "uid": None if self.uid is None else self.uid.hex(),
+            "uids": [uid.hex() for uid in self.uids],
             "block": None if self.block_data is None else self.block_data.hex(),
             "filament": self.tag_data,
             "version": self.version,
@@ -492,11 +720,14 @@ class OpenAmsMfrc522:
         filament = ("NONE" if self.tag_data is None else
                     json.dumps(self.tag_data, sort_keys=True, separators=(",", ":")))
         error = "NONE" if self.last_error is None else self.last_error
+        uids = ",".join(u.hex().upper() for u in self.uids) or "NONE"
         return (
             "OAMSM_RFID_READ OAMS=%d RFID_CARD=%d STATUS=%s "
             "LAST_READ_STATUS=%s UID=%s BLOCK=%s VERSION=%s FILAMENT=%s ERROR=%s"
+            " UIDS=%s"
             % (self.oams_index, self.rfid_card, current_status,
-               self.last_read_status, uid, block, version, filament, error))
+               self.last_read_status, uid, block, version, filament, error,
+               uids))
 
     def cmd_QUERY(self, gcmd):
         self.read_now()
@@ -518,20 +749,36 @@ class OpenAmsMfrc522Pair:
         self.key = OpenAmsMfrc522._parse_key(
             config.get("key", "FFFFFFFFFFFF"))
         self.key_b = config.getboolean("key_b", False)
+        # While a bay one reader covers turns or was just inserted, only
+        # that reader is sampled, this often (C2 §4.6.1; the floor is the
+        # fastest a UID enumeration allows, still to be measured).
+        self.focus_poll_interval = config.getfloat(
+            "focus_poll_interval", 0.1, minval=0.1)
         self.tag_processor = None
         self.active_reader = None
-        # C2 §4.6 / S4b: which bays each reader's field covers, so a card
-        # read can be attributed to one of them. The defaults split the four
-        # bays in two; a mainboard whose readers cover other bays sets them.
+        # C2 §4.6: which bays each reader's field covers. The defaults split
+        # the four bays in two (still to be confirmed on the hardware); a
+        # mainboard whose readers cover other bays sets them.
         self.bays = {
             0: self._parse_bay_list(config.get("bays_a", "0,1")),
             1: self._parse_bay_list(config.get("bays_b", "2,3")),
         }
-        # A bay's most recent F1S ready-rise time, sampled at each poll and
-        # again right before attributing a card (S4b attribution rule: the
-        # covered bay whose ready rose most recently within 30 s).
-        self._bay_rise_times = {}
-        self._bay_ready_prev = {}
+        # The attribution thresholds still to be measured on the hardware,
+        # with their starting values (src/oams_tags.py).
+        self.attribution_options = {
+            "debounce": config.getint(
+                "field_debounce", oams_tags.FIELD_DEBOUNCE, minval=1,
+                maxval=10),
+            "hand_s": config.getfloat(
+                "handling_window", oams_tags.T_HAND_S, minval=0.),
+            "orphan_s": config.getfloat(
+                "orphan_window", oams_tags.ORPHAN_S, minval=0.),
+            "static_samples": config.getint(
+                "static_samples", oams_tags.N_STATIC, minval=2),
+            "no_tag_turn_s": config.getfloat(
+                "no_tag_turn_time", oams_tags.NO_TAG_TURN_S, minval=1.),
+        }
+        self._attached = None
 
         spi_a = bus.MCU_SPI_from_config(
             config, mode=0, pin_option="cs_pin_a", default_speed=100000)
@@ -561,13 +808,11 @@ class OpenAmsMfrc522Pair:
             self.printer.add_object("oamsm_rfid_registry", registry)
         registry.add_driver(self, config)
 
-        # S4b: hand reads and removals to the OAMS unit's TagReader
-        # (src/oams_tags.py), which owns bays[i].tag (C2 §4.6) for every
-        # family. Every pair registers; each ignores an event from a reader
-        # it does not own.
-        self.printer.register_event_handler("mfrc522:card", self._handle_card)
-        self.printer.register_event_handler(
-            "mfrc522:removed", self._handle_removed)
+        # Every sample goes to the OAMS unit's TagReader (src/oams_tags.py),
+        # which attributes tags to bays (C2 §4.6). Every pair registers;
+        # each ignores an event from a reader it does not own.
+        self.printer.register_event_handler("mfrc522:field",
+                                            self._handle_field)
 
     @staticmethod
     def _parse_bay_list(value):
@@ -583,61 +828,34 @@ class OpenAmsMfrc522Pair:
                 return obj
         return None
 
-    def _poll_bay_edges(self, oams, now):
-        """Remember a fresh F1S ready-rise, for the attribution rule below."""
-        values = getattr(oams, "f1s_hes_value", ())
-        for bay, value in enumerate(values):
-            was_ready = self._bay_ready_prev.get(bay, False)
-            if value and not was_ready:
-                self._bay_rise_times[bay] = now
-            self._bay_ready_prev[bay] = bool(value)
-
-    def _pick_bay(self, oams, covered, now):
-        """The covered bay a card read attributes to, or None (S4b).
-
-        The bay whose ready rose most recently within 30 s; else the only
-        covered bay currently ready; else None (attribute nothing).
-        """
-        values = getattr(oams, "f1s_hes_value", ())
-        candidates = [bay for bay in covered if bay < len(values)]
-        recent = [bay for bay in candidates
-                 if now - self._bay_rise_times.get(bay, -1e9) <= 30.0]
-        if recent:
-            return max(recent, key=lambda bay: self._bay_rise_times[bay])
-        ready = [bay for bay in candidates if values[bay]]
-        if len(ready) == 1:
-            return ready[0]
-        return None
-
-    def _handle_card(self, reader, uid, data):
-        if reader not in self.readers:
-            return
+    def tag_reader(self):
+        """The TagReader of this pair's unit, attached to this pair."""
         oams = self._find_oams()
-        if oams is None:
-            return
-        now = self.reactor.monotonic()
-        self._poll_bay_edges(oams, now)
-        bay = self._pick_bay(oams, self.bays.get(reader.rfid_card, ()), now)
-        if bay is None:
-            return
         tag_reader = getattr(oams, "tag_reader", None)
         if tag_reader is None:
-            return
-        if reader.tag_data is not None:
-            tag_reader.note_external_read(
-                bay, uid.hex(), "bambu", bambu=reader.tag_data)
-        else:
-            tag_reader.note_external_read(bay, uid.hex(), "unknown")
+            return None
+        if self._attached is not tag_reader:
+            tag_reader.attach_readers(
+                self, [list(self.bays[0]), list(self.bays[1])],
+                **self.attribution_options)
+            self._attached = tag_reader
+        return tag_reader
 
-    def _handle_removed(self, reader, old_uid):
+    def _handle_field(self, reader, uids, records):
+        """One reader's sample (UIDs, or None for an error) to the unit's
+        tag attribution. Which bay a tag belongs to is decided there, from
+        spool motion; this file attributes nothing."""
         if reader not in self.readers:
             return
-        oams = self._find_oams()
-        if oams is None:
-            return
-        tag_reader = getattr(oams, "tag_reader", None)
+        tag_reader = self.tag_reader()
         if tag_reader is not None:
-            tag_reader.note_external_removed(old_uid.hex())
+            tag_reader.note_field(reader.rfid_card, uids,
+                                  self.reactor.monotonic(), records=records)
+
+    def sample_reader(self, index):
+        """Sample one reader now (``OAMS_RFID_SCAN BAY=``): its UIDs, or
+        None when the sample went wrong."""
+        return self.readers[index]._sample(self.reactor.monotonic())
 
     def activate_reader(self, reader, force=False):
         """Select one reader and ensure only its RF field is enabled."""
@@ -661,16 +879,27 @@ class OpenAmsMfrc522Pair:
     def _initialize(self, eventtime):
         self.tag_processor = self.printer.lookup_object(
             "bambu_lab_tag_processor", None)
+        self.tag_reader()
         for reader in self.readers:
             reader._initialize(eventtime)
 
     def _poll(self, eventtime):
-        oams = self._find_oams()
-        if oams is not None:
-            self._poll_bay_edges(oams, eventtime)
-        for reader in self.readers:
-            reader._sample(eventtime, debounce_removal=True)
-        return eventtime + self.poll_interval
+        """Both readers in turn every ``poll_interval``; only the readers
+        covering a turning or just-inserted bay, every
+        ``focus_poll_interval``, while there are any (C2 §4.6.1)."""
+        tag_reader = self.tag_reader()
+        focus = []
+        if tag_reader is not None:
+            focus = [index for index in tag_reader.focus_readers(eventtime)
+                     if 0 <= index < len(self.readers)]
+        for reader in ([self.readers[i] for i in focus] or self.readers):
+            reader._sample(eventtime)
+        interval = self.focus_poll_interval if focus else self.poll_interval
+        wake = eventtime + interval
+        now = self.reactor.monotonic()
+        if wake <= now:
+            wake = now + interval    # a slow sample never runs back to back
+        return wake
 
     def get_status(self, eventtime):
         return {

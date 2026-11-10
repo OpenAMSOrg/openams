@@ -27,6 +27,13 @@ OFFLINE_QUEUED_ERROR = "Spoolman offline; creation queued"
 NO_SPOOL_ERROR = "no Spoolman spool for this tag"
 AMBIGUOUS_ERROR = ("%d Spoolman spools match this spool; assign one"
                    " (C4 §4.1)")
+# A decoded tag no spool claims, but a spool made from the spool's other tag
+# may be it (C4 §4.2 step 6), or an archived spool is (step 5): offered,
+# never linked silently. The user's answer is an ordinary manual link.
+LEGACY_ERROR = "Same spool as #%d? This may be its other tag"
+LEGACY_MANY_ERROR = ("%d Spoolman spools may hold this spool's other tag;"
+                     " assign one")
+ARCHIVED_ERROR = "Archived spool #%d matches this tag; assign it to restore it"
 # The most spools a bay's ``suggestions`` list names.
 MAX_SUGGESTIONS = 10
 BAMBU_VENDOR = "Bambu Lab"
@@ -41,24 +48,45 @@ class _Bay(object):
     """One bay's machine (C4 §3): the link as last applied, plus tag memory."""
 
     __slots__ = ("state", "spool_id", "source", "error", "last_tag",
-                 "tag_uid", "link_sent_at", "mirror_queued", "filament_sent",
-                 "suggestions")
+                 "tag_key", "read_uid", "awaiting_decode", "link_sent_at",
+                 "mirror_queued", "filament_sent", "suggestions",
+                 "suggestion_key", "suggestion_kind", "suggested_tag",
+                 "seen", "limbo_key")
 
     def __init__(self):
         self.state = "unlinked"
         self.spool_id = None
         self.source = None
         self.error = None
-        self.last_tag = None       # the (uid, read_at) read seen last
-        self.tag_uid = None        # the UID the current link came from
+        # The (spool key, read_at) read seen last: a read is new when either
+        # changes, so a sibling UID of the same spool is not (C4 §4.3).
+        self.last_tag = None
+        self.tag_key = None        # the spool key the current link came from
+        # After a restart of both the host and this component, a linked bay
+        # is first seen with its tag only a candidate (C2 tag_state): the key
+        # it then waits for. That tag confirmed is no new read.
+        self.seen = False
+        self.limbo_key = None
+        self.read_uid = None       # the UID read on the bay, last status
+        # A tag attributed by its UID but not decoded yet that no spool lists
+        # waits for its decode; nothing is created from a bare UID (C4 §4.2
+        # step 8).
+        self.awaiting_decode = False
         self.link_sent_at = None   # clock() of the last link command
         self.mirror_queued = False  # the location mirror waits in the queue
         # (spool_id, material, temp_c, source) last pushed to the host; None
         # when nothing is pushed for this bay (C4 §7.4).
         self.filament_sent = None
-        # The candidate spools of an ambiguous unit-decoded summary (C4 §4.1);
-        # empty otherwise.
+        # The candidate spools of an ambiguous unit-decoded summary (C4 §4.1),
+        # or the spool a tag may be the other tag of, or an archived spool
+        # (C4 §4.2); empty otherwise. ``suggestion_kind`` says which
+        # (``summary``, ``legacy``, ``archived``); for the two tag kinds the
+        # spool key and tag they were made for, so a manual link to one of
+        # them completes the tag's step 4 and a new tag drops them.
         self.suggestions = []
+        self.suggestion_key = None
+        self.suggestion_kind = None
+        self.suggested_tag = None
 
 
 class Linker(object):
@@ -79,9 +107,11 @@ class Linker(object):
             run_gcode, clock, self._cache, self._reload_summary,
             self._remember_written, wake=wake,
             material_temps=self._material_temps)
-        # bay key -> the spool id the host links it to, from the last status
-        # (C4 §4.1: a spool linked to another bay is no candidate).
+        # bay key -> the spool id the host links it to, and the link's
+        # source, from the last status (C4 §4.1: a spool linked to another
+        # bay is no candidate).
         self._host_links = {}
+        self._host_sources = {}
         self._last_replay = None
         self.spoolman_online = True
 
@@ -288,6 +318,97 @@ class Linker(object):
             self._cache_summary(spool)
         return self._bay_status_object(key, machine)
 
+    async def duplicates_report(self):
+        """The spools that look like one spool's records (C4 §9.2), from one
+        ``GET /v1/spool``: the pairs a read found (a spool known by a UID
+        while another holds the tag's tray UUID, ``other_tag``), still true,
+        and the spools that hold one tray UUID (``shared_tray``) or list one
+        UID (``shared_uid``); with them the spools whose tag identity is
+        incomplete (``without_tray``, ``invalid_tray``). Read only. Raises SpoolmanUnavailable or
+        SpoolmanError."""
+        spools = await self._api.request("GET", "/v1/spool") or []
+        self.spoolman_online = True
+        live = dict((spool["id"], spool) for spool in spools
+                    if isinstance(spool, dict) and spool.get("id") is not None)
+
+        def still(entry):
+            first, second = entry["spools"]
+            tray = entry.get("tray_uid")
+            return first in live and second in live \
+                and ops.spool_tray(live[second]) == tray \
+                and ops.spool_tray(live[first]) in (None, tray)
+
+        self._cache.drop_duplicates(still)
+        pairs = [dict(entry, spools=list(entry["spools"]))
+                 for entry in self._cache.duplicates]
+        seen = set(frozenset(entry["spools"]) for entry in pairs)
+        for entry in ops.duplicate_pairs(spools):
+            if frozenset(entry["spools"]) not in seen:
+                seen.add(frozenset(entry["spools"]))
+                pairs.append(entry)
+        report = {"duplicates": pairs}
+        report.update(ops.tag_gaps(spools))
+        return report
+
+    async def merge(self, keep_id, merge_id, confirm=False):
+        """Merge spool ``merge_id`` into ``keep_id`` (C4 §9.2), only when
+        ``confirm``; without it, say what would be written and change
+        nothing. The kept spool gets both spools' UIDs and the tray UUID; the
+        other is archived with its tags and location cleared; a bay the host
+        links to the archived spool is relinked to the kept one with the same
+        source. Weights and usage are not touched. Raises ValueError (the
+        same spool, an archived kept spool, two tray UUIDs),
+        SpoolmanUnavailable or SpoolmanError."""
+        if keep_id == merge_id:
+            raise ValueError("keep and merge name the same spool %s" % keep_id)
+        keep = await self._api.request("GET", "/v1/spool/%s" % keep_id)
+        other = await self._api.request("GET", "/v1/spool/%s" % merge_id)
+        self.spoolman_online = True
+        if not isinstance(keep, dict) or not isinstance(other, dict):
+            raise SpoolmanError(404, "no spool %s or %s" % (keep_id, merge_id))
+        if keep.get("archived"):
+            raise ValueError("spool %s is archived; restore it in Spoolman "
+                             "first" % keep_id)
+        plan = ops.merge_plan(keep, other)
+        bays = sorted(key for key, spool_id in self._host_links.items()
+                      if spool_id == merge_id)
+        for key, machine in sorted(self._bays.items()):
+            if machine.spool_id == merge_id and key not in bays and \
+                    machine.state in ("linked", "pending_confirmation"):
+                bays.append(key)
+        result = {"keep": keep_id, "merge": merge_id,
+                  "card_uids": plan["card_uids"],
+                  "tray_uid": plan["tray_uid"], "relink": bays,
+                  "confirmed": False}
+        if not confirm:
+            return result
+        kept, _archived = await ops.merge_spools(self._api, keep, other, plan)
+        if isinstance(kept, dict):
+            self._cache.remember_spool(kept)
+        self._cache.drop_duplicates(
+            lambda entry: merge_id not in entry["spools"])
+        for key in bays:
+            machine = self._bay(key)
+            unit, _, index = key.rpartition("-")
+            source = self._host_sources.get(key) or machine.source
+            source = source if source in ("tag", "manual") else "manual"
+            await self._run_gcode(
+                "OAMSM_SET_BAY_SPOOL OAMS=%s BAY=%s SPOOL=%s SOURCE=%s"
+                % (unit, index, keep_id, source))
+            self._host_links[key] = keep_id
+            self._host_sources[key] = source
+            self._cache.clear_pending(key)
+            self._drop_suggestions(machine)
+            machine.state = "linked"
+            machine.spool_id = keep_id
+            machine.source = source
+            machine.error = None
+            machine.link_sent_at = self._clock()
+            queued = await self._set_location(keep_id, key, machine)
+            machine.mirror_queued = bool(queued)
+        result["confirmed"] = True
+        return result
+
     def status(self):
         """The §8 object and the status schema."""
         return {"schema_version": 1,
@@ -347,11 +468,13 @@ class Linker(object):
         auto_create = bool(settings.get("auto_create_spoolman_spools"))
         sync_tray = bool(settings.get("sync_unit_tray_info", True))
         self._host_links = {}
+        self._host_sources = {}
         for unit, device in (status.get("devices") or {}).items():
             for bay in device.get("bays") or []:
                 if bay.get("spool_id") is not None:
-                    self._host_links["%s-%s" % (unit, bay.get("index"))] = \
-                        bay["spool_id"]
+                    bay_key = "%s-%s" % (unit, bay.get("index"))
+                    self._host_links[bay_key] = bay["spool_id"]
+                    self._host_sources[bay_key] = bay.get("link_source")
         for unit, device in (status.get("devices") or {}).items():
             for bay in device.get("bays") or []:
                 key = "%s-%s" % (unit, bay.get("index"))
@@ -367,17 +490,52 @@ class Linker(object):
         machine = self._bay(key)
         tag = bay.get("tag")
         previous = machine.last_tag
-        if tag is None:
+        previous_uid = machine.read_uid
+        # A two-tag host publishes only an attributed tag (C2). A bay whose
+        # tag is a candidate (restored after a host restart) or in conflict
+        # still holds its spool: that is no removal, and when the tag comes
+        # back it is no new read either (C4 §3, §4.3).
+        limbo = tag is None and (bay.get("tag_state") or {}).get("state") \
+            in ("candidate", "conflict")
+        first_pass, machine.seen = not machine.seen, True
+        if limbo:
+            candidates = (bay.get("tag_state") or {}).get("candidates") or []
+            if first_pass and bay.get("spool_id") is not None \
+                    and len(candidates) == 1 \
+                    and isinstance(candidates[0], dict):
+                machine.limbo_key = candidates[0].get("spool_key")
+        elif tag is None:
             machine.last_tag = None
+            machine.read_uid = None
+            machine.limbo_key = None
         else:
-            machine.last_tag = (tag.get("uid"), tag.get("read_at"))
+            # Keyed by the spool, not the UID: the host adds a sibling UID to
+            # ``uids`` without a new ``read_at`` (C4 §4.3), so it is no new
+            # tag and never overrides a manual link.
+            machine.last_tag = (ops.tag_key(tag), tag.get("read_at"))
+            uids = ops.tag_uids(tag)
+            machine.read_uid = uids[0] if uids else None
+            if machine.limbo_key is not None:
+                if previous is None and \
+                        machine.limbo_key == machine.last_tag[0]:
+                    # The tag the bay held before the restart, confirmed:
+                    # the link the host kept stands, a manual one too.
+                    previous = machine.last_tag
+                    if machine.source == "tag" and machine.state in (
+                            "linked", "pending_confirmation"):
+                        machine.tag_key = machine.last_tag[0]
+                machine.limbo_key = None
+        if machine.suggestion_key is not None and not limbo and (
+                machine.last_tag is None
+                or machine.last_tag[0] != machine.suggestion_key):
+            self._drop_suggestions(machine)   # the tag they were for is gone
 
         # C4 §3: a tag-sourced link whose bay is ready but the tag has
         # disappeared (the previous status had a tag; a re-read found none)
         # means an untagged spool was inserted after the old one was removed.
         # Unlink immediately and clear the location mirror.
         if bay.get("ready", True) and tag is None and previous is not None \
-                and machine.source == "tag" \
+                and not limbo and machine.source == "tag" \
                 and machine.state in ("linked", "pending_confirmation"):
             await self._unlink(unit, bay, machine)
             return
@@ -397,15 +555,21 @@ class Linker(object):
         host_spool = bay.get("spool_id")
         fresh_adopt = host_spool is not None and \
             machine.state in ("unlinked", "resolving")
-        read = None if tag is None else (tag.get("uid"), tag.get("read_at"))
-        new_read = tag is not None and read != previous
+        new_read = tag is not None and machine.last_tag != previous
         if new_read and not fresh_adopt and self._actionable(tag) \
                 and self._should_resolve(machine, tag):
             await self._resolve(key, unit, bay, tag, machine, auto_create)
             return
 
+        if tag is not None and previous_uid is not None \
+                and machine.read_uid != previous_uid:
+            # The host read the spool's other tag on this bay: the same
+            # spool, so no link changes; its UID joins the spool (C4 §4.3).
+            await self._note_sibling(machine)
+
         if not new_read and not fresh_adopt and machine.state == "resolving" \
                 and tag is not None and self._actionable(tag) \
+                and not machine.awaiting_decode \
                 and not self._has_queued_create(key):
             # Spoolman was away when the tag was read (C4 §6): the tag is still
             # in the bay, so retry now that Spoolman may answer; a queued create
@@ -507,18 +671,24 @@ class Linker(object):
 
     @staticmethod
     def _actionable(tag):
-        """Whether a read has a link policy at all (C4 §4: tag first)."""
+        """Whether a read has a link policy at all (C4 §4: tag first).
+
+        Any tag with a spool key is: a decoded Bambu tag through the whole
+        resolution order, a bare UID (a Bambu tag attributed before it was
+        decoded, or a tag this host cannot decode) through the UIDs in
+        ``card_uids`` only (C4 §4.2 step 8)."""
         fmt = tag.get("format")
         if fmt == "spoolman_link":
             return tag.get("spoolman_id") is not None
         if fmt == "unit_summary":
             # Nothing to match without a material (C4 §4.1).
             return bool((tag.get("summary") or {}).get("material"))
-        return fmt == "bambu"
+        return ops.tag_key(tag) is not None
 
     @staticmethod
     def _should_resolve(machine, tag):
-        """Manual wins until a re-read; only a different UID beats a tag link.
+        """Manual wins until a re-read; only a different spool key beats a
+        tag link, so the spool's other tag never does (C4 §4.3).
 
         A unit-decoded summary has no UID; every new read decides (C4 §4.1,
         whose Keep rule leaves a link that still matches alone)."""
@@ -528,19 +698,20 @@ class Linker(object):
             return True
         if machine.source == "manual":
             return True
-        return machine.tag_uid != tag.get("uid")
+        return machine.tag_key != ops.tag_key(tag)
 
     async def _resolve(self, key, unit, bay, tag, machine, auto_create):
+        machine.awaiting_decode = False
         if tag.get("format") == "unit_summary":
             await self._resolve_summary(key, unit, bay, tag, machine,
                                         auto_create)
             return
-        machine.state = "resolving"
-        machine.error = None
         if tag.get("format") == "spoolman_link":
+            machine.state = "resolving"
+            machine.error = None
             await self._resolve_link_tag(key, unit, bay, tag, machine)
         else:
-            await self._resolve_bambu(key, unit, bay, tag, machine, auto_create)
+            await self._resolve_tag(key, unit, bay, tag, machine, auto_create)
 
     async def _resolve_link_tag(self, key, unit, bay, tag, machine):
         spool_id = tag.get("spoolman_id")
@@ -558,49 +729,210 @@ class Linker(object):
             return
         await self._link(key, unit, bay, machine, spool_id, spool, tag=tag)
 
-    async def _resolve_bambu(self, key, unit, bay, tag, machine, auto_create):
+    @staticmethod
+    def _snapshot(machine):
+        return (machine.state, machine.spool_id, machine.source, machine.error)
+
+    @staticmethod
+    def _restore(machine, before):
+        machine.state, machine.spool_id, machine.source, machine.error = before
+
+    async def _resolve_tag(self, key, unit, bay, tag, machine, auto_create):
+        """A tag with a spool key (C4 §4.2): the resolution order of
+        ``_tag_decide`` against what Spoolman holds now."""
+        before = self._snapshot(machine)
+        machine.state = "resolving"
+        machine.error = None
         try:
-            spool = await ops.find_spool_by_tag(self._api, tag)
+            spools = await self._api.request("GET", "/v1/spool") or []
+            await self._reachable()
+            verdict, payload = await self._tag_decide(key, tag, spools,
+                                                      auto_create)
         except SpoolmanUnavailable:
-            await self._resolve_offline(key, unit, bay, tag, machine, auto_create)
+            await self._resolve_offline(key, unit, bay, tag, machine,
+                                        auto_create, before)
             return
-        await self._reachable()
+        await self._apply_tag(key, unit, bay, tag, machine, verdict, payload,
+                              spools, before)
+
+    async def _tag_decide(self, key, tag, spools, create):
+        """C4 §4.2 for a tag with a spool key. Returns ``(verdict,
+        payload)``: ``found`` (the spool), ``uid_only`` (a bare UID no spool
+        lists: nothing more is tried), ``archived`` or ``legacy`` (the spools
+        to suggest), ``created`` (the new spool) or ``none``. Raises
+        SpoolmanUnavailable."""
+        spool = ops.match_tag(tag, spools)[0]
         if spool is not None:
-            spool_id = spool["id"]
-            uid = str(tag.get("uid") or "").strip().upper()
-            known = str(ops.decode_extra(
-                (spool.get("extra") or {}).get("card_uids")) or "")
-            if uid and uid not in [part.strip().upper()
-                                   for part in known.split(",")]:
-                try:
-                    spool = await ops.add_card_uid(self._api, spool, uid)
-                except SpoolmanUnavailable:
-                    self.spoolman_online = False
-                    # Keep the link; the UID mirror is queued (C4 §6).
-                    self._cache.enqueue({"op": "card_uid", "spool_id": spool_id,
-                                         "uid": uid})
-                except SpoolmanError:
-                    pass   # keep the link; the UID mirror waits
-            await self._link(key, unit, bay, machine, spool_id, spool, tag=tag)
-            return
-        if not auto_create:
+            return "found", spool
+        if not ops.tag_decoded(tag):
+            return "uid_only", None
+        try:
+            archived = await ops.find_archived(self._api, tag)
+        except SpoolmanError:
+            archived = None   # a Spoolman that refuses the query: skip it
+        if archived is not None:
+            return "archived", [archived]
+        legacy = ops.legacy_spools(spools, tag, key,
+                                   self._linked_elsewhere(key),
+                                   self._tag_vendor)
+        if legacy:
+            return "legacy", legacy
+        if not create:
+            return "none", None
+        vendor = await ops.get_or_create_vendor(self._api, self._tag_vendor)
+        filament = await ops.find_or_create_filament(
+            self._api, vendor["id"], tag.get("bambu") or {})
+        return "created", await ops.create_spool(self._api, filament["id"],
+                                                 tag, key)
+
+    async def _apply_tag(self, key, unit, bay, tag, machine, verdict, payload,
+                         spools, before):
+        if verdict == "found":
+            # A known spool: its UID and tray UUID are completed, and it is
+            # linked without a confirmation; its weight is Spoolman's.
+            spool = await self._known_spool(tag, payload, spools)
+            await self._link(key, unit, bay, machine, spool["id"], spool,
+                             tag=tag)
+        elif verdict == "created":
+            await self._link(key, unit, bay, machine, payload["id"], payload,
+                             pending=True, tag=tag)
+        elif verdict in ("archived", "legacy"):
+            self._suggest(bay, machine, tag, verdict, payload, before)
+        elif verdict == "uid_only":
+            self._wait_for_decode(machine, tag, before)
+        else:
             machine.state = "unlinked"
             machine.source = None
             machine.spool_id = None
             machine.error = NO_SPOOL_ERROR
+
+    @staticmethod
+    def _was_linked(before):
+        return before[0] in ("linked", "pending_confirmation")
+
+    def _wait_for_decode(self, machine, tag, before, error=None):
+        """A bare UID no spool lists (C4 §4.2 step 8). A link the bay holds
+        stays. Otherwise a Bambu tag waits ``resolving`` for its decode,
+        which is a new read; a tag this host cannot decode leaves the bay
+        unlinked (UIs offer Assign spool)."""
+        if self._was_linked(before):
+            self._restore(machine, before)
+            return
+        machine.source = None
+        machine.spool_id = None
+        machine.error = error
+        if tag.get("format") == "bambu":
+            machine.state = "resolving"
+            machine.awaiting_decode = error is None
+        else:
+            machine.state = "unlinked"
+
+    def _suggest(self, bay, machine, tag, kind, spools, before):
+        """Offer the spool(s) a tag may be (C4 §4.2 steps 5, 6): the bay
+        stays unlinked with them as ``suggestions``; the user's manual link
+        to one completes the tag's step 4 (``_adopt``). A link the host
+        already holds (a manual one) wins and stays."""
+        if bay.get("spool_id") is not None and self._was_linked(before):
+            self._restore(machine, before)
+            return
+        machine.state = "unlinked"
+        machine.source = None
+        machine.spool_id = None
+        if kind == "archived":
+            machine.error = ARCHIVED_ERROR % spools[0]["id"]
+        elif len(spools) == 1:
+            machine.error = LEGACY_ERROR % spools[0]["id"]
+        else:
+            machine.error = LEGACY_MANY_ERROR % len(spools)
+        machine.suggestions = [ops.suggestion_of(spool)
+                               for spool in spools[:MAX_SUGGESTIONS]]
+        machine.suggestion_kind = kind
+        machine.suggestion_key = ops.tag_key(tag)
+        machine.suggested_tag = dict(tag)
+
+    @staticmethod
+    def _drop_suggestions(machine):
+        machine.suggestions = []
+        machine.suggestion_key = None
+        machine.suggestion_kind = None
+        machine.suggested_tag = None
+
+    def _report_duplicate(self, first, second, tray, uid):
+        """A spool found by its UID has no tray UUID while another holds the
+        tag's (C4 §9.2): two records of one spool. Reported, never merged."""
+        if self._cache.add_duplicate(first, second, "other_tag",
+                                     tray_uid=tray, uid=uid):
+            _LOGGER.warning(
+                "openams_spoolman: Spoolman spools %s and %s look like one "
+                "spool's two tags; see /server/openams_spoolman/duplicates",
+                first, second)
+
+    async def _known_spool(self, tag, spool, spools, unarchive=False):
+        """C4 §4.2 step 4 for a spool a tag belongs to: add the UID read on
+        the bay if it is new, and backfill the tray UUID if the spool has none
+        and no other spool holds it (else report the pair). One PATCH, only
+        when something is new; ``unarchive`` restores an archived spool in
+        it. Returns the spool as last known."""
+        uids = ops.tag_uids(tag)
+        uid = uids[0] if uids else None
+        tray = ops.tag_tray(tag)
+        backfill = None
+        if tray and ops.spool_tray(spool) is None:
+            holder = ops.tray_holder(spools, tray, other_than=spool["id"])
+            if holder is None:
+                backfill = tray
+            else:
+                self._report_duplicate(spool["id"], holder["id"], tray, uid)
+        body = {}
+        extra = ops.tag_extra(spool, uid, backfill)
+        if extra is not None:
+            body["extra"] = extra
+        if unarchive and spool.get("archived"):
+            body["archived"] = False
+        if not body:
+            return spool
+        try:
+            written = await self._api.request(
+                "PATCH", "/v1/spool/%d" % spool["id"], body=body)
+        except SpoolmanUnavailable:
+            self.spoolman_online = False
+            if uid and uid not in ops.spool_uids(spool):
+                # Keep the link; the UID mirror is queued (C4 §6).
+                self._cache.enqueue({"op": "card_uid",
+                                     "spool_id": spool["id"], "uid": uid})
+            return spool
+        except SpoolmanError:
+            return spool   # keep the link; the UID mirror waits
+        return written if isinstance(written, dict) else spool
+
+    async def _note_sibling(self, machine):
+        """The UID read on a tag-linked bay changed to another UID of the
+        same spool key (C4 §4.3): add it to the linked spool. No link
+        command, no location write, no active-spool change."""
+        if machine.state not in ("linked", "pending_confirmation") \
+                or machine.source != "tag" or machine.spool_id is None \
+                or machine.last_tag is None \
+                or machine.last_tag[0] != machine.tag_key:
+            return
+        uid = machine.read_uid
+        spool_id = machine.spool_id
+        if not uid or self._cache.lookup_uid(uid) == spool_id:
             return
         try:
-            vendor = await ops.get_or_create_vendor(self._api,
-                                                    self._tag_vendor)
-            filament = await ops.find_or_create_filament(
-                self._api, vendor["id"], tag.get("bambu") or {})
-            spool = await ops.create_spool(self._api, filament["id"], tag, key)
+            spool = await self._api.request("GET", "/v1/spool/%s" % spool_id)
+            extra = ops.tag_extra(spool, uid) if isinstance(spool, dict) \
+                else None
+            if extra is not None:
+                await self._api.request("PATCH", "/v1/spool/%s" % spool_id,
+                                        body={"extra": extra})
             await self._reachable()
         except SpoolmanUnavailable:
-            await self._resolve_offline(key, unit, bay, tag, machine, auto_create)
+            self.spoolman_online = False
+            self._cache.enqueue({"op": "card_uid", "spool_id": spool_id,
+                                 "uid": uid})
+        except SpoolmanError:
             return
-        await self._link(key, unit, bay, machine, spool["id"], spool,
-                         pending=True, tag=tag)
+        self._cache.remember_uid(uid, spool_id)
 
     # ----------------------------------------- unit-decoded summaries (C4 §4.1)
 
@@ -725,9 +1057,12 @@ class Linker(object):
         machine.source = None
         machine.spool_id = None
         machine.error = error
+        self._drop_suggestions(machine)
         machine.suggestions = [
             ops.suggestion_of(spool)
             for spool in candidates[:MAX_SUGGESTIONS]]
+        if machine.suggestions:
+            machine.suggestion_kind = "summary"
 
     async def _summary_offline(self, key, unit, bay, tag, summary, machine,
                                auto_create):
@@ -745,20 +1080,38 @@ class Linker(object):
         else:
             machine.error = OFFLINE_ERROR
 
-    async def _resolve_offline(self, key, unit, bay, tag, machine, auto_create):
+    async def _resolve_offline(self, key, unit, bay, tag, machine, auto_create,
+                               before=None):
         """Spoolman is away: link the cached spool, else queue the create (C4 §6).
 
-        Without ``auto_create_spoolman_spools`` there is nothing to queue (the
+        The cache answers in the order of C4 §4 (``SpoolCache.lookup``), and
+        a queued creation replays through the whole order, so the two tags of
+        one spool end as one spool. Without ``auto_create_spoolman_spools``
+        there is nothing to queue (the
         online counterpart would go straight to ``unlinked``, C4 §3); the bay
         stays ``resolving`` with the plain offline error instead so the retry
         branch in ``_bay_status`` re-tries it once Spoolman answers again,
         exactly as if creation were merely delayed rather than off (contract
-        silent on this combination; simplest reading).
+        silent on this combination; simplest reading). A bare UID queues
+        nothing (C4 §4.2 step 8): a Bambu one waits, retried once Spoolman
+        answers; any other leaves the bay as it was.
         """
         self.spoolman_online = False
         spool_id = self._cache.lookup(tag)
         if spool_id is not None:
+            uids = ops.tag_uids(tag)
+            if uids and self._cache.lookup_uid(uids[0]) != spool_id:
+                # Found by the tray UUID or a sibling: the read UID joins the
+                # spool once Spoolman answers (C4 §4.2 step 4).
+                self._cache.enqueue({"op": "card_uid", "spool_id": spool_id,
+                                     "uid": uids[0]})
+                self._cache.remember_uid(uids[0], spool_id)
             await self._link(key, unit, bay, machine, spool_id, tag=tag)
+            return
+        if not ops.tag_decoded(tag):
+            self._wait_for_decode(machine, tag, before or
+                                  ("unlinked", None, None, None),
+                                  error=OFFLINE_ERROR)
             return
         machine.state = "resolving"
         if auto_create:
@@ -785,7 +1138,8 @@ class Linker(object):
                     pending=False, tag=None):
         """Tell the host about the link and mirror the location (C4 §5.6)."""
         old = machine.spool_id
-        machine.suggestions = []
+        self._drop_suggestions(machine)
+        machine.awaiting_decode = False
         machine.state = "pending_confirmation" if pending else "linked"
         machine.source = "tag"
         machine.spool_id = spool_id
@@ -793,7 +1147,7 @@ class Linker(object):
             self._cache.set_pending(key, spool_id)
         else:
             self._cache.clear_pending(key)
-        machine.tag_uid = machine.last_tag[0] if machine.last_tag else None
+        machine.tag_key = machine.last_tag[0] if machine.last_tag else None
         machine.error = None
         machine.link_sent_at = self._clock()
         if spool is not None:
@@ -806,9 +1160,17 @@ class Linker(object):
             # or the same tag found under a new id): the old spool no
             # longer sits here, matching what _adopt already does for a
             # manual relink (C4 §5.6).
-            await self._set_location(old, "", machine)
+            await self._clear_location(key, old, machine)
         queued = await self._set_location(spool_id, key, machine)
         machine.mirror_queued = bool(queued)
+
+    async def _clear_location(self, key, spool_id, machine=None):
+        """Clear a spool's ``location`` as bay ``key`` lets go of it (C4
+        §5.6), unless another bay links it now: on a move the new bay may have
+        linked it first, and its location then stays (C4 §4.4)."""
+        if spool_id in self._linked_elsewhere(key):
+            return False
+        return await self._set_location(spool_id, "", machine)
 
     async def _adopt(self, key, machine, host_spool, host_source, tag=None):
         """Follow the host's authoritative link (C4 §3, first row)."""
@@ -826,52 +1188,92 @@ class Linker(object):
         if not pending:
             self._cache.clear_pending(key)
         old = machine.spool_id
-        machine.suggestions = []
+        # A manual link to a spool this bay's tag suggested is the user's
+        # answer (C4 §4.2): the tag's step 4 runs for it.
+        accepted = None
+        if machine.suggestion_kind in ("legacy", "archived") and host_spool \
+                in [entry.get("spool_id") for entry in machine.suggestions]:
+            accepted = (machine.suggestion_kind, machine.suggested_tag)
+        self._drop_suggestions(machine)
+        machine.awaiting_decode = False
         machine.state = "pending_confirmation" if pending else "linked"
         machine.source = source
         machine.spool_id = host_spool
         machine.error = None
         if source == "tag" and machine.last_tag is not None:
-            machine.tag_uid = machine.last_tag[0]
+            machine.tag_key = machine.last_tag[0]
         if old != host_spool:
             if old is not None:
-                await self._set_location(old, "", machine)
+                await self._clear_location(key, old, machine)
             queued = await self._set_location(host_spool, key, machine)
             machine.mirror_queued = bool(queued)
+        if accepted is not None:
+            await self._accept_suggestion(host_spool, *accepted)
         await self._refresh_summary(host_spool, reload=True,
                                     tag=tag if source == "tag" else None)
 
+    async def _accept_suggestion(self, spool_id, kind, tag):
+        """The user linked a spool the bay's tag suggested (C4 §4.2): add the
+        tag's UID and backfill its tray UUID (step 4), restoring an archived
+        spool. Spoolman away: the UID is queued; nothing else is lost, since
+        the next read of the tag completes the rest."""
+        uids = ops.tag_uids(tag)
+        try:
+            spools = await self._api.request("GET", "/v1/spool") or []
+            spool = await self._api.request("GET", "/v1/spool/%s" % spool_id)
+            await self._reachable()
+        except SpoolmanUnavailable:
+            self.spoolman_online = False
+            if uids:
+                self._cache.enqueue({"op": "card_uid", "spool_id": spool_id,
+                                     "uid": uids[0]})
+            return
+        except SpoolmanError:
+            return
+        if not isinstance(spool, dict):
+            return
+        spool = await self._known_spool(tag, spool, spools,
+                                        unarchive=kind == "archived")
+        self._cache.remember(tag, spool)
+
     async def _unlink(self, unit, bay, machine):
         """Removal: clear the host's link and the location mirror (C4 §3)."""
-        self._cache.clear_pending("%s-%s" % (unit, bay.get("index")))
+        key = "%s-%s" % (unit, bay.get("index"))
+        self._cache.clear_pending(key)
         old = machine.spool_id
-        machine.suggestions = []
+        self._drop_suggestions(machine)
+        machine.awaiting_decode = False
         machine.state = "unlinked"
         machine.source = None
         machine.spool_id = None
-        machine.tag_uid = None
+        machine.tag_key = None
         machine.error = None
         machine.mirror_queued = False
         await self._run_gcode("OAMSM_CLEAR_BAY_SPOOL OAMS=%s BAY=%s"
                               % (unit, bay.get("index")))
         if old is not None:
-            await self._set_location(old, "", machine)
+            await self._clear_location(key, old, machine)
 
     async def _reconcile(self, machine):
         """The host's link vanished: follow it to ``unlinked`` (C4 §3)."""
+        mine = None
         for key, other in self._bays.items():
             if other is machine:
+                mine = key
                 self._cache.clear_pending(key)
         old = machine.spool_id
-        machine.suggestions = []
+        self._drop_suggestions(machine)
+        machine.awaiting_decode = False
         machine.state = "unlinked"
         machine.source = None
         machine.spool_id = None
-        machine.tag_uid = None
+        machine.tag_key = None
         machine.error = None
         machine.mirror_queued = False
         if old is not None:
-            await self._set_location(old, "", machine)
+            # The host moves a link: the bay that took the spool keeps its
+            # location (C4 §4.4).
+            await self._clear_location(mine, old, machine)
 
     async def _replay(self):
         """Replay the queued writes in order (C4 §6); stop at the first
@@ -920,7 +1322,10 @@ class Linker(object):
             machine.mirror_queued = False
 
     async def _replay_create(self, entry):
-        """Replay one queued creation, de-duplicating by tag (C4 §4, §6)."""
+        """Replay one queued creation through the whole resolution order of
+        C4 §4 (``_tag_decide``), so a spool made meanwhile, by another tool
+        or by the replay of the spool's other tag, is linked rather than
+        duplicated (C4 §6)."""
         key, unit, bay_index, tag = (entry.get("key"), entry.get("unit"),
                                      entry.get("bay"), entry.get("tag") or {})
         machine = self._bay(key)
@@ -928,25 +1333,19 @@ class Linker(object):
         if tag.get("format") == "unit_summary":
             await self._replay_create_summary(key, unit, bay, tag, machine)
             return
-        spool = await ops.find_spool_by_tag(self._api, tag)
-        pending = False
-        if spool is None:
-            vendor = await ops.get_or_create_vendor(self._api,
-                                                    self._tag_vendor)
-            filament = await ops.find_or_create_filament(
-                self._api, vendor["id"], tag.get("bambu") or {})
-            spool = await ops.create_spool(self._api, filament["id"], tag, key)
-            pending = True
+        spools = await self._api.request("GET", "/v1/spool") or []
+        verdict, payload = await self._tag_decide(key, tag, spools, True)
         still_resolving = machine.state == "resolving" and \
             machine.last_tag is not None and \
-            machine.last_tag[0] == tag.get("uid")
+            machine.last_tag[0] == ops.tag_key(tag)
         if not still_resolving:
             # The bay moved on or the spool was removed while this waited
             # (C4 §6); remember the spool for later lookups but do not link.
-            self._cache.remember(tag, spool)
+            if verdict in ("found", "created"):
+                self._cache.remember(tag, payload)
             return
-        await self._link(key, unit, bay, machine, spool["id"], spool,
-                         pending=pending, tag=tag)
+        await self._apply_tag(key, unit, bay, tag, machine, verdict, payload,
+                              spools, self._snapshot(machine))
 
     async def _replay_create_summary(self, key, unit, bay, tag, machine):
         """Replay a queued unit-decoded creation (C4 §4.1, §6): the whole
@@ -954,7 +1353,8 @@ class Linker(object):
         duplicated. A read that is no longer the bay's current one is dropped
         without creating anything, since the summary says nothing durable."""
         if not (machine.state == "resolving"
-                and machine.last_tag == (tag.get("uid"), tag.get("read_at"))):
+                and machine.last_tag == (ops.tag_key(tag),
+                                         tag.get("read_at"))):
             return
         verdict, payload = await self._summary_decide(
             key, self._summary_for(key, tag)[0], True)

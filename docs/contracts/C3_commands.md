@@ -402,7 +402,7 @@ so a UI speaking C2 had nothing to send (C5 §7.1, §7.7).
   where the family's selector kind has a selector to home. An AMS unit
   publishes none of them, and its refusal above is the only way to learn that.
 
-### `OAMS_RFID_SCAN BAY=<i>`
+### `OAMS_RFID_SCAN BAY=<i> [ASSERT=<0|1>] [TURN=<0|1>]`
 `cmd_OAMS_RFID_SCAN`, `oams.py`. A unit whose `capabilities.rfid` is false
 refuses at once (`"This unit has no RFID reader"`).
 
@@ -416,20 +416,54 @@ later as the bay's `tag` (C2 §4.6, `format: "unit_summary"`). Without
 last said. `supported_actions` lists `rfid_scan` for such a unit only with
 `tray_read`.
 
+**A unit whose reads the host attributes (`bays[i].tag_state`, C2 §4.5.2;
+an OpenAMS 1 with `[mfrc522]` readers).** `OAMS_RFID_SCAN OAMS=<unit>
+BAY=<i> [ASSERT=<0|1>] [TURN=<0|1>]` samples the reader that covers the bay
+and answers with the bay's attribution (C2 §4.6.1), one of:
+
+- `"<unit> Spool <n>: attributed <spool_key>"`, with `" (not in the field
+  now)"` when the tag did not answer this sample. When it did answer, this
+  is an explicit re-read: the bay's `tag` gets a new `read_at`;
+- `"<unit> Spool <n>: candidate <spool_key> (not confirmed: load, or
+  OAMS_RFID_SCAN ... ASSERT=1)"`: one spool key no other bay holds was in
+  the field; the bay now has it as a candidate, never as its `tag`;
+- `"<unit> Spool <n>: conflict <reason>"` (`reason` as C2 §4.5.2, with
+  `" (also on Spool <m>)"` for `claimed_twice`);
+- `"<unit> Spool <n>: no tag in the field"`, with `" (the tag in the field
+  is Spool <m>'s)"` when the only tag answering belongs to another bay, or
+  `" (the bay holds no spool)"` when its `ready` is false.
+
+A sample that finds no tag never clears the bay's `tag`. Without `BAY`
+the command is unchanged.
+
+`ASSERT=1` is the user saying "the tag in this bay's field is this bay's"
+(the display's "It is this slot"): the single spool key in a fresh sample is
+attributed to the bay (evidence `asserted`, a new `read_at`), moving it from
+a bay that held it by inference. Refused with `"<unit> Spool <n> holds no
+spool (its sensor reads empty)"` on a bay whose `ready` is false, `"No tag in
+the field of <unit> Spool <n>'s reader"` when nothing answers, and `"Two tags
+answer this reader; turn the other spool away"` when two spool keys do.
+`TURN=1` asks for a bounded turn of the spool to bring its tag past the
+reader; no unit offers that operation, so it is refused with `"This unit
+cannot turn a spool to read its tag"`. `ASSERT` and `TURN` take 0 or 1
+(`"ASSERT and TURN take 0 or 1"`). `supported_actions` lists `rfid_scan` for
+such a unit.
+
 **The reader service (S4b, EXISTS — `src/oams_tags.py`).** One `TagReader`
-per unit keeps `bays[i].tag` (C2 §4.6). On a unit that decodes its own tags
-and takes `ams_tray_read`, it triggers a read on a `ready` rise (once the bay
-stops positioning, gated on `settings.read_tag_on_insertion`), at startup for
+per unit keeps `bays[i].tag` and, where it attributes reads, `tag_state`
+(C2 §4.5.2, §4.6). On a unit that decodes its own tags and takes
+`ams_tray_read`, it triggers a read on a `ready` rise (once the bay stops
+positioning, gated on `settings.read_tag_on_insertion`), at startup for
 every ready bay the unit reports as not read (gated on
-`settings.read_tags_at_startup`), and on the explicit read above; a `ready`
-fall clears the bay's tag unless `OAMSManager.unit_runout_active` says the
-unit's lane is mid-runout (C4 §3). On an OpenAMS 1 mainboard, the separate
-`[mfrc522 <name>]` object (§3) hands its own reads and removals to the same
-per-unit `TagReader` instead of decoding independently; its `bays_a` /
-`bays_b` options (default `0,1` / `2,3`) say which bays each of its two
-readers covers, and a card is attributed to the covered bay whose `ready`
-rose most recently within 30 s, else the only ready covered bay, else not
-attributed at all. The same UID read on another bay of the unit moves there.
+`settings.read_tags_at_startup`), and on the explicit read above. A `ready`
+fall clears the bay's tag unless the bay is in use or the unit's lane is
+mid-runout (C4 §3); a kept tag clears once the runout has ended. On an
+OpenAMS 1 mainboard the separate `[mfrc522 <name>]` object (§3) hands every
+sample of its two readers, with every UID in the field, to the same per-unit
+`TagReader`, which attributes tags by spool motion (C2 §4.6.1); its
+`bays_a` / `bays_b` options (default `0,1` / `2,3`) say which bays each
+reader covers, and the attribution thresholds are options too. Nothing is
+attributed by timing alone, and nothing at startup.
 
 ### `OAMS_PID_SET P=<f> I=<f> D=<f> [TARGET=<f>]` / `OAMS_CURRENT_PID_SET P= I= D= [TARGET=]`
 `oams.py:1638-1661`. Runtime PID tuning for the hub motor / rewind current
@@ -450,9 +484,12 @@ answer instead of "unknown command".
 immediate read of one of the two shared-bus readers on unit `OAMS`; replies
 with the same line `format_last_read()` builds:
 `"OAMSM_RFID_READ OAMS=%d RFID_CARD=%d STATUS=%s LAST_READ_STATUS=%s
-UID=%s BLOCK=%s VERSION=%s FILAMENT=%s ERROR=%s"`
-(`mfrc522.py:485-499`), where `FILAMENT` is the JSON-encoded decoded Bambu
-tag (or `NONE`). Errors: `"Usage: OAMSM_RFID_READ OAMS=<index>
+UID=%s BLOCK=%s VERSION=%s FILAMENT=%s ERROR=%s UIDS=%s"`
+(`format_last_read`), where `UID` is the first tag the anticollision walk
+found, `UIDS` every tag in the field (comma separated, or `NONE`), and
+`FILAMENT` the JSON-encoded decoded Bambu data of the first tag (or `NONE`).
+A read that went wrong reports `LAST_READ_STATUS=ERROR` and is an error, not
+an empty field. Errors: `"Usage: OAMSM_RFID_READ OAMS=<index>
 RFID_CARD=<0|1>"`, `"No RFID reader configured for OAMS=%d RFID_CARD=%d"`.
 Idempotent (read-only).
 
@@ -460,10 +497,9 @@ Idempotent (read-only).
 `OpenAmsMfrc522.cmd_QUERY`, `mfrc522.py:501-503` (mux on `READER`). Same
 effect as `OAMSM_RFID_READ` for a single named reader endpoint.
 
-**Note:** neither command's result is wired into `oams_manager` status
-today (confirmed: no reference to `mfrc522`/`bambu_lab_tag_processor` in
-`oams_manager.py` or `oams.py`). `devices[*].bays[i].tag` (C2 §3.3) requires
-this wiring plus the reader→bay mapping open question (C2 §6.2).
+Every sample, these two commands' included, goes to the unit's tag
+attribution (§2 `OAMS_RFID_SCAN`, C2 §4.6.1): `devices[*].bays[i].tag` and
+`tag_state` follow from it, never from a read alone.
 
 ## 4. Commands added in this design (all EXISTS as of v1)
 

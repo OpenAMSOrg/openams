@@ -109,7 +109,17 @@
           "runtime_pid_tuning": true,
           "logger_control": true,
           "error_led_control": true,
-          "rfid_reader_scope": "per_bay",
+          "rfid_reader_scope": "shared",
+          "rfid_coverage": [
+            [
+              0,
+              1
+            ],
+            [
+              2,
+              3
+            ]
+          ],
           "rfid_uid_inventory": true,
           "rfid_material_metadata": "host_owned",
           "schema_version": 1,
@@ -154,7 +164,17 @@
           "runtime_pid_tuning": true,
           "logger_control": true,
           "error_led_control": true,
-          "rfid_reader_scope": "per_bay",
+          "rfid_reader_scope": "shared",
+          "rfid_coverage": [
+            [
+              0,
+              1
+            ],
+            [
+              2,
+              3
+            ]
+          ],
           "rfid_uid_inventory": true,
           "rfid_material_metadata": "host_owned",
           "schema_version": 1,
@@ -253,7 +273,17 @@
         "runtime_pid_tuning": true,
         "logger_control": true,
         "error_led_control": true,
-        "rfid_reader_scope": "per_bay",
+        "rfid_reader_scope": "shared",
+        "rfid_coverage": [
+          [
+            0,
+            1
+          ],
+          [
+            2,
+            3
+          ]
+        ],
         "rfid_uid_inventory": true,
         "rfid_material_metadata": "host_owned",
         "schema_version": 1,
@@ -342,7 +372,8 @@
         "follower",
         "configure_pid",
         "calibrate_ptfe",
-        "calibrate_hub_hes"
+        "calibrate_hub_hes",
+        "rfid_scan"
       ],
       "identity": {
         "serial": "000000000000000000000001",
@@ -430,7 +461,17 @@
         "runtime_pid_tuning": true,
         "logger_control": true,
         "error_led_control": true,
-        "rfid_reader_scope": "per_bay",
+        "rfid_reader_scope": "shared",
+        "rfid_coverage": [
+          [
+            0,
+            1
+          ],
+          [
+            2,
+            3
+          ]
+        ],
         "rfid_uid_inventory": true,
         "rfid_material_metadata": "host_owned",
         "schema_version": 1,
@@ -513,7 +554,8 @@
         "follower",
         "configure_pid",
         "calibrate_ptfe",
-        "calibrate_hub_hes"
+        "calibrate_hub_hes",
+        "rfid_scan"
       ],
       "identity": {
         "serial": "000000000000000000000002",

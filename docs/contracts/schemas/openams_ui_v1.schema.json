@@ -269,11 +269,39 @@
                       "t",
                       "m"
                     ],
-                    "description": "tag, manual (link_source 'none' is represented by sp: null, not a third enum value)"
+                    "description": "tag, manual (link_source 'none' is represented by sp: null, not a third enum value). On a bay with tg, t only while tg is a."
                   }
                 }
               }
             ]
+          },
+          "tg": {
+            "enum": ["a", "c", "x", "u"],
+            "description": "Additive (two tags): bays[i].tag_state.state: attributed, candidate, conflict, unknown. Absent when the bay has no tag_state or its state is none."
+          },
+          "tc": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 2,
+            "description": "Only with tg c: the candidates' material and colour (RRGGBB, alpha dropped).",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["m", "c"],
+              "properties": {
+                "m": {"type": ["string", "null"]},
+                "c": {"type": ["string", "null"], "pattern": "^[0-9A-F]{6}$"}
+              }
+            }
+          },
+          "tr": {
+            "enum": ["two_moving", "claimed_twice", "changed_in_place", "ambiguous_pair", "no_tag_after_turn"],
+            "description": "Only with tg x: tag_state.reason."
+          },
+          "to": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "description": "Only with tr claimed_twice: the other bay's slot id."
           }
         }
       }

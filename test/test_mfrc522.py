@@ -244,10 +244,16 @@ def test_one_driver_owns_and_serializes_both_readers():
     operations = []
     for reader in driver.readers:
         card = reader.rfid_card
-        reader._sample = lambda eventtime, debounce_removal, card=card: (
-            operations.append((card, eventtime, debounce_removal)))
-    assert driver._poll(10.0) == 10.5
-    assert operations == [(0, 10.0, True), (1, 10.0, True)]
+        reader._sample = lambda eventtime, card=card: (
+            operations.append((card, eventtime)))
+    # Both readers in turn; the next poll is poll_interval after the
+    # scheduled time, or after now when the samples ran late (this test's
+    # reactor clock reads 100.0).
+    assert driver._poll(10.0) == 100.5
+    assert operations == [(0, 10.0), (1, 10.0)]
+    # Nothing left of the timing rule (design 7.1).
+    assert not hasattr(driver, "_pick_bay")
+    assert not hasattr(driver, "_bay_rise_times")
 
 
 def test_firmware_debug_decodes_shared_bus_state():
@@ -298,9 +304,273 @@ def test_firmware_debug_decodes_shared_bus_state():
     assert sends == [[]]
 
 
+class SimTag:
+    """One ISO/IEC 14443-A tag in a simulated field."""
+
+    def __init__(self, uid, sak=0x08):
+        self.uid = bytes(uid)
+        self.sak = sak
+        self.state = "IDLE"
+        self.level = 0
+        if len(self.uid) == 4:
+            parts = [list(self.uid)]
+        elif len(self.uid) == 7:
+            parts = [[0x88] + list(self.uid[0:3]), list(self.uid[3:7])]
+        else:
+            parts = [[0x88] + list(self.uid[0:3]),
+                     [0x88] + list(self.uid[3:6]), list(self.uid[6:10])]
+        self.parts = [p + [p[0] ^ p[1] ^ p[2] ^ p[3]] for p in parts]
+
+    def bits(self, level):
+        return mfrc522._bytes_to_bits(self.parts[level])
+
+
+class SimChip(mfrc522.Mfrc522):
+    """An MFRC522 whose transceive answers from simulated tags: REQA, WUPA,
+    bit-wise anticollision with the chip's collision position, SELECT and
+    HLTA. ``convention`` is how CollPos counts once known bits were sent
+    (the open hardware question, design G4)."""
+
+    LEVELS = {0x93: 0, 0x95: 1, 0x97: 2}
+
+    def __init__(self, tags, convention="absolute"):
+        super().__init__(spi=None)
+        self.tags = list(tags)
+        self.convention = convention
+        self.coll = 0
+
+    def reg_write(self, reg, value):
+        pass
+
+    def reg_read(self, reg):
+        return 0
+
+    def _communicate(self, command, send_data, tx_last_bits=0, rx_align=0,
+                     check_crc=False, collision=False):
+        data = list(send_data)
+        if data[0] in (0x26, 0x52) and tx_last_bits == 7:
+            woken = ("IDLE",) if data[0] == 0x26 else ("IDLE", "HALT")
+            answering = [t for t in self.tags if t.state in woken]
+            if not answering:
+                raise mfrc522.Mfrc522NoCard("no card")
+            for tag in answering:
+                tag.state, tag.level = "READY", 0
+            return [0x04, 0x00], 16
+        if data[0] == 0x50:
+            for tag in self.tags:
+                if tag.state == "ACTIVE":
+                    tag.state = "HALT"
+            raise mfrc522.Mfrc522NoCard("no answer")
+        level = self.LEVELS[data[0]]
+        ready = [t for t in self.tags
+                 if t.state == "READY" and t.level == level]
+        if data[1] == 0x70:
+            part = data[2:7]
+            chosen = [t for t in ready if t.parts[level] == part]
+            for tag in ready:
+                if tag not in chosen:
+                    tag.state = "IDLE"
+            if not chosen:
+                raise mfrc522.Mfrc522NoCard("no card")
+            # Tags sharing this cascade level answer one identical SAK.
+            for tag in chosen:
+                if part[0] == 0x88:
+                    tag.level = level + 1
+                else:
+                    tag.state = "ACTIVE"
+            sak = 0x04 if part[0] == 0x88 else chosen[0].sak
+            frame = [sak]
+            return frame + self._calculate_crc(frame), 24
+        nbits = ((data[1] >> 4) - 2) * 8 + (data[1] & 7)
+        known = mfrc522._bytes_to_bits(data[2:])[:nbits]
+        answering = [t for t in ready if t.bits(level)[:nbits] == known]
+        if not answering:
+            raise mfrc522.Mfrc522NoCard("no card")
+        rests = [t.bits(level)[nbits:40] for t in answering]
+        index = None
+        for i in range(40 - nbits):
+            if len(set(rest[i] for rest in rests)) > 1:
+                index = i
+                break
+        received = list(rests[0])
+        if index is not None:
+            received = received[:index] + [1] + [0] * (len(received)
+                                                      - index - 1)
+        fifo = [0] * rx_align + received
+        response = list(mfrc522._bits_to_bytes(fifo))
+        if not collision:
+            return response, len(fifo)
+        pos = None
+        if index is not None:
+            pos = {"absolute": nbits + index + 1,
+                   "fifo": rx_align + index + 1,
+                   "relative": index + 1}[self.convention]
+            if pos > 32:
+                raise mfrc522.Mfrc522Error("collision outside the UID bits")
+            pos = pos % 32
+            pos = pos or 32
+        return response, len(fifo), pos
+
+
+class ReadUidsTests(unittest.TestCase):
+    """Mfrc522.read_uids: every tag in the field (design 7.1, test 15)."""
+
+    def test_an_empty_field_is_empty(self):
+        self.assertEqual(SimChip([]).read_uids(), [])
+
+    def test_one_tag(self):
+        uid = bytes.fromhex("11223344")
+        self.assertEqual(SimChip([SimTag(uid)]).read_uids(), [uid])
+
+    def test_two_tags_of_two_spools_both_answer(self):
+        a, b = bytes.fromhex("11223344"), bytes.fromhex("11a23344")
+        for convention in ("absolute", "fifo", "relative"):
+            with self.subTest(convention=convention):
+                chip = SimChip([SimTag(a), SimTag(b)], convention)
+                self.assertEqual(sorted(chip.read_uids()), sorted([a, b]))
+                self.assertEqual(chip.saks, {a: 0x08, b: 0x08})
+
+    def test_a_collision_at_the_second_cascade_level(self):
+        a = bytes.fromhex("04112233445566")
+        b = bytes.fromhex("04112233c45566")
+        chip = SimChip([SimTag(a, sak=0x00), SimTag(b, sak=0x00)])
+        self.assertEqual(sorted(chip.read_uids()), sorted([a, b]))
+
+    def test_three_tags_with_collisions_after_known_bits(self):
+        uids = [bytes.fromhex(h) for h in ("10000000", "10000001",
+                                           "30000001")]
+        chip = SimChip([SimTag(u) for u in uids])
+        self.assertEqual(sorted(chip.read_uids()), sorted(uids))
+
+    def test_at_most_four_tags(self):
+        uids = [bytes([0x20 + i, 1, 2, 3]) for i in range(5)]
+        chip = SimChip([SimTag(u) for u in uids])
+        self.assertEqual(len(chip.read_uids()), 4)
+
+    def test_a_tag_lost_during_anticollision_is_an_error_not_empty(self):
+        tag = SimTag(bytes.fromhex("11223344"))
+        chip = SimChip([tag])
+        real = chip._communicate
+
+        def leave(command, send_data, *args, **kwargs):
+            if send_data[0] == 0x93 and send_data[1] != 0x70:
+                chip.tags = []
+            return real(command, send_data, *args, **kwargs)
+
+        chip._communicate = leave
+        with self.assertRaises(mfrc522.Mfrc522Error) as caught:
+            chip.read_uids()
+        self.assertNotIsInstance(caught.exception, mfrc522.Mfrc522NoCard)
+
+    def test_select_uid_wakes_and_selects_one_tag(self):
+        a, b = bytes.fromhex("11223344"), bytes.fromhex("55667788")
+        tags = [SimTag(a), SimTag(b, sak=0x18)]
+        chip = SimChip(tags)
+        chip.read_uids()
+        self.assertEqual(chip.select_uid(b), 0x18)
+        self.assertEqual([t.state for t in tags], ["IDLE", "ACTIVE"])
+
+
+class FieldHandoffTests(unittest.TestCase):
+    """[mfrc522] hands whole samples to the unit's TagReader."""
+
+    def _pair(self):
+        notes = []
+        tag_reader = types.SimpleNamespace(
+            note_field=lambda reader, uids, now, records=None: notes.append(
+                (reader, uids, records)),
+            attach_readers=lambda source, coverage, **options: notes.append(
+                ("attach", coverage, sorted(options))),
+            focus_readers=lambda now: [],
+            needs_record=lambda uid: True,
+            reader_at_rest=lambda reader: True,
+            note_decode_failed=lambda uid: None,
+            pending_record=lambda uid: {"format": "bambu", "bambu": None},
+            record_for_key=lambda key: None)
+        oams = types.SimpleNamespace(oams_idx=1, tag_reader=tag_reader)
+        pair = mfrc522.OpenAmsMfrc522Pair.__new__(mfrc522.OpenAmsMfrc522Pair)
+        pair.printer = types.SimpleNamespace(
+            lookup_objects=lambda module=None: [("oams oams1", oams)],
+            send_event=lambda event, *args: pair._handle_field(*args))
+        pair.reactor = types.SimpleNamespace(monotonic=lambda: 5.0)
+        pair.oams_index = 1
+        pair.bays = {0: (0, 1), 1: (2, 3)}
+        pair.attribution_options = {"debounce": 2}
+        pair._attached = None
+        pair.active_reader = None
+        pair.poll_interval = 0.5
+        pair.focus_poll_interval = 0.1
+        pair.tag_processor = None
+        endpoint = mfrc522.OpenAmsMfrc522.__new__(mfrc522.OpenAmsMfrc522)
+        endpoint.owner = pair
+        endpoint.printer = pair.printer
+        endpoint.reactor = pair.reactor
+        endpoint.name = "rfid_a"
+        endpoint.rfid_card = 0
+        endpoint.version = 0x92
+        endpoint.uids = []
+        endpoint.uid = None
+        endpoint.records = {}
+        endpoint.block_data = None
+        endpoint.tag_data = None
+        endpoint.tag_processor = None
+        endpoint.read_block_number = None
+        endpoint._decode_failed = {}
+        endpoint.last_error = None
+        endpoint.last_read_status = "NOT_READ"
+        pair.readers = (endpoint,)
+        pair.activate_reader = lambda reader, force=False: 0x92
+        return pair, endpoint, notes
+
+    def test_every_uid_goes_in_one_sample(self):
+        pair, endpoint, notes = self._pair()
+        a, b = bytes.fromhex("11223344"), bytes.fromhex("11a23344")
+        endpoint.reader = SimChip([SimTag(a), SimTag(b)])
+        self.assertEqual(sorted(pair.sample_reader(0)),
+                         sorted([a.hex(), b.hex()]))
+        self.assertEqual(notes[0], ("attach", [[0, 1], [2, 3]],
+                                    ["debounce"]))
+        reader, uids, records = notes[-1]
+        self.assertEqual((reader, sorted(uids)), (0, sorted([a.hex(),
+                                                             b.hex()])))
+        self.assertEqual(endpoint.last_read_status, "PRESENT")
+        self.assertEqual(len(endpoint.uids), 2)
+
+    def test_an_error_is_an_error_not_a_removal(self):
+        # Was: a collision (bad BCC) counted as a miss, and two misses
+        # reported the tag removed, which cleared the bay's tag.
+        pair, endpoint, notes = self._pair()
+
+        class Broken(SimChip):
+            def read_uids(self, max_tags=None):
+                raise mfrc522.Mfrc522Error("UID BCC mismatch")
+
+        endpoint.reader = Broken([])
+        self.assertIsNone(pair.sample_reader(0))
+        self.assertEqual(notes[-1], (0, None, {}))
+        self.assertEqual(endpoint.last_read_status, "ERROR")
+
+    def test_a_mifare_tag_seen_without_a_processor_has_no_record(self):
+        pair, endpoint, notes = self._pair()
+        endpoint.reader = SimChip([SimTag(bytes.fromhex("11223344"))])
+        pair.sample_reader(0)
+        self.assertEqual(notes[-1][2], {})
+
+    def test_a_mifare_tag_not_decoded_yet_is_a_pending_bambu_tag(self):
+        pair, endpoint, notes = self._pair()
+        endpoint.tag_processor = object()      # configured, not at rest
+        pair.tag_reader().reader_at_rest = lambda reader: False
+        endpoint.reader = SimChip([SimTag(bytes.fromhex("11223344"))])
+        pair.sample_reader(0)
+        self.assertEqual(notes[-1][2],
+                         {"11223344": {"format": "bambu", "bambu": None}})
+
+
 def load_tests(loader, tests, pattern):
-    del loader, tests, pattern
+    del tests, pattern
     return unittest.TestSuite([
+        loader.loadTestsFromTestCase(ReadUidsTests),
+        loader.loadTestsFromTestCase(FieldHandoffTests),
         unittest.FunctionTestCase(test_register_framing_and_crc),
         unittest.FunctionTestCase(test_oamsm_rfid_read_command),
         unittest.FunctionTestCase(test_ready_serializes_dual_reader_drivers),

@@ -373,7 +373,9 @@ See §6.3. This is **not** a force-clear.
 The host sends no raw tag command. It learns what each bay holds in one of
 two ways: a unit that reads and decodes its spools' tags itself reports a
 summary per bay (§4.7.1), and the STM32F072 mainboard's host-driven
-`[mfrc522]` readers hand their reads to the host (§1.4, C2 §4.6).
+`[mfrc522]` readers hand their reads to the host (§1.4, C2 §4.6). Each of
+those two readers covers two bays, so the host attributes every tag it sees
+to a bay by spool motion and by spool key (C2 §4.6.1).
 
 ### 4.7.1 Unit-decoded tags (`AMS_CAP_TRAY_INFO`, `AMS_CAP_TRAY_READ`)
 

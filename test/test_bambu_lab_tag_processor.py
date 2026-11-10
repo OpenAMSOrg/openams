@@ -80,15 +80,46 @@ def test_selected_block_read_and_decode():
     assert filament["length_m"] == 330
 
 
+def test_identity_reads_block_9_alone():
+    processor = make_processor()
+    tray = bytes(range(0x40, 0x50))
+    calls = []
+
+    def read_block(block, key, uid, key_b=False):
+        calls.append((block, bytes(key)))
+        return tray if block == 9 else bytes(16)
+
+    identity = processor.read_identity(
+        types.SimpleNamespace(read_block=read_block), TEST_UID)
+    keys = processor.derive_sector_keys(TEST_UID)
+    assert calls == [(9, keys[2])]
+    assert identity == tray.hex()
+
+    # A blank block 9 comes back verbatim: the spool key rejects it.
+    blank = processor.read_identity(
+        types.SimpleNamespace(read_block=lambda *a, **k: bytes(16)), TEST_UID)
+    assert blank == "00" * 16
+
+
+def test_a_blank_tray_uid_stays_in_the_decode():
+    processor = make_processor()
+    filament = processor.decode(bytes(1024))
+    assert filament["tray_uid"] == "00" * 16
+
+
 def load_tests(loader, tests, pattern):
     del loader, tests, pattern
     return unittest.TestSuite([
         unittest.FunctionTestCase(test_master_key_validation_and_derivation),
         unittest.FunctionTestCase(test_selected_block_read_and_decode),
+        unittest.FunctionTestCase(test_identity_reads_block_9_alone),
+        unittest.FunctionTestCase(test_a_blank_tray_uid_stays_in_the_decode),
     ])
 
 
 if __name__ == "__main__":
     test_master_key_validation_and_derivation()
     test_selected_block_read_and_decode()
+    test_identity_reads_block_9_alone()
+    test_a_blank_tray_uid_stays_in_the_decode()
     print("PASS: Bambu key validation, selected-block read, and decode")

@@ -9,14 +9,6 @@ from . import ops
 from .api import SpoolmanUnavailable
 
 
-def _uids(value):
-    """A ``card_uids`` extra value as a list of upper-case UIDs."""
-    if value is None:
-        return []
-    return [part.strip().upper() for part in str(value).split(",")
-            if part.strip()]
-
-
 class SpoolCache(object):
     """The read cache and the write queue (C4 §6)."""
 
@@ -34,6 +26,11 @@ class SpoolCache(object):
         # confirmation (C4 §5.8). Kept on disk, so a Moonraker restart asks
         # again instead of taking the host's link as confirmed.
         self._pending = {}
+        # Pairs of spools that hold the two tags of one spool, found when a
+        # read could not backfill the tray UUID (C4 §9.2): reported, never
+        # merged automatically. ``{"spools": [x, y], "reason", "tray_uid",
+        # "uid"}`` entries.
+        self.duplicates = []
         self._prewarmed = False
         state = load() if load is not None else None
         if isinstance(state, dict):
@@ -48,16 +45,42 @@ class SpoolCache(object):
                 (key, value) for key, value in
                 (state.get("pending") or {}).items()
                 if isinstance(value, int) and not isinstance(value, bool))
+            self.duplicates = [
+                dict(entry) for entry in (state.get("duplicates") or [])
+                if isinstance(entry, dict)
+                and isinstance(entry.get("spools"), list)
+                and len(entry["spools"]) == 2]
 
     def state(self):
         """The JSON-safe state to persist: the keys, summaries, written
-        settings and queue."""
+        settings, queue, pending confirmations and reported duplicates."""
         return {"keys": dict(self._keys),
                 "summaries": dict(self._summaries),
                 "written": dict((key, dict(value))
                                 for key, value in self._written.items()),
                 "queue": [dict(entry) for entry in self.queue],
-                "pending": dict(self._pending)}
+                "pending": dict(self._pending),
+                "duplicates": [dict(entry, spools=list(entry["spools"]))
+                               for entry in self.duplicates]}
+
+    def add_duplicate(self, first, second, reason, tray_uid=None, uid=None):
+        """Report two spools as one spool's two records (C4 §9.2); each
+        unordered pair once. Returns whether the pair is new."""
+        pair = set((first, second))
+        if first == second or any(set(entry["spools"]) == pair
+                                  for entry in self.duplicates):
+            return False
+        self.duplicates.append({"spools": [first, second], "reason": reason,
+                                "tray_uid": tray_uid, "uid": uid})
+        self.persist()
+        return True
+
+    def drop_duplicates(self, keep):
+        """Keep only the reported pairs ``keep(entry)`` accepts."""
+        kept = [entry for entry in self.duplicates if keep(entry)]
+        if len(kept) != len(self.duplicates):
+            self.duplicates = kept
+            self.persist()
 
     def pending_spool(self, bay_key):
         """The spool a bay's tag link waits on the user to confirm, or None."""
@@ -95,31 +118,51 @@ class SpoolCache(object):
             self._save(self.state())
 
     def lookup(self, tag):
-        """The spool id a tag is cached under, or None: UID first, then tray."""
-        tag = tag or {}
-        uid = str(tag.get("uid") or "").strip().upper()
-        if uid and ("uid:" + uid) in self._keys:
-            return self._keys["uid:" + uid]
-        tray = (tag.get("bambu") or {}).get("tray_uid")
-        if tray:
-            key = "tray:" + str(tray).strip().lower()
-            if key in self._keys:
-                return self._keys[key]
+        """The spool id a tag is cached under, or None, in the order of C4 §4
+        (``ops.match_tag``): the UID read on the bay, then the valid tray
+        UUID, then a sibling UID the host publishes for the spool key."""
+        uids = ops.tag_uids(tag)
+        if uids and ("uid:" + uids[0]) in self._keys:
+            return self._keys["uid:" + uids[0]]
+        tray = ops.tag_tray(tag)
+        if tray and ("tray:" + tray) in self._keys:
+            return self._keys["tray:" + tray]
+        if not (tag or {}).get("shared_identity"):
+            for uid in uids[1:]:
+                if ("uid:" + uid) in self._keys:
+                    return self._keys["uid:" + uid]
         return None
+
+    def lookup_uid(self, uid):
+        """The spool id a tag UID is cached under, or None."""
+        value = str(uid or "").strip().upper()
+        return self._keys.get("uid:" + value) if value else None
+
+    def remember_uid(self, uid, spool_id):
+        """Cache one tag UID for a spool whose summary is not at hand: a
+        sibling UID added to the linked spool (C4 §4.3)."""
+        value = str(uid or "").strip().upper()
+        if value and spool_id is not None and \
+                self._keys.get("uid:" + value) != spool_id:
+            self._keys["uid:" + value] = spool_id
+            self.persist()
 
     def remember(self, tag, spool):
         """Cache a resolved spool under the tag's UID, and under its Bambu
         tray key when the spool carries that tray UID: online, a tray UID
         finds only a spool that has it (C4 §4), and a UID found a spool
         first."""
-        tag = tag or {}
-        uid = str(tag.get("uid") or "").strip().upper()
-        tray = (tag.get("bambu") or {}).get("tray_uid")
-        own = ops.decode_extra(
-            ((spool or {}).get("extra") or {}).get("tray_uid"))
-        if str(own or "").strip().lower() != str(tray or "").strip().lower():
+        uids = ops.tag_uids(tag)
+        tray = ops.tag_tray(tag)
+        if tray != ops.spool_tray(spool):
             tray = None
-        self._remember(spool, [uid] if uid else [], tray)
+        # Only the UID read on the bay: it is the one the spool now lists.
+        self._remember(spool, uids[:1], tray)
+
+    def remember_spool(self, spool):
+        """Cache a spool under every tag it carries now (its ``card_uids``
+        and valid ``tray_uid``), e.g. after a merge (C4 §9.2)."""
+        self._remember(spool, ops.spool_uids(spool), ops.spool_tray(spool))
 
     def lookup_summary(self, bay_key, summary):
         """The spool id a bay's unit-decoded summary is cached under (C4 §6)."""
@@ -183,13 +226,11 @@ class SpoolCache(object):
             if not isinstance(spool, dict) or spool.get("id") is None:
                 continue
             ids.add(spool["id"])
-            extra = spool.get("extra") or {}
-            for uid in _uids(ops.decode_extra(extra.get("card_uids"))):
+            for uid in ops.spool_uids(spool):
                 uids.setdefault("uid:" + uid, spool["id"])
-            tray = ops.decode_extra(extra.get("tray_uid"))
+            tray = ops.spool_tray(spool)
             if tray:
-                trays.setdefault("tray:" + str(tray).strip().lower(),
-                                 spool["id"])
+                trays.setdefault("tray:" + tray, spool["id"])
         queued = set("uid:" + str(entry.get("uid") or "").strip().upper()
                      for entry in self.queue if entry.get("op") == "card_uid")
         keys = dict(self._keys)

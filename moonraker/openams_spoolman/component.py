@@ -180,6 +180,14 @@ class OpenAmsSpoolman(object):
             "/server/openams_spoolman/confirm", ["POST"], self._handle_confirm)
         self.server.register_endpoint(
             "/server/openams_spoolman/edit", ["POST"], self._handle_edit)
+        # The two-tag maintenance pair (C4 §9.2): a read-only report of the
+        # spools that look like one spool's records, and the merge the owner
+        # confirms. Nothing merges on its own.
+        self.server.register_endpoint(
+            "/server/openams_spoolman/duplicates", ["GET"],
+            self._handle_duplicates)
+        self.server.register_endpoint(
+            "/server/openams_spoolman/merge", ["POST"], self._handle_merge)
         # Moonraker also serves this as the JSON-RPC method
         # ``server.openams.stop``.
         self.server.register_endpoint(
@@ -482,6 +490,73 @@ class OpenAmsSpoolman(object):
         params = {} if lane is None else {"lane": lane}
         return await self.klippy_apis._send_klippy_request(
             "openams/stop", params)
+
+    async def _handle_duplicates(self, web_request):
+        """``GET /server/openams_spoolman/duplicates`` (C4 §9.2)."""
+        if self.linker is None:
+            raise self.server.error("the component has not started yet", 503)
+        try:
+            return await self.linker.duplicates_report()
+        except SpoolmanUnavailable:
+            self.linker.spoolman_online = False
+            raise self.server.error("Spoolman is offline", 503)
+        except SpoolmanError as error:
+            raise self.server.error("Spoolman refused the request: %s"
+                                    % (error.message or error), 502)
+
+    @staticmethod
+    def _spool_arg(args, name):
+        value = args.get(name)
+        if isinstance(value, str) and value.strip().isdigit():
+            value = int(value.strip())
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise edit.EditError("%s is required and must be a spool id"
+                                 % name)
+        return value
+
+    @staticmethod
+    def _confirm_arg(args):
+        value = args.get("confirm", False)
+        if isinstance(value, str):
+            return value.strip().lower() in ("true", "1", "yes")
+        return value is True
+
+    async def _handle_merge(self, web_request):
+        """``POST /server/openams_spoolman/merge`` (C4 §9.2): ``keep`` and
+        ``merge`` spool ids; ``confirm: true`` writes, anything else only
+        answers what would be written."""
+        if self.linker is None:
+            raise self.server.error("the component has not started yet", 503)
+        try:
+            args = dict(web_request.get_args())
+            keep = self._spool_arg(args, "keep")
+            other = self._spool_arg(args, "merge")
+        except edit.EditError as error:
+            raise self.server.error(str(error), error.status)
+        if keep == other:
+            raise self.server.error("keep and merge name the same spool %d"
+                                    % keep, 400)
+        confirm = self._confirm_arg(args)
+        async with self._edit_lock:
+            try:
+                result = await self.linker.merge(keep, other, confirm)
+            except ValueError as error:
+                raise self.server.error(str(error), 409)
+            except SpoolmanUnavailable:
+                self.linker.spoolman_online = False
+                raise self.server.error("Spoolman is offline", 503)
+            except SpoolmanError as error:
+                if error.status == 404:
+                    raise self.server.error(
+                        "Spoolman has no spool %d or %d" % (keep, other), 404)
+                raise self.server.error("Spoolman refused the merge: %s"
+                                        % (error.message or error), 502)
+            if result.get("confirmed"):
+                status_obj = self.linker.status()
+                self._last_sent = status_obj
+                self.server.send_event(EVENT_NAME, status_obj)
+                self._schedule_pass()
+            return result
 
     async def _handle_edit(self, web_request):
         try:

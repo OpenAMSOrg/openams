@@ -244,6 +244,17 @@ gate on: `family`, `display_name`, `bays`, `dryer`, `dryer_target_min_c`,
 `ptfe_calibration`, `hub_hes_calibration`, `rfid`, `rfid_reader_scope`,
 `board_name`, `firmware_version`, `firmware_capability_schema`. A UI must not
 infer an ability from `family` (ARCHITECTURE §1.4); it reads `supported_actions`.
+
+**Tag readers.** `rfid_reader_scope` says how a unit's tag reads relate to
+its bays: `shared` (one reader's field covers several bays, so the host
+attributes each read to a bay, §4.6.1: an AMS 1 on an OpenAMS 1 mainboard,
+whose two `[mfrc522]` readers cover two bays each), `per_bay` (the unit
+reports its reads per bay itself, C1 §4.7.1), `single_bay` (one reader, one
+bay) or `null` (no tag reader). `rfid_coverage` (additive) lists, per reader,
+the bays its field covers, for example `[[0, 1], [2, 3]]`; it is absent where
+the host attributes nothing. On an OpenAMS 1 it is the `[mfrc522]` section's
+`bays_a` / `bays_b`, so a mainboard whose readers cover other bays publishes
+its own. A unit that decodes its own tags (`tray_info`) is never `shared`.
 `tray_info`, `tray_read` and `tray_write` (a unit that decodes its own tags,
 C1 §4.7.1, and stores a per-bay filament setting, C1 §4.7.2) appear only when
 the firmware publishes their constants; the driver turns `tray_write` false
@@ -340,7 +351,8 @@ component pushes it again.
 | `measured_path_mm` | number or null | mm | no | NEW | HC | C1 4.3.1 | the path the unit measured on its last load or calibration of this bay (C1 `AMS_CAP_ARRIVAL_DISTANCE`, the Cortex Bridge from firmware 8); `null` until measured; omitted by units that do not measure it |
 | `spool_id` | int | Spoolman spool id | yes | NEW-v2 | HC (D2) | H3 | set by `OAMSM_SET_BAY_SPOOL` (C3) |
 | `link_source` | enum `tag`, `manual`, `none` | — | no | NEW-v2 | HC (D2) | H3 | §5.5 |
-| `tag` | §4.6 | — | yes | NEW-v2 | TAG | H1 | last successful read; `null` when no tag is present |
+| `tag` | §4.6 | — | yes | NEW-v2 | TAG | H1 | the bay's attributed tag; `null` when there is none (no tag yet, a candidate, a conflict) |
+| `tag_state` | §4.5.2 | — | absent | additive | TAG | two tags | how far the host got attributing a tag to this bay; present only on a unit whose reads the host attributes (`rfid_reader_scope` `shared`, or a host-driven reader) |
 | `spool_hint` | `{mass_g, outer_radius_mm, valid}` | g, mm | yes | NEW-v2 | SM, via the component | reserved (D6) | the firmware may ignore it in v1 |
 | `filament` | `{material, temp_c, source}` | — | yes | NEW-v2 (H2) | SM, via the component | H2 | §4.5.1; `null` when nothing was pushed, when it was cleared, or after a Klipper restart |
 | `supported_actions` | array of `load`, `unload`, `calibrate_ptfe`, `set_spool`, `clear_spool` | — | no | NEW-v2 | HR | H1 | derivation §5.6 |
@@ -365,17 +377,63 @@ spool link changed (the values described the old spool; C3), or after a Klipper
 restart until the component pushes again. A bay with no temperature is
 **unknown**, not wrong: the macros then use their own default.
 
+#### 4.5.2 `devices.<unit>.bays[i].tag_state` — additive (two tags)
+
+On a unit whose reads the host attributes (§4.6.1) every bay carries:
+
+```json
+{"state": "candidate", "reason": null,
+ "candidates": [{"spool_key": "bambu:7d7d…", "uid": "41c2a0de",
+                 "material": "PETG", "color_argb": 4280032284}],
+ "other_bay": null, "reader": 1}
+```
+
+| Key | Type | Note |
+|---|---|---|
+| `state` | enum `none`, `unknown`, `candidate`, `attributed`, `conflict` | `none`: no spool (`ready` false, nothing kept). `unknown`: a spool, no tag evidence yet (its tag has not passed the reader). `candidate`: one tag seen with weak evidence only. `attributed`: the tag is the bay's; it is then in `tag`. `conflict`: the evidence contradicts itself |
+| `reason` | `null` or `two_moving`, `claimed_twice`, `changed_in_place`, `ambiguous_pair`, `no_tag_after_turn` | with `conflict`: two keys moved while only this bay turned; the tag is held in place by another bay (`other_bay`); a different spool's tag showed motion on a bay that stayed in place; two bays inserted together share the candidates. `no_tag_after_turn` comes with `unknown`: the bay's spool turned past the reader (30 s of sampled turning in all, §4.6.1) and showed no tag, so there is nothing left to wait for; likewise on a reader that is read only when asked (not while a spool turns), once the bay's insertion read found no tag or for a spool that was there before the host started; it is also what the identify turn (C3) reports |
+| `candidates` | array, at most 2, of `{spool_key, uid, material, color_argb}` | what a `candidate` or `conflict` bay saw: spool key (§4.6), UID (lowercase hex), material and colour of its decoded record (`null` while not decoded) |
+| `other_bay` | int or null | the other bay, for `claimed_twice` |
+| `reader` | int or null | the reader (index into `capabilities.rfid_coverage`) that covers the bay |
+
+A candidate is never published in `tag`, so a consumer that predates
+`tag_state` never acts on one, and `tag` is `null` while the bay is in
+conflict. A conflict that settles back on the same spool publishes the same
+`tag` again, `read_at` included. Conflicts clear by evidence or by `ready`
+falling, never by time.
+
 ### 4.6 `devices.<unit>.bays[i].tag` — NEW-v2 (H1)
 
 | Key | Type | Note |
 |---|---|---|
 | `uid` | lowercase hex string, or null | as the readers publish it: `src/mfrc522.py:476`, `src/oams.py:2159-2160`. **`null` exactly when `format` is `unit_summary`**: a unit that decodes its own tags reports no UID. Every consumer must accept a null `uid` |
 | `format` | enum `bambu`, `spoolman_link`, `openspool`, `unit_summary`, `unknown` | `unit_summary` is a tag decoded by the unit itself (`AMS_CAP_TRAY_INFO`, C1 §4.7.1); `bambu` decodes on AMS 1 (`src/bambu_lab_tag_processor.py`); `spoolman_link` / `openspool` are NDEF records a reader may find; `unknown` is a tag this host cannot decode |
-| `read_at` | number, reactor monotonic s | changes only on a new read (an insertion, startup, or an explicit `OAMS_RFID_SCAN`), never on a periodic poll of a tag already attributed: `openams_spoolman` treats a new `(uid, read_at)` as a re-read, which overrides a manual link (C4 §3) |
+| `read_at` | number, reactor monotonic s | changes only when the bay's spool key changes or on an explicit re-read (`OAMS_RFID_SCAN`), never on a periodic poll, a confirmation or a read of the spool's other tag (below): `openams_spoolman` treats a new read as a re-read, which overrides a manual link (C4 §3) |
 | `spoolman_id` | int or null | from a `web+spoolman:s-<id>` NDEF record |
 | `openspool` | object or null (optional key) | an OpenSpool NDEF record (`application/json`), its fields verbatim: `protocol`, `version`, `type`, `color_hex`, `brand`, `min_temp`, `max_temp` (strings, as the OpenSpool format writes them); null or absent for other formats |
 | `summary` | object (present exactly for `format: "unit_summary"`, else the key is absent) | the unit's decoded summary (C1 §4.7.1), below |
-| `bambu` | object or null | `BambuLabTagProcessor.decode()` output with its keys verbatim: `manufacturer`, `type`, `detailed`, `color_argb`, `weight_g`, `diameter_mm`, `drying_temp_c`, `drying_time_h`, `bed_temp_c`, `hotend_max_c`, `hotend_min_c`, `nozzle_diameter`, `spool_width_mm`, `length_m`, `tray_uid`, `production` (`src/bambu_lab_tag_processor.py:68-87`). This is the dict an OpenAMS 1 mainboard already publishes as `mfrc522 <name>.readers[i].filament` (`src/mfrc522.py:478`) |
+| `bambu` | object or null | `BambuLabTagProcessor.decode()` output with its keys verbatim: `manufacturer`, `type`, `detailed`, `color_argb`, `weight_g`, `diameter_mm`, `drying_temp_c`, `drying_time_h`, `bed_temp_c`, `hotend_max_c`, `hotend_min_c`, `nozzle_diameter`, `spool_width_mm`, `length_m`, `tray_uid`, `production` (`src/bambu_lab_tag_processor.py:68-87`). This is the dict an OpenAMS 1 mainboard already publishes as `mfrc522 <name>.readers[i].filament`. **`null` with `format: "bambu"`** is a MIFARE Classic tag attributed before it could be decoded (it was seen while passing the reader): a consumer waits for the decode, which follows as a new `spool_key` |
+| `spool_key` | string or null (additive) | the spool identity, below: `bambu:<tray UUID>` or `uid:<UID>`. Absent for `unit_summary` |
+| `uids` | array of upper-case hex strings (additive) | every UID known for this spool key, **the UID read on this bay first**; absent for `unit_summary` |
+| `evidence` | enum `motion`, `elimination`, `single`, `insertion`, `asserted`, `unit` (additive) | how the bay got the tag (§4.6.1) |
+| `confirmed_at` | number, reactor monotonic s (additive) | the last strong evidence for this tag on this bay; `read_at` keeps its meaning |
+| `shared_identity` | `true`, only when true (additive) | another bay holds the same spool key: cloned tags. Both bays keep their tag, and an `info` fault `shared_tag_identity` names the other bay |
+
+**The spool key.** A Bambu spool carries two tags; their UIDs differ, block 9
+(the tray UUID) is the spool's serial and is the same on both. Every tag gets
+
+```
+valid_tray(t): exactly 32 hex digits after strip(); not all '0'; not all 'f'
+spool_key(tag):
+    format "bambu" and valid_tray(bambu.tray_uid)  -> "bambu:" + tray_uid.strip().lower()
+    a non-empty uid                                -> "uid:" + uid.strip().upper()
+    otherwise (unit_summary)                       -> null
+```
+
+(`src/tag_identity.py`; the Moonraker component keeps a copy with the same
+behaviour). It is derived, not minted, so every host and every client compute
+the same value. Two UIDs with the same key are one spool. A blank or
+malformed tray UUID falls back to the UID and never matches by tray.
 
 A failed read does not replace `tag`; it surfaces as an `info` fault (§5.7).
 
@@ -409,26 +467,95 @@ re-read. No UID means a bay's tag is never "the same tag" as another bay's: the
 move rule below applies to UIDs only. With `AMS_CAP_TRAY_READ` the insertion,
 startup and `OAMS_RFID_SCAN` reads below ask the unit (`ams_tray_read`).
 
-**Reads and attribution (S4, 2026-09-28).** A bay's tag comes from the reader
-whose field covers it: a unit that decodes its own tags reports every bay (C1
-§4.7.1), and on an OpenAMS 1 mainboard the `[mfrc522]` endpoint its config
-maps to the bay (`bays_a` / `bays_b`, default `0,1` / `2,3`, not yet verified
-against the hardware). A read happens:
-- when a bay's `ready` rises and `settings.read_tag_on_insertion` is on, once
-  that bay's `positioning` has ended (the firmware is busy until then);
-- at startup with `settings.read_tags_at_startup`, for each ready bay that is
-  the only ready bay its reader covers (a shared reader cannot tell several
-  spools apart, so those bays wait for an insertion or an explicit read);
-- on `OAMS_RFID_SCAN OAMS=<unit> BAY=<i>` (C3), the explicit re-read.
+**Reads.** A unit that decodes its own tags reports every bay (C1 §4.7.1);
+with `AMS_CAP_TRAY_READ` the host asks it to read when a bay's `ready` rises
+and `settings.read_tag_on_insertion` is on (once the bay's `positioning` has
+ended), at startup with `settings.read_tags_at_startup` for each ready bay the
+unit has not read, and on `OAMS_RFID_SCAN OAMS=<unit> BAY=<i>` (C3). Such a
+unit attributes its own reads.
 
-**Coverage note (OPEN, a hardware question):** on a reader that covers several bays, an explicit `OAMS_RFID_SCAN BAY=` reads whatever tag is in the field. The result is attributed to the named bay regardless of which bay the tag is physically closest to. Coverage per family (which reader sees a tag at each bay) is a hardware fact still to be measured.
+On a unit whose reads the host attributes, a reader's field covers several
+bays (`capabilities.rfid_coverage`; an OpenAMS 1 mainboard's `[mfrc522]`
+readers are sampled continuously), and a read never goes to a bay because
+of when it happened or which bay is ready. §4.6.1 decides. The host never
+reads a tag into a bay at startup: the bays start `unknown`, or as
+candidates of what they held before a restart. `OAMS_RFID_SCAN BAY=` reports
+the bay's attribution, and only `ASSERT=1` (the user's "it is this slot")
+puts the tag in the field on the named bay (C3).
 
-A read that finds a tag sets `tag` with a new `read_at`; the same UID
-published on another bay of the same unit moves to this one. A read that finds
-no tag sets `tag` to `null`. When `ready` falls while the unit's lane has no
-runout in progress, `tag` becomes `null` (the spool is gone); during a runout
-it is kept (C4 §3: a runout is not removal). On an OpenAMS 1 mainboard, the endpoint's own
-continuous polling also clears a UID it reports removed.
+**`read_at`** changes only when the bay's spool key changes (a new spool, or
+a decode that turned a `uid:` key into a `bambu:` key) or on an explicit
+re-read; a confirmation, or a read of the spool's other tag (a sibling read:
+the same key, a different UID, which moves to the front of `uids`), leaves it.
+
+**Removal.** A tag leaving the field, or a sample that finds none, is never a
+removal. When `ready` falls while the unit's lane has no runout in progress
+and the bay is not in use, `tag` becomes `null` (the spool is gone); during a
+runout, or while the bay is the lane's loaded bay, it is kept (C4 §3: a
+runout is not removal) and cleared once the runout has ended with `ready`
+still false. A tag attributed to one bay is cleared from another bay that
+held the same spool key (the spool moved), except a bay that got it from its
+own spool's motion (or `ASSERT=1`) and whose `ready` has not fallen since:
+then both keep it (`shared_identity`).
+
+#### 4.6.1 Attribution (a reader that covers several bays)
+
+A Bambu spool shows one of its two tags to the reader beside it, whichever
+way round it sits, but only over part of a turn: at rest the tag may be out
+of the field. So the host attributes by **motion**: a spool that does not
+turn cannot change what a reader sees.
+
+Inputs, per reader: each sample's whole set of UIDs (an anticollision walk
+returns every tag in the field; a sample that went wrong is an error and is
+ignored, never taken for an empty field), and, per bay, whether the unit is
+turning its spool (`positioning`, or the bay of a load, unload, calibration
+or runout reload in flight) and whether it is **handled** (its `ready` rose
+less than 30 s ago). A loaded bay that only follows the extruder is not
+turning, but it is not still either: its spool turns as the printer pulls. A **change** is a UID entering or leaving the field; a
+UID must be present (absent) in 2 consecutive good samples first, so one
+missed sample is not a change.
+
+| Evidence | When | Strength |
+|---|---|---|
+| `motion` | a change while exactly one covered bay is turning and the others are neither turning nor handled | attributed |
+| `single` | the reader covers one bay | attributed |
+| `asserted` | `OAMS_RFID_SCAN BAY=<i> ASSERT=1` with exactly one spool key in the field | attributed |
+| `elimination` | every other covered bay is ready and attributed by `motion`, `single` or `asserted`, and exactly one other spool key is left (in the field or among the bay's candidates) | attributed |
+| `insertion` | a change while exactly one covered bay is handled and none is turning, or a change seen with nothing turning or handled up to 120 s before a covered bay is inserted | candidate; **attributed** when every other covered bay holds a different key, or has been still (not turning, not following the extruder, not handled, no `ready` edge) since the sample before the change |
+| static (negative) | a UID present in every one of 8 samples while one covered bay turns (and no other moves) | not that bay's tag: its candidate goes, the other covered bay gets it as a candidate |
+
+A change of the very UID another covered bay holds by `motion`, `single` or
+`asserted` is that bay's tag missing a sample, not motion of the turning bay.
+A key a covered bay holds only by `insertion` or `elimination` moves to the
+bay whose motion shows it. A ready bay that has turned 30 s in all, sampled
+and undisturbed, with no tag showing, is `unknown` with the reason
+`no_tag_after_turn`. A candidate, like a tag, is kept through a runout.
+
+A spool key another bay holds never becomes a candidate here. Two weak keys
+on one bay make an `ambiguous_pair` conflict, which the first motion of
+either bay settles (the moving bay by `motion`, the other by `elimination`).
+A different key showing motion on a bay that holds a key by motion, without
+its `ready` falling, is `changed_in_place`; two keys moving while only one bay
+turns is `two_moving`; inferred evidence (`insertion`, `elimination`) for a
+key another bay holds in place is `claimed_twice`.
+
+The host samples a covered reader faster while one of its bays turns or is
+handled. A Bambu tag is decoded (9 blocks) only while no bay its reader
+covers is turning; one seen while passing is attributed by UID at once
+(`format: "bambu"`, `bambu: null`) and decoded when it next rests in the
+field. Decoded tags are remembered (a tag cache, persisted next to the
+OpenAMS config file as `openams_tag_cache.json` together with each bay's
+attributed key): a UID decoded once is not read again, block 9 alone
+identifies the other tag of a known spool, and after a restart a bay whose
+`ready` is still true resumes as a candidate of what it held, confirmed
+without a new `read_at` by its first evidence.
+
+The thresholds (30 s handling window, 120 s orphan memory, 8 samples,
+2-sample debounce, 0.1 s focused sampling, 30 s of turning with no tag) and the default coverage are
+starting values to be measured on the hardware; on an OpenAMS 1 they are
+`[mfrc522]` options (`handling_window`, `orphan_window`, `static_samples`,
+`field_debounce`, `focus_poll_interval`, `no_tag_turn_time`, `bays_a`,
+`bays_b`).
 
 ### 4.7 `devices.<unit>.environment` and `.dryer` — NEW-v2
 
@@ -463,7 +590,7 @@ its `identity.board` is `"oams-stm32f072"`.
 | Key | Type | Note |
 |---|---|---|
 | `severity` | enum `stop`, `pause`, `info` | assigned by the host, §5.7 |
-| `code` | string | a controller fault name (`src/oams.py:1316-1344`), a lane `message` (§5.1), or a reader result name (§5.7) |
+| `code` | string | a controller fault name (`src/oams.py:1316-1344`), a lane `message` (§5.1), a reader result name (§5.7), or a tag attribution code (`shared_tag_identity`, severity `info`, source `tag`: two bays hold one spool key, §4.6) |
 | `text` | string | human text; for lane faults the reducer's reason (§5.7) |
 | `bay` | int or null | `null`: unit-wide |
 | `actions` | array of `clear_errors`, `clear_fault`, `resume`, `retry_load` | the recoveries a UI may offer (ARCHITECTURE §8.1), §5.7 |
@@ -873,8 +1000,9 @@ omits them. The reason text for any attempt is
 `"This firmware does not support normal filament motion"`
 (`src/ams_family.py` `motion_block_reason`).
 
-`rfid_scan` stays unit-level: neither `OAMS_RFID_SCAN` nor `OAMSM_RFID_READ` takes
-a bay (C3 §3, §5).
+`rfid_scan` stays unit-level: it says the unit takes `OAMS_RFID_SCAN`, whose
+`BAY=` (and `ASSERT=1`) a UI sends from a bay's sheet (C3 §2); there is no
+per-bay action letter for it.
 
 ### 5.7 Faults (ARCHITECTURE §8.1)
 
@@ -1015,7 +1143,11 @@ examples were produced by exactly such a function.
 | `bays[i].s` | `e` empty, `r` ready, `l` loaded, `x` error, `p` positioning | `loaded`, else `positioning` (H16: the firmware positions an inserted spool on its own), else `ready`, else empty; `x` while a `stop` or `pause` fault names the bay |
 | `bays[i].cal` | `c`, `u`, `p` | `bays[i].calibration_state` |
 | `bays[i].a` | letters in this order: `l` load, `u` unload, `c` calibrate_ptfe, `a` assign (set_spool), `d` detach (clear_spool), then `p` preload, `q` unpreload, `e` eject | `bays[i].supported_actions`. The last three are a klipper-mmu unit's own operations (§5.6, C3 §2, C5 §7.1) and are appended after the five, which keep their order and their meaning; an AMS unit never offers them |
-| `bays[i].sp` | `{id, src}` or null | **RESOLVED (review, C2 4/7): the link only** — `spool_id`, `link_source` (`t`/`m`); `null` when `link_source` is `none`. A `tag` link whose bay `tag` record is a unit's stored setting (`format: unit_summary`, no UID: an AMS 2 Pro tray summary) goes out as `m`, so no display shows it as an RFID read (2026-10-05). Material/color/vendor/remaining do **not** live here any more; they are in the C4 `openams_spoolman` status (`bays.<unit>-<bay>.spool`), which the display merges by `id` |
+| `bays[i].sp` | `{id, src}` or null | **RESOLVED (review, C2 4/7): the link only** — `spool_id`, `link_source` (`t`/`m`); `null` when `link_source` is `none`. A `tag` link whose bay `tag` record is a unit's stored setting (`format: unit_summary`, no UID: an AMS 2 Pro tray summary) goes out as `m`, so no display shows it as an RFID read (2026-10-05). On a bay with a `tag_state`, a `tag` link goes out as `t` only while the state is `attributed`, else `m`. Material/color/vendor/remaining do **not** live here any more; they are in the C4 `openams_spoolman` status (`bays.<unit>-<bay>.spool`), which the display merges by `id` |
+| `bays[i].tg` | `a`, `c`, `x`, `u`, optional (additive) | `bays[i].tag_state.state`: attributed, candidate, conflict, unknown; absent when the bay has no `tag_state` or its state is `none` (so a unit that decodes its own tags never carries it), and for an `unknown` bay whose reason is `no_tag_after_turn` (a spool with no tag: no note to show) |
+| `bays[i].tc` | `[{m, c}]`, 1 or 2, only with `tg` `c` (additive) | the candidates' material (`m`) and colour (`c`, `"RRGGBB"` from `color_argb`, alpha dropped), `null` when unknown |
+| `bays[i].tr` | string, only with `tg` `x` (additive) | `tag_state.reason` |
+| `bays[i].to` | int, only with `tr` `claimed_twice` (additive) | the other bay's slot id, as `bays[i].id` |
 | `groups[]` | `{n, b?, s?}` | every group on the unit's lane, and every empty group (no bays, so on no lane yet: any lane may fill it) by name only; members `b` (`"<unit>-<bay>"`, declared order) and one state letter per member `s` (`l`, `r`, `e`, `p`) only for groups holding one of this unit's bays. This is what the Groups screen and its "Add to group" sheet need (`display:docs/GROUPS.md`) |
 | `env` | `{t, rh}` or null | `environment.temp_c`, `rh_pct`, rounded to integers (the display model is integral, `display:src/model/mmu_model.h:118-121`) |
 | `dryer` | `{state, target, min, heat, fan, fault, adapter}` or null | `dryer`, with the target rounded and the remaining time in whole minutes, rounded up (`display:src/model/mmu_model.h:123-124`) |

@@ -1021,7 +1021,30 @@
                 },
                 "read_at": {
                   "type": "number",
-                  "description": "Reactor monotonic seconds."
+                  "description": "Reactor monotonic seconds. Changes only when the bay's spool_key changes or on an explicit re-read (OAMS_RFID_SCAN BAY=); a sibling read (the spool's other tag) or a confirmation leaves it."
+                },
+                "spool_key": {
+                  "type": ["string", "null"],
+                  "pattern": "^(bambu:[0-9a-f]{32}|uid:[0-9A-F]{8,20})$",
+                  "description": "Additive (two tags, C2 \u00a74.6): the spool identity, src/tag_identity.py spool_key(): bambu:<tray UUID> for a Bambu tag with a valid tray UUID, else uid:<UID>. Both tags of one spool share it. Absent from a unit_summary tag and from hosts that predate it."
+                },
+                "uids": {
+                  "type": "array",
+                  "items": {"type": "string", "pattern": "^[0-9A-F]{8,20}$"},
+                  "minItems": 1,
+                  "description": "Additive: every UID known for this spool_key, upper-case hex, the UID read on this bay first. Absent for unit_summary."
+                },
+                "evidence": {
+                  "enum": ["motion", "elimination", "single", "insertion", "asserted", "unit"],
+                  "description": "Additive: how the bay got the tag (C2 \u00a74.6)."
+                },
+                "confirmed_at": {
+                  "type": "number",
+                  "description": "Additive: reactor monotonic seconds of the last strong evidence for this tag on this bay."
+                },
+                "shared_identity": {
+                  "const": true,
+                  "description": "Additive, only when true: another bay holds the same spool_key (cloned tags); an info fault shared_tag_identity says so."
                 },
                 "openspool": {
                   "description": "OpenSpool NDEF record fields, verbatim; optional.",
@@ -1136,6 +1159,33 @@
               }
             }
           ]
+        },
+        "tag_state": {
+          "description": "Additive (two tags, C2 \u00a74.5): the bay's tag attribution, present only on a unit whose reads the host attributes (rfid_reader_scope shared, or a host-driven reader). `tag` carries only an attributed tag; a candidate or a conflict is here.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "reason", "candidates", "other_bay", "reader"],
+          "properties": {
+            "state": {"enum": ["none", "unknown", "candidate", "attributed", "conflict"]},
+            "reason": {"enum": [null, "two_moving", "claimed_twice", "changed_in_place", "ambiguous_pair", "no_tag_after_turn"]},
+            "candidates": {
+              "type": "array",
+              "maxItems": 2,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["spool_key", "uid", "material", "color_argb"],
+                "properties": {
+                  "spool_key": {"type": "string"},
+                  "uid": {"type": "string", "pattern": "^[0-9a-f]{8,20}$"},
+                  "material": {"type": ["string", "null"]},
+                  "color_argb": {"type": ["integer", "null"], "minimum": 0, "maximum": 4294967295}
+                }
+              }
+            },
+            "other_bay": {"type": ["integer", "null"], "minimum": 0, "description": "The other bay for claimed_twice, else null."},
+            "reader": {"type": ["integer", "null"], "minimum": 0, "description": "The reader (index into capabilities.rfid_coverage) whose field covers the bay."}
+          }
         },
         "spool_hint": {
           "description": "NEW-v2 (D6, reserved; the firmware may ignore it). null until the component supplies one.",
