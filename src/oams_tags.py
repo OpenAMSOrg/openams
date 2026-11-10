@@ -33,10 +33,32 @@ import logging
 import os
 from collections import OrderedDict
 
-try:                                  # deployed as a Klipper extras package
-    from . import tag_identity
-except ImportError:                   # imported standalone (src/ on sys.path)
-    import tag_identity
+def _load_tag_identity():
+    """The tag_identity module (the spool key, C2 section 4.6). Deployed as Klipper extras, each OpenAMS module is linked into klippy/extras
+    one file at a time when install.sh runs; a module an update added (a git pull
+    through Moonraker's update manager) has no link until install.sh runs again,
+    so it is loaded from beside this file's real path, the OpenAMS checkout."""
+    try:                              # deployed as a Klipper extras package
+        from . import tag_identity as module
+        return module
+    except ImportError:
+        pass
+    try:                              # imported standalone (src/ on sys.path)
+        import tag_identity as module
+        return module
+    except ImportError:
+        pass
+    import importlib.util
+    import sys
+    path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                        "tag_identity.py")
+    spec = importlib.util.spec_from_file_location("tag_identity", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return sys.modules.setdefault("tag_identity", module)
+
+
+tag_identity = _load_tag_identity()
 
 # Busy retries (C1 §4.7), 1 s apart, up to 5 times.
 _BUSY_RETRIES = 5

@@ -15,10 +15,10 @@ except (ImportError, ValueError):
 
 try:
     from . import oams_tags
-    from . import tag_identity
 except (ImportError, ValueError):
     import oams_tags
-    import tag_identity
+# oams_tags loads it even where an update left it without its own link.
+tag_identity = oams_tags.tag_identity
 
 
 # A MIFARE Classic SAK: 1K (0x08, 0x88 on some clones) or 4K (0x18).
