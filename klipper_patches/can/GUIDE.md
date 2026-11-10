@@ -71,7 +71,7 @@ can send commands. Treat the bus as part of the machine's trusted wiring.
 
 | Need | Detail |
 |---|---|
-| Klipper | A git clone. The series is tested on upstream commit `7bc4d09465d31cd30fc0822e8d0abe02cc8c547f` (the `BASE` file). A newer Klipper is accepted only if it descends from that commit and none of the files the series touches changed. |
+| Klipper | A git clone. The series is tested on upstream commit `56a9c605e121c6560f5c8b6c0e33bdda86de69a1` (the `BASE` file). A newer Klipper is accepted only if it descends from that commit and none of the files the series touches changed. |
 | Clean files | The files the patches change must have no local changes. Other files may. |
 | Host | Python 3.7 or newer and `git`. A C compiler, which Klipper already needs, because Klippy rebuilds its C helper on start. |
 | MCU firmware | Rebuild and reflash every CAN MCU to get the firmware-side fixes. |

@@ -10,10 +10,10 @@ Give each assignment send a one-second timeout.  Normal SocketCAN queueing compl
 Signed-off-by: JR Lomas <lomas.jr@gmail.com>
 
 diff --git a/klippy/serialhdl.py b/klippy/serialhdl.py
-index a49fc7de..88c63d86 100644
+index e51b3014..41b8bf76 100644
 --- a/klippy/serialhdl.py
 +++ b/klippy/serialhdl.py
-@@ -167,7 +167,17 @@ class SerialReader:
+@@ -168,7 +168,17 @@ class SerialReader:
                  bus = can.interface.Bus(channel=canbus_iface,
                                          can_filters=filters,
                                          bustype='socketcan')

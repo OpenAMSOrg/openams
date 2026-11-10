@@ -20,16 +20,38 @@ License: GPL-3.0-or-later, like Klipper. See [`../COPYING`](../COPYING) and
 | | |
 |---|---|
 | Upstream | Klipper3d/klipper |
-| `BASE` | `7bc4d09465d31cd30fc0822e8d0abe02cc8c547f` (upstream `master` on 2026-09-30, "queuelogger: workaround infinite rollover printing") |
+| `BASE` | `56a9c605e121c6560f5c8b6c0e33bdda86de69a1` (upstream `master` on 2026-11-09, "stepcompress: Fix possible out-of-bounds memory write") |
 | Series | `series` lists the 56 patch files in apply order |
 | Author | every patch keeps JR Lomas as author, with its own date and message |
 
 The series applies to exactly that commit, and was built and tested there. It was
-first made on `ac2a7f8b0e1b` and then moved onto `BASE`: all 56 commits applied to
-the newer base without a conflict. Two upstream commits since `ac2a7f8b0e1b` touch
-files the series also touches (`docs/Status_Reference.md`, `klippy/mcu.py`); they
-merged cleanly. The owner's own merge of upstream conflicted only in `msgproto.py`
-and `src/Kconfig`, both in work that is not part of this series.
+first made on `ac2a7f8b0e1b`, then moved onto `7bc4d09465d3` (upstream `master` on
+2026-09-30), and on 2026-11-09 onto `BASE`, 47 upstream commits later.
+
+Both moves applied all 56 commits without a conflict. The move to `7bc4d09465d3`
+merged two upstream commits that touch files the series also touches
+(`docs/Status_Reference.md`, `klippy/mcu.py`). The move to `BASE` merged four:
+`530a3560e2a2` ("serialhdl: Fail pending ack waits on mcu communication timeout",
+`klippy/serialhdl.py` and `klippy/mcu.py`), `9cb99754c035` and `5e20b21b253c`
+(`klippy/mcu.py`), and `6c8e313283ba` (link fixes in `docs/Status_Reference.md`).
+None of them changes a line the series changes, so the patches are the same as
+before: 49 patch files are byte for byte unchanged, and in `0014`, `0016`, `0018`,
+`0035`, `0036`, `0037` and `0055` only the hunk line numbers and `index` lines
+changed.
+
+Two upstream changes needed a check beyond a clean apply:
+
+- `530a3560e2a2` adds `abort_wait_acks()`, which ends pending acknowledgement
+  waits when an MCU stops answering. `0037` handles a notification id that is no
+  longer pending in the receive thread. The two do not interfere:
+  `abort_wait_acks()` leaves the ids in place, and `disconnect()` stops the
+  receive thread before it clears them.
+- `a9eb1dc980bf` runs the n32g45x at 144 MHz, which puts its bxCAN clock at 36 MHz.
+  36 MHz is an exact multiple of 1 Mbit/s, 500, 250 and 125 kbit/s, so the bitrate
+  check in `0048` still accepts the usual rates.
+
+The owner's own merge of upstream conflicted only in `msgproto.py` and
+`src/Kconfig`, both in work that is not part of this series.
 
 ## What it fixes and adds
 
@@ -198,25 +220,32 @@ are not selectable.
 
 ## Proof
 
-Run on 2026-09-30 with git 2.43.0, Python 3.12.3, arm-none-eabi-gcc 13.2.1,
-avr-gcc 7.3.0 and gcc 13.3.0. No printer was contacted.
+Run on 2026-11-09 with git 2.53.0, Python 3.14.4 (the helper and `compileall`),
+Python 3.12.13 (Klipper's test runner), arm-none-eabi-gcc 14.2.1, avr-gcc 14.3.0
+and gcc 15.2.0. No printer was contacted. The previous base, `7bc4d09465d3`, was
+checked the same way on 2026-09-30, except for `printers.test`.
+
+**Same changes as on the previous base.** `git range-diff` of the series on
+`7bc4d09465d3` against the series on `BASE` marks all 56 commits `=` (identical
+changes), and the difference between the two series tips is exactly upstream's 47
+commits, line for line.
 
 **Applies to upstream at `BASE`.** On a fresh checkout of upstream commit
-`7bc4d09465d31cd30fc0822e8d0abe02cc8c547f` (detached HEAD, clean tree):
+`56a9c605e121c6560f5c8b6c0e33bdda86de69a1` (detached HEAD, clean tree):
 
 - For each patch in `series` order, `git apply --check <patch>` and then
   `git apply <patch>`: 56 of 56 succeeded. (`git apply --check` of several patches
   that change the same file in one command does not chain, which is why the
   installer helper replays the patches one at a time on a scratch copy.)
 - `git apply <all 56 patches>` in one command succeeded, and the result is identical
-  to the cherry-picked series commits (`git diff` empty).
+  to the rebased series commits (`git diff` empty).
 - `tools/klipper_patches.py check`, `apply`, `status` and `remove` on the same
   checkout: apply made the 27-file change above, `remove` restored a clean tree,
   and a second `apply` or `remove` was harmless.
 - `python3 -m compileall -q klippy`: exit 0.
 
 **Firmware builds.** With the series applied, Klipper's own Kconfig and Makefile,
-`make OUT=<dir>/ KCONFIG_CONFIG=<config> olddefconfig` then `make -j2`. The first
+`make OUT=<dir>/ KCONFIG_CONFIG=<config> olddefconfig` then `make -j8`. The first
 config is Klipper's own `test/configs` file, unmodified (it is the only CAN one
 upstream has); the others are a `test/configs` base plus the CAN option lines
 shown:
@@ -236,17 +265,26 @@ shown:
 Each resulting `.config` was checked to have `CONFIG_CANBUS=y` (or
 `CONFIG_USBCANBUS=y`) with the intended pins. All nine linked a `klipper.elf`. The
 only compiler warning was `-Warray-bounds` in `src/generic/armcm_reset.c`, a file
-the series does not touch.
+the series does not touch. On this base the n32g45x build runs at 144 MHz
+(`CONFIG_CLOCK_FREQ=144000000`, upstream `a9eb1dc980bf`).
 
-**Klipper's own test runner.** `scripts/test_klippy.py` with a virtual environment
-of `scripts/klippy-requirements.txt`, numpy and scipy, and MCU dictionaries built
-with the patched tree from 25 of Klipper's `test/configs` (every test config whose
-toolchain is installed here: arm-none-eabi, avr and the host compiler): 36 of 36
-test cases passed. `test/klippy/printers.test` was not run: it needs the `pru` and
-`hc32f460` dictionaries, whose toolchains are not installed. The run also compiles
-the patched `klippy/chelper` (including `serialqueue.c`) with `cffi`. The suite
-has no CAN test of its own, so this shows the host code still loads and runs
-with the series, not that CAN behaves correctly; that needs hardware (below).
+**Host C helper.** `klippy/chelper` built with Klipper's own flags (`-Wall`) with
+no warning. Built with `-Wall -Wextra`, it gives the same warnings as upstream's
+helper at `BASE`, none of them new.
+
+**Klipper's own test runner.** `scripts/check_whitespace.sh` and
+`klippy/klippy.py --import-test` passed. `scripts/test_klippy.py` ran with a
+virtual environment of `scripts/klippy-requirements.txt`, numpy and scipy, and MCU
+dictionaries built with the patched tree from 40 of Klipper's 42 `test/configs`
+(every test config whose toolchain is installed here: arm-none-eabi, avr and the
+host compiler; `ar100` and `pru` need `or1k-elf-gcc` and `pru-gcc`, which are not
+installed). Every `test/klippy/*.test` file except `printers.test`: 37 of 37 test
+cases passed. `printers.test` ran from a copy without its one PRU case (the
+`generic-cramps.cfg` and `generic-replicape.cfg` configs, which need `pru.dict`):
+all 201 remaining printer configs passed. The run also compiles the patched
+`klippy/chelper` (including `serialqueue.c`) with `cffi`. The suite has no CAN test
+of its own, so this shows the host code still loads and runs with the series, not
+that CAN behaves correctly; that needs hardware (below).
 
 ## Apply and remove
 
@@ -352,18 +390,26 @@ applying the series and reflashing:
 
 ## Regenerating the series
 
-For the maintainer, to move the series to a new upstream base `NEW`:
+For the maintainer, to move the series to a new upstream base `NEW`. Start from
+the shipped patches on the current `BASE`, then rebase:
 
 ```sh
+S=/path/to/openams/klipper_patches/can
 git clone https://github.com/Klipper3d/klipper.git work && cd work
-git checkout -b can-series NEW
-git cherry-pick <the source commits, in the order of the table above>
-git format-patch -N --no-signature --zero-commit --no-stat -o /path/to/openams/klipper_patches/can NEW..can-series
-cd /path/to/openams/klipper_patches/can
+git checkout -b can-series $(cat $S/BASE)
+git am $(sed "s#^#$S/#" $S/series)       # keeps each patch's author and date
+git rebase NEW
+git format-patch -N --no-signature --zero-commit --no-stat --abbrev=8 -o $S NEW..can-series
+cd $S
 ls 0*.patch > series
 echo NEW > BASE                          # the full 40-character sha
 sha256sum BASE series 0*.patch > SHA256SUMS
 ```
+
+`format-patch` with these options gives back the shipped files byte for byte when
+it is run on the `git am` result before the rebase, which is a quick check that
+the starting point is right. If a subject changes, its file name changes too:
+remove the old file before `ls 0*.patch > series`.
 
 Then repeat the proof above, update this file, and run the repository tests
 (`python3 -m unittest discover -s test`).

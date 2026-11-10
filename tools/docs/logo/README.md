@@ -65,6 +65,7 @@ more as four dots in a square plus four arcs.
 | `openams-logo.svg` | default mark, any light background (also fine on dark) |
 | `openams-logo-dark.svg` | dark backgrounds only, e.g. the docs' dark theme |
 | `openams-logo-mono.svg` | one colour, `currentColor`: inherits the text colour when inlined |
+| `openams-logo-icon24.svg`, `openams-logo-icon24.txt` | the mono mark as one filled path on a 24 px grid, no strokes: the form Material Design Icons and Mainsail's panel icons take (the `.txt` is just the path data) |
 | `openams-lockup.svg`, `openams-lockup-dark.svg` | mark + "OpenAMS", light / dark backgrounds |
 | `favicon.ico` (16/32/48), `openams-logo-16/32/48.png` | browser favicon |
 | `apple-touch-icon.png` | iOS home screen (180 px, opaque white, mark at 80 %) |

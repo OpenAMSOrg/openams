@@ -56,10 +56,10 @@ index 0014963b..573b0710 100644
  def load_config(config):
      return PrinterCANBus(config)
 diff --git a/klippy/mcu.py b/klippy/mcu.py
-index e2dedb20..561dd384 100644
+index 34551925..74039978 100644
 --- a/klippy/mcu.py
 +++ b/klippy/mcu.py
-@@ -860,7 +860,8 @@ class MCUConnectHelper:
+@@ -870,7 +870,8 @@ class MCUConnectHelper:
          try:
              if self._canbus_iface is not None:
                  cbid = self._printer.lookup_object('canbus_ids')

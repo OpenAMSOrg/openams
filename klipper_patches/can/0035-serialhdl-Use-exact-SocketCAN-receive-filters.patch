@@ -12,10 +12,10 @@ Include CAN_RTR_FLAG in the python-can filter mask.  The existing extended selec
 Signed-off-by: JR Lomas <lomas.jr@gmail.com>
 
 diff --git a/klippy/serialhdl.py b/klippy/serialhdl.py
-index f7558d10..a49fc7de 100644
+index 46c22e73..e51b3014 100644
 --- a/klippy/serialhdl.py
 +++ b/klippy/serialhdl.py
-@@ -128,7 +128,21 @@ class SerialReader:
+@@ -129,7 +129,21 @@ class SerialReader:
          if canbus_nodeid < 0 or canbus_nodeid > 0xff:
              self._error("Invalid CAN nodeid")
          txid = canbus_nodeid * 2 + 256

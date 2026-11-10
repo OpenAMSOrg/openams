@@ -16,7 +16,7 @@ Signed-off-by: JR Lomas <lomas.jr@gmail.com>
 (cherry picked from commit 57a018ad7bbacde28c35305fd79cb9488bd201db)
 
 diff --git a/docs/Status_Reference.md b/docs/Status_Reference.md
-index 5577365f..cce8a5e2 100644
+index caea0468..a4ba03b4 100644
 --- a/docs/Status_Reference.md
 +++ b/docs/Status_Reference.md
 @@ -55,6 +55,24 @@ mcu is configured to use canbus):

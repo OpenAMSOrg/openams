@@ -10,10 +10,10 @@ Log and discard an unknown notification while keeping the receiver alive.  Valid
 Signed-off-by: JR Lomas <lomas.jr@gmail.com>
 
 diff --git a/klippy/serialhdl.py b/klippy/serialhdl.py
-index 88c63d86..eb06cc36 100644
+index 41b8bf76..d086512b 100644
 --- a/klippy/serialhdl.py
 +++ b/klippy/serialhdl.py
-@@ -50,7 +50,22 @@ class SerialReader:
+@@ -51,7 +51,22 @@ class SerialReader:
              if response.notify_id:
                  params = {'#sent_time': response.sent_time,
                            '#receive_time': response.receive_time}

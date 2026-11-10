@@ -10,10 +10,10 @@ Track whether the bus was created and shut it down before pausing for a retry.  
 Signed-off-by: JR Lomas <lomas.jr@gmail.com>
 
 diff --git a/klippy/serialhdl.py b/klippy/serialhdl.py
-index bab6eb89..f7558d10 100644
+index c00e2a72..46c22e73 100644
 --- a/klippy/serialhdl.py
 +++ b/klippy/serialhdl.py
-@@ -148,13 +148,32 @@ class SerialReader:
+@@ -149,13 +149,32 @@ class SerialReader:
          while 1:
              if self.reactor.monotonic() > start_time + 90.:
                  self._error("Unable to connect")

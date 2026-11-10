@@ -10,10 +10,10 @@ Reject values outside the protocol range before constructing either the arbitrat
 Signed-off-by: JR Lomas <lomas.jr@gmail.com>
 
 diff --git a/klippy/serialhdl.py b/klippy/serialhdl.py
-index a25ce34d..bab6eb89 100644
+index adc59163..c00e2a72 100644
 --- a/klippy/serialhdl.py
 +++ b/klippy/serialhdl.py
-@@ -118,6 +118,15 @@ class SerialReader:
+@@ -119,6 +119,15 @@ class SerialReader:
          return True
      def connect_canbus(self, canbus_uuid, canbus_nodeid, canbus_iface="can0"):
          import can # XXX

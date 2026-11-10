@@ -67,6 +67,7 @@ openams-logo-A.svg, -B.svg, -C.svg   the three explored directions
 openams-logo.svg                     recommended mark, light set
 openams-logo-dark.svg                recommended mark, dark set
 openams-logo-mono.svg                one colour, currentColor
+openams-logo-icon24.svg / .txt       one filled path on a 24 px grid (Mainsail panel icon)
 openams-lockup.svg, -dark.svg        mark + 'OpenAMS' (Barlow Condensed 700, as paths)
 openams-logo-<N>.png                 N = 16 32 48 180 192 512 1024 (with --png)
 apple-touch-icon.png                 180 px on white (iOS fills transparency black)
@@ -383,6 +384,65 @@ def mark_elements(p, colour, ring_colour, indent="  "):
                    % (indent, fmt(g["dot"][0]), fmt(-g["dot"][1]), fmt(p["dot_r"]),
                       paint("fill", c)))
     return "\n".join(out)
+
+
+def icon_path(p, size=24.0, samples=24, cap_steps=8, dot_steps=24):
+    """The mark as one filled path in a size x size box: Material Design
+    Icons' 24 px grid, the form Mainsail's panel icons take (one <path>,
+    filled, no strokes). Each filament is its stroke's outline with round caps
+    and each spool a disc, every loop wound the same way, so where a stroke
+    runs into its spool stays filled under the nonzero rule."""
+    k = size / 100.0
+
+    def box(x, y):
+        # y-up mark coordinates to the icon's y-down box
+        return (x * k + size / 2.0, -y * k + size / 2.0)
+
+    def unit(vx, vy):
+        n = math.hypot(vx, vy)
+        return vx / n, vy / n
+
+    half = p["stroke"] / 2.0
+    loops = []
+    for i in range(p["arms"]):
+        g = arm_geometry(p, i)
+        P, end = g["P"], g["psi_end"]
+        left, right = [], []
+        for j in range(samples + 1):
+            t = end * j / samples
+            x, y = P(t)
+            tx, ty = unit(*_deriv(P, t, +1 if j < samples else -1))
+            left.append((x - ty * half, y + tx * half))
+            right.append((x + ty * half, y - tx * half))
+
+        def cap(t, forward):
+            x, y = P(t)
+            tx, ty = unit(*_deriv(P, t, -1 if forward else +1))
+            nx, ny = (-ty, tx) if forward else (ty, -tx)
+            sx, sy = (tx, ty) if forward else (-tx, -ty)
+            return [(x + half * (math.cos(a) * nx + math.sin(a) * sx),
+                     y + half * (math.cos(a) * ny + math.sin(a) * sy))
+                    for a in (math.pi * m / cap_steps for m in range(1, cap_steps))]
+        loops.append(left + cap(end, True) + right[::-1] + cap(0.0, False))
+        cx, cy = g["dot"]
+        loops.append([(cx + p["dot_r"] * math.cos(2 * math.pi * m / dot_steps),
+                       cy + p["dot_r"] * math.sin(2 * math.pi * m / dot_steps))
+                      for m in range(dot_steps)])
+
+    def area(loop):
+        return sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(loop, loop[1:] + loop[:1]))
+    out = []
+    for loop in loops:
+        pts = [box(x, y) for x, y in loop]
+        if area(pts) < 0:
+            pts.reverse()
+        out.append("M" + "L".join("%s %s" % (fmt(x), fmt(y)) for x, y in pts) + "Z")
+    return "".join(out)
+
+
+def icon_svg(p, size=24):
+    return svg_file('  <path d="%s" fill="currentColor"/>' % icon_path(p, size),
+                    "0 0 %d %d" % (size, size), "OpenAMS")
 
 
 def svg_file(body, viewbox, title):
@@ -1090,6 +1150,8 @@ def write_svgs():
     write(os.path.join(OUT, "openams-logo.svg"), mark_svg(rec, "light"))
     write(os.path.join(OUT, "openams-logo-dark.svg"), mark_svg(rec, "dark"))
     write(os.path.join(OUT, "openams-logo-mono.svg"), mark_svg(rec, mono=True))
+    write(os.path.join(OUT, "openams-logo-icon24.svg"), icon_svg(rec))
+    write(os.path.join(OUT, "openams-logo-icon24.txt"), icon_path(rec) + "\n")
     write(os.path.join(OUT, "openams-lockup.svg"), lockup_svg(rec, "light"))
     write(os.path.join(OUT, "openams-lockup-dark.svg"), lockup_svg(rec, "dark"))
 
