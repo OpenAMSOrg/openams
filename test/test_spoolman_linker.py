@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(ROOT, "moonraker"))
 from openams_spoolman import api as A  # noqa: E402
 from openams_spoolman import linker as L  # noqa: E402
 from openams_spoolman import ops  # noqa: E402
+from openams_spoolman.cache import SpoolCache  # noqa: E402
 
 try:
     import jsonschema
@@ -79,12 +80,15 @@ class Clock(object):
 class Harness(object):
     """A fake Spoolman, a recording gcode channel and a controllable clock."""
 
-    def __init__(self, auto_create=True, material_temps=None, tag_vendor=None):
-        self.api = A.FakeSpoolman()
+    def __init__(self, auto_create=True, material_temps=None, tag_vendor=None,
+                 cache=None, api=None):
+        self.api = api if api is not None else A.FakeSpoolman()
         self.sent = []
         self.clock = Clock()
         self.auto_create = auto_create
         kwargs = {} if tag_vendor is None else {"tag_vendor": tag_vendor}
+        if cache is not None:
+            kwargs["cache"] = cache
         self.linker = L.Linker(self.api, self._gcode, clock=self.clock,
                                material_temps=material_temps, **kwargs)
 
@@ -189,6 +193,42 @@ class CreateAndConfirmTest(unittest.TestCase):
         self.assertIsNotNone(run(h.linker.confirm("oams1-0", 500)))
         h.send([bay(tag=t, spool_id=spool_id, link_source="tag")])
         self.assertEqual(h.bay()["state"], "linked")
+
+    # Found on voron350 (2026-11-09): after a Moonraker restart the host's tag
+    # link was adopted as confirmed, so the Confirm the user had not answered
+    # was gone.
+    @staticmethod
+    def stored_cache(stored):
+        return SpoolCache(load=lambda: stored.get("state"),
+                          save=lambda state: stored.update(state=state))
+
+    def test_pending_survives_a_moonraker_restart(self):
+        stored = {}
+        h = Harness(cache=self.stored_cache(stored)).start()
+        t = bambu_tag()
+        h.send([bay(tag=t)])
+        spool_id = h.bay()["spool_id"]
+        # A new linker on the same cache file and Spoolman; the host still
+        # holds the tag link, with the same read.
+        again = Harness(cache=self.stored_cache(stored), api=h.api).start()
+        again.send([bay(tag=t, spool_id=spool_id, link_source="tag")])
+        self.assertEqual(again.bay()["state"], "pending_confirmation")
+        self.assertTrue(again.bay()["pending_confirmation"])
+        self.assertIsNotNone(run(again.linker.confirm("oams1-0", 600)))
+        third = Harness(cache=self.stored_cache(stored), api=h.api).start()
+        third.send([bay(tag=t, spool_id=spool_id, link_source="tag")])
+        self.assertEqual(third.bay()["state"], "linked")
+
+    def test_a_manual_link_after_a_restart_is_not_pending(self):
+        stored = {}
+        h = Harness(cache=self.stored_cache(stored)).start()
+        t = bambu_tag()
+        h.send([bay(tag=t)])
+        spool_id = h.bay()["spool_id"]
+        again = Harness(cache=self.stored_cache(stored), api=h.api).start()
+        again.send([bay(tag=t, spool_id=spool_id, link_source="manual")])
+        self.assertEqual(again.bay()["state"], "linked")
+        self.assertIsNone(stored["state"]["pending"].get("oams1-0"))
 
     def test_confirm_is_none_for_an_unknown_bay_or_a_wrong_state(self):
         h = Harness().start()

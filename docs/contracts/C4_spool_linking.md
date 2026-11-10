@@ -55,7 +55,11 @@ From Spoolman, through the proxy (§5). From UIs: the pending-confirmation answe
 States (ARCHITECTURE §7.4): `unlinked` → `resolving` → `linked` (with a source) →
 `pending_confirmation`. The component keeps one machine per bay, keyed
 `"<unit>-<bay>"` (the `filament_group` convention). Its status publishes each
-bay's state (§8).
+bay's state (§8). Which bays wait in `pending_confirmation`, and for which
+spool, is kept with the cache (§6), so a Moonraker restart asks again: adopting
+the host's tag link to that same spool after the restart restores
+`pending_confirmation` instead of `linked` (2026-11-09). A confirmation, a
+confirming edit, a manual link, a relink to another spool or an unlink clears it.
 
 | From | Event | Condition | To | Component does |
 |---|---|---|---|---|

@@ -118,7 +118,10 @@ waits up to `FAULT_CLEAR_WAIT_S` (20 s) in all, resyncs as above, and raises
 `"OAMSM_CLEAR_ERRORS: a fault stayed latched after the clear on <units>"` for
 any that stayed. A lane's `toolchange_fault` is kept and named
 (`"OAMSM_CLEAR_ERRORS: the toolchange to T1 on lane fps is not finished: ..."`),
-so `RESUME` or `OAMSM_RETRY` still finishes it.
+so `RESUME` or `OAMSM_RETRY` still finishes it. A panel fault (`panel`) whose run
+never started its plan and fed nothing is dropped instead
+(`"OAMSM_CLEAR_ERRORS: the toolchange to T5 on lane fps had not started; cleared"`):
+it moved nothing, and a retry would only repeat the same refusal.
 
 ### `OAMSM_TOOLCHANGE GROUP=<name> [SLOT=<id>] [TEMP=<°C>]` / `OAMSM_TOOLCHANGE UNLOAD=1 [FPS=<lane>] [TEMP=<°C>]`
 `cmd_TOOLCHANGE` (2026-11-08). The failure guard every toolchange and unload

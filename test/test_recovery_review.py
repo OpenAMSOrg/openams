@@ -476,6 +476,36 @@ def test_a_later_toolchange_in_the_same_macro_is_left_for_resume(setup, klipper)
     assert pause_resume.resumed == 1 and unit.current_spool in (0, 1)
 
 
+# Found on voron350 (2026-11-09): a panel load refused before it started (the
+# bay is not in the group) stayed recorded through Reset, the panel's Clear
+# errors, and Retry repeated the same refusal, so nothing could clear it.
+
+def test_reset_clears_a_panel_load_that_never_started(setup):
+    printer, manager, unit = setup(loaded=0)
+    with pytest.raises(printer.command_error, match="not assigned"):
+        printer.gcode.run_script("OPENAMS_LOAD GROUP=T1 SLOT=0")
+    fault = fault_of(manager)
+    assert fault["panel"] and fault["step"] is None and not fault["fed"]
+    said = output(printer)
+    printer.trace.clear()
+    printer.gcode.run_script("OAMSM_CLEAR_ERRORS")
+    assert fault_of(manager) is None
+    assert moves(printer.trace) == [] and unit.current_spool == 0
+    assert any("had not started" in line for line in said)
+
+
+def test_reset_keeps_a_panel_load_that_started(setup):
+    printer, manager, unit = setup(loaded=0)
+    inlet_sensor(printer, False)
+    with pytest.raises(printer.command_error):
+        printer.gcode.run_script("OPENAMS_LOAD GROUP=T1 SLOT=2")
+    assert fault_of(manager)["fed"]
+    said = output(printer)
+    printer.gcode.run_script("OAMSM_CLEAR_ERRORS")
+    assert fault_of(manager)["group"] == "T1"
+    assert any("Retry finishes it" in line for line in said)
+
+
 def test_retry_is_refused_while_the_print_is_printing(setup):
     printer, manager, unit = setup(loaded=0)
     inlet_sensor(printer, False)

@@ -141,7 +141,7 @@ When that works, Klipper's resume returns to the print. When it fails, the print
 
 **From the panel**, a failed Load or Unload raises its error; there is no print to pause. `OAMSM_RETRY` is refused while a print is printing; it runs while the print is paused, or with no print. The lane's `toolchange_fault` in the status lets the panel offer **Retry** (`OAMSM_RETRY`, the same diagnosis), **Unload** (`OPENAMS_UNLOAD`) and **Reset**.
 
-**Reset** (`OAMSM_CLEAR_ERRORS`) sends each unit with a latched fault its `OAMS_CLEAR_FAULT`, waits out the unit's 15 s recovery window (a fault can look cleared for a moment, then latch again), names any fault that stays latched, and re-reads the lanes. It never moves anything. It keeps an unfinished toolchange, so a later `RESUME` still finishes it; a print's fault is dropped when that print ends.
+**Reset** (`OAMSM_CLEAR_ERRORS`) sends each unit with a latched fault its `OAMS_CLEAR_FAULT`, waits out the unit's 15 s recovery window (a fault can look cleared for a moment, then latch again), names any fault that stays latched, and re-reads the lanes. It never moves anything. It keeps an unfinished toolchange, so a later `RESUME` still finishes it; a print's fault is dropped when that print ends. A Load or Unload from the panel that failed before it started (a bay outside the group, say) moved nothing, so Reset clears it: `had not started; cleared`.
 
 A failed sequence leaves the heater on, so a retry starts hot. A move already queued when something fails (a `G1`, the cutter, homing) finishes first. The messages are in [troubleshooting](troubleshooting.md).
 

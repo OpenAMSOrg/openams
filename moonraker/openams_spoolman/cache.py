@@ -30,6 +30,10 @@ class SpoolCache(object):
         # (C4 §7.5).
         self._written = {}
         self.queue = []
+        # bay key -> spool id: a tag link that still waits for the user's
+        # confirmation (C4 §5.8). Kept on disk, so a Moonraker restart asks
+        # again instead of taking the host's link as confirmed.
+        self._pending = {}
         self._prewarmed = False
         state = load() if load is not None else None
         if isinstance(state, dict):
@@ -40,6 +44,10 @@ class SpoolCache(object):
                                  if isinstance(value, dict))
             self.queue = [entry for entry in (state.get("queue") or [])
                           if isinstance(entry, dict)]
+            self._pending = dict(
+                (key, value) for key, value in
+                (state.get("pending") or {}).items()
+                if isinstance(value, int) and not isinstance(value, bool))
 
     def state(self):
         """The JSON-safe state to persist: the keys, summaries, written
@@ -48,7 +56,21 @@ class SpoolCache(object):
                 "summaries": dict(self._summaries),
                 "written": dict((key, dict(value))
                                 for key, value in self._written.items()),
-                "queue": [dict(entry) for entry in self.queue]}
+                "queue": [dict(entry) for entry in self.queue],
+                "pending": dict(self._pending)}
+
+    def pending_spool(self, bay_key):
+        """The spool a bay's tag link waits on the user to confirm, or None."""
+        return self._pending.get(bay_key)
+
+    def set_pending(self, bay_key, spool_id):
+        if self._pending.get(bay_key) != spool_id:
+            self._pending[bay_key] = spool_id
+            self.persist()
+
+    def clear_pending(self, bay_key):
+        if self._pending.pop(bay_key, None) is not None:
+            self.persist()
 
     def remember_written(self, bay_key, summary, spool_id):
         """The component wrote a filament setting (in ``ops.summary_of``'s

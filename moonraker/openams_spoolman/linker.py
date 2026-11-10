@@ -255,6 +255,7 @@ class Linker(object):
         self.spoolman_online = True
         machine.state = "linked"
         machine.error = None
+        self._cache.clear_pending(key)
         if spool is not None:
             self._cache_summary(spool)
         else:
@@ -279,6 +280,8 @@ class Linker(object):
             machine.mirror_queued = False
         elif confirmed and machine.state == "pending_confirmation":
             machine.state = "linked"
+        if machine.state != "pending_confirmation":
+            self._cache.clear_pending(key)
         machine.error = None
         self.spoolman_online = True
         if spool is not None:
@@ -786,6 +789,10 @@ class Linker(object):
         machine.state = "pending_confirmation" if pending else "linked"
         machine.source = "tag"
         machine.spool_id = spool_id
+        if pending:
+            self._cache.set_pending(key, spool_id)
+        else:
+            self._cache.clear_pending(key)
         machine.tag_uid = machine.last_tag[0] if machine.last_tag else None
         machine.error = None
         machine.link_sent_at = self._clock()
@@ -806,15 +813,21 @@ class Linker(object):
     async def _adopt(self, key, machine, host_spool, host_source, tag=None):
         """Follow the host's authoritative link (C4 §3, first row)."""
         source = host_source if host_source in ("tag", "manual") else "manual"
+        # A tag link the user had not confirmed before Moonraker restarted
+        # still waits for that confirmation.
+        pending = source == "tag" and \
+            self._cache.pending_spool(key) == host_spool
         if machine.state == "linked" and machine.spool_id == host_spool \
-                and machine.source == source:
+                and machine.source == source and not pending:
             return
         if machine.state == "pending_confirmation" and \
                 machine.spool_id == host_spool and source == "tag":
             return   # the host echoes our link; the display has yet to confirm
+        if not pending:
+            self._cache.clear_pending(key)
         old = machine.spool_id
         machine.suggestions = []
-        machine.state = "linked"
+        machine.state = "pending_confirmation" if pending else "linked"
         machine.source = source
         machine.spool_id = host_spool
         machine.error = None
@@ -830,6 +843,7 @@ class Linker(object):
 
     async def _unlink(self, unit, bay, machine):
         """Removal: clear the host's link and the location mirror (C4 §3)."""
+        self._cache.clear_pending("%s-%s" % (unit, bay.get("index")))
         old = machine.spool_id
         machine.suggestions = []
         machine.state = "unlinked"
@@ -845,6 +859,9 @@ class Linker(object):
 
     async def _reconcile(self, machine):
         """The host's link vanished: follow it to ``unlinked`` (C4 §3)."""
+        for key, other in self._bays.items():
+            if other is machine:
+                self._cache.clear_pending(key)
         old = machine.spool_id
         machine.suggestions = []
         machine.state = "unlinked"

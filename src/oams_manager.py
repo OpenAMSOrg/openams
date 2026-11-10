@@ -2349,7 +2349,21 @@ class OAMSManager(oams_ext.ManagerHooks):
         failed stays recorded, so RESUME or the panel's Retry still finishes
         it; Unload backs it out."""
         still_latched = self._reset_errors(gcmd)
-        for fps, fault in sorted(self._tc_faults().items()):
+        faults, notes = self._tc_faults(), self._tc_notes()
+        for fps, fault in sorted(faults.items()):
+            note = notes.get(fps) or {}
+            if (fault["panel"] and not fault["fed"]
+                    and note.get("started", True) is False):
+                # A load or unload from the panel that failed before its
+                # plan started (a bay outside the group, say) moved
+                # nothing: there is nothing to finish, and a retry would
+                # only repeat the same refusal.
+                faults.pop(fps, None)
+                notes.pop(fps, None)
+                gcmd.respond_info(
+                    "OAMSM_CLEAR_ERRORS: %s on lane %s had not started;"
+                    " cleared" % (self._fault_subject(fault), fps))
+                continue
             gcmd.respond_info(
                 "OAMSM_CLEAR_ERRORS: %s on lane %s is not finished: %s"
                 % (self._fault_subject(fault), fps,
