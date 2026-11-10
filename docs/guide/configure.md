@@ -244,7 +244,15 @@ repository ships a placeholder, never a key; keep yours in your own config.
 ## `[oams_manager]`
 
 The manager owns topology validation, the runout monitor and the load callbacks.
-Nothing here is required. Two options are easy to get wrong:
+Nothing here is required. `pause_idle_timeout:` (default `172800`, 48 hours)
+is how long a print paused by a failed toolchange keeps its heaters and motors
+on: OpenAMS raises Klipper's idle timeout to it at the pause and puts it back
+when the print resumes, is cancelled or ends. A RESUME that OpenAMS refuses
+(another group loaded, or a retry that fails again) raises it again, since
+a `RESUME` macro such as Mainsail's puts its own value back first. Once it
+expires the motors go
+off, the printer loses its position, and the print can no longer be resumed.
+`0` leaves the idle timeout alone. Two options are easy to get wrong:
 
 - `toolhead_load_macro:` and `toolhead_unload_macro:` (default
   `_OAMS_TOOLHEAD_LOAD` and `_OAMS_TOOLHEAD_EJECT`) are extruder-only callbacks for

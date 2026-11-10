@@ -82,6 +82,19 @@ still loaded). If that fails too, the print stays paused with the reason, and
 RESUME can be pressed again. OpenAMS never retries on its own: the AMS retries
 before it reports a failure.
 
+While the print waits, OpenAMS raises Klipper's idle timeout to
+`pause_idle_timeout` (48 hours by default, in `[oams_manager]`), so the motors
+and heaters stay on and the printer keeps its position. If the motors do go
+off, RESUME refuses: it never homes with a part on the bed. RESUME also
+refuses while the toolhead does not hold the group the print was using, so a
+print cannot go on with an empty nozzle. An Unload or another Load you run
+while the print is paused does not cancel the failed toolchange; RESUME still
+finishes it. If your `RESUME` macro stops early (Mainsail's does with a
+`runout_sensor` that sees no filament), run `OAMSM_RETRY`, then RESUME.
+
+Call `T<n>` as a line of the print file or as the last command of a macro:
+Klipper runs the rest of a macro after the pause.
+
 Point the slicer at these names: set its toolchange G-code to `T` and the tool
 index. Its own multi-material moves (ramming, cooling moves, parking, loading,
 toolchange retracts) have to be off: [slicer/](../../slicer/README.md) has

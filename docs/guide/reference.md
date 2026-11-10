@@ -80,6 +80,7 @@ Nothing here is required.
 | `reload_before_toolhead_distance:` | `0.0` | Extra margin (mm) before the runout auto-reload point |
 | `monitor_interval:` | `1.0` | Runout/health monitor period |
 | `positioning_wait:` | `10.0` | Seconds to let a unit finish positioning a freshly inserted spool (0 disables) |
+| `pause_idle_timeout:` | `172800` | Seconds Klipper's idle timeout is raised to while a failed toolchange has the print paused (48 hours), so the heaters and motors stay on and the printer keeps its position until it expires. Put back when the print resumes, is cancelled or ends. `0` leaves the idle timeout alone |
 | `toolhead_load_macro:` | `_OAMS_TOOLHEAD_LOAD` | Extruder-only callback of `OAMSM_LOAD_TO_TOOLHEAD`; the default, in `oams_macros.cfg`, is the toolchange's own reload |
 | `toolhead_unload_macro:` | `_OAMS_TOOLHEAD_EJECT` | Extruder-only retract callback of `OAMSM_UNLOAD_FROM_TOOLHEAD`; must heat and eject past the extruder gears (about 100 mm), which the default, in `oams_macros.cfg`, does |
 | `openams_config_path:` | `oams.cfg` beside `printer.cfg` | Where group edits and calibration results are written |

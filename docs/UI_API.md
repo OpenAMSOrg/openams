@@ -274,8 +274,9 @@ OAMSM_RETRY
 A load or unload that fails leaves a `toolchange_fault` object on its lane in
 `lanes_by_fps` (additive; absent otherwise): `kind` (`load` or `unload`),
 `group`, `slot`, `temp`, `step` (the plan step that was running, or null),
-`reason`, `panel` (true when a UI started it outside a print; a fault recorded
-while a print is printing or paused is the print's, so `RESUME` retries it),
+`reason`, `panel` (false for the print's own failed toolchange and for a
+retry of it, which `RESUME` retries; true for every manual action: a UI load
+or unload, a `T<n>` typed with no print),
 `fed` (true when the AMS had fed
 the target group to the extruder gears) and `since`. Offer Retry (the `retry`
 command), Unload and Reset while it is present.
@@ -286,6 +287,13 @@ swap when another group is still loaded, a rewind then the toolchange when the
 target bay stopped short of the gears. It raises when that fails, and the fault
 stays. In a print the same happens on `RESUME`: a failed toolchange pauses the
 print instead of ending it, and `RESUME` finishes it before the print goes on.
+
+While a lane holds the print's fault (`panel` false), a manual action does not
+change it: an Unload or a Load of another spool runs, and if it fails it
+raises its own error and the lane's `toolchange_fault` stays as it was. Send
+Retry once per fault (`since` tells two faults on a lane apart). The host
+refuses `OAMSM_RETRY` while a print is printing, and, in a paused print whose
+motors were turned off, with `the printer lost its position`.
 
 `OAMSM_LOAD_FILAMENT_CANCEL` is ordinary G-code, so it runs only once Klipper's
 G-code queue is free. It can reach a load the manager runs on its own, such as

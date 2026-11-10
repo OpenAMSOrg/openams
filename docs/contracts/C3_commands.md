@@ -147,7 +147,45 @@ restores the guard state. Then:
   without an error, so the print file stays open;
 - otherwise: re-raises the original error.
 A group the topology does not know runs `_TX` unguarded (a configuration
-error, which `_TX` names). A successful run clears the lane's fault.
+error, which `_TX` names).
+
+Ownership. A fault is the print's (`panel` false) when the print's own
+toolchange recorded it (a `GROUP=` call without `SLOT=` while `print_stats` is
+`printing`), or a retry of such a fault. Every other run is a manual action
+(`panel` true): an unload, a `SLOT=` load, anything run while the print is
+paused or with no print. A manual action that fails while the lane holds the
+print's fault raises its own error and records nothing; one that succeeds
+leaves the print's fault in place. A successful run otherwise clears the
+lane's fault.
+
+A `GROUP=` call for the group of the lane's unfinished load fault (without
+`SLOT=`, or with the fault's own `SLOT=`) runs as a retry of that fault: the
+diagnosis of `OAMSM_RETRY`, keeping the fault's ownership. Called by the print
+itself, it pauses the print when it fails.
+
+The pause. After `PAUSE` the command runs `SET_IDLE_TIMEOUT
+TIMEOUT=<pause_idle_timeout>` (`[oams_manager] pause_idle_timeout`, default
+172800, 0 leaves it alone; skipped when the current value is already that
+long), having read the current value from the `idle_timeout` object. It is
+put back with `SET_IDLE_TIMEOUT` after a successful `RESUME`, or on the
+monitor tick once the print is no longer paused, unless something else has set
+another value since. A `RESUME` that refuses (`the print needs <group>`) or
+whose retry fails, with the axes still homed, runs the same
+`SET_IDLE_TIMEOUT` again before it raises: a `RESUME` macro (Mainsail's) puts
+its own saved value back before it calls Klipper's resume. After `the printer
+lost its position` it does not. If `PAUSE` raises, the command calls
+`pause_resume.send_pause_command()`, saves `PAUSE_STATE` and marks the print
+paused itself; the error does not reach the print. If the print was already
+paused when the chain failed, the guard is restored without `MOVE=1`. The
+message ends with `"If RESUME stops before it retries ..., run OAMSM_RETRY,
+then RESUME."`; when Klipper's resume could not be wrapped it reads `"... The
+print is paused. RESUME cannot retry it on this Klipper: fix it, run
+OAMSM_RETRY, then press RESUME."`.
+
+A further `GROUP=` call (no `SLOT=`) that comes from the print file
+(`virtual_sdcard.is_cmd_from_sd()`) while the print is paused and holds a
+print's fault moves nothing and raises nothing: the lane's fault takes its
+group, and `RESUME` runs the toolchange to it.
 
 ### `OAMSM_RETRY [FPS=<lane>]`
 `cmd_RETRY` (2026-11-08), the UI's `retry` command. Without `FPS=` it takes the
@@ -159,7 +197,19 @@ a load whose target group is loaded and was `fed` runs `_OAMS_RESUME_TOOLHEAD`
 loaded but not fed runs `OAMSM_UNLOAD_FILAMENT` then `_TX`; another group
 loaded, or nothing loaded, runs `_TX`; an unload runs the unload again, or
 clears the fault when the lane is already unloaded. It runs inside the same
-guard and raises on failure.
+guard and raises on failure. More exactly, for a load: a fault whose run never
+started its plan runs `_TX` again; fed with the reload confirmed
+(`_OAMS_FINISH_TOOLCHANGE` was reached, so the outlet check had passed) runs
+`_OAMS_RESUME_TOOLHEAD ... RELOADED=1`, which skips the inlet check and the
+reload and runs what follows them; the rewind is chosen only when the plan had
+reached the feed and the lane holds the very bay being fed; a targeted load
+with another bay of its group loaded runs the whole swap. `fed` is never true
+for a run that did not start its plan, and for a targeted load only when the
+target bay is the one loaded.
+It raises `"OAMSM_RETRY: a print is printing ..."` while `print_stats` is
+`printing`, and runs nothing. For a print's fault in a paused print with the
+axes not all homed it raises `"OpenAMS cannot retry the failed toolchange: the
+printer lost its position ..."`, moves nothing and keeps the fault.
 
 ### `RESUME` (Klipper's, wrapped)
 At ready the manager finds the command whose handler unwraps to
@@ -168,9 +218,18 @@ At ready the manager finds the command whose handler unwraps to
 lane holds a print's `toolchange_fault`, it runs `OAMSM_RETRY`'s logic for each
 such lane first; a retry that fails raises `"OpenAMS could not finish <the
 toolchange to T1> ...: <reason>. The print stays paused: fix it and press
-RESUME again."`, and Klipper's resume is not called. Otherwise it calls
-Klipper's resume unchanged. A print's fault is dropped once `print_stats`
-leaves `printing` and `paused`.
+RESUME again."`, and Klipper's resume is not called. With a print's fault to
+retry and the axes not all homed, it raises the lost-position error above
+instead: it never homes. Before it calls Klipper's resume, each lane the print
+loaded must hold the group of the print's last finished toolchange (remembered
+per lane while a print is printing or paused, cleared when a file is loaded or
+the print ends); otherwise it raises `"OpenAMS: the print needs <group> loaded
+on lane <lane>, and <nothing is loaded | <other> is loaded>. The print stays
+paused: load <group>, then press RESUME."`. A print's fault is dropped once
+`print_stats` leaves `printing` and `paused`. When the command cannot be
+found, the manager warns at ready (Klipper's log, and a configfile runtime
+warning where Klipper has them) and a failed toolchange still pauses the
+print.
 
 ### `OAMSM_SELFTEST`
 `cmd_SELFTEST`, `oams_manager.py:480-548`. Read-only diagnostic report: FPS

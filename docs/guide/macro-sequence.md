@@ -112,24 +112,34 @@ Starting values for your toolhead: `python3 ~/openams/tools/toolhead_defaults.py
 1. records the fault on the lane: what was being loaded or unloaded, the step that was running, the reason, and whether the AMS had already fed the filament to the gears;
 2. puts the toolhead back where the toolchange started (not when the toolchange had to home first: the position before homing means nothing, so the toolhead stays where it failed);
 3. stops the AMS follower once it is safe (never under a print that is still printing);
-4. in a print, runs `PAUSE` and writes the reason to the console; from the panel, or outside a print, raises the error instead.
+4. in a print, runs `PAUSE`, raises the idle timeout to `pause_idle_timeout`, and writes the reason to the console; from the panel, or outside a print, raises the error instead. If `PAUSE` itself fails, OpenAMS pauses the print directly. If something inside the toolchange had already paused the print, the toolhead is not moved back.
 
-**RESUME finishes the toolchange.** OpenAMS wraps Klipper's own resume (the `RESUME_BASE` that Mainsail's and Fluidd's `RESUME` call), so this works from any screen without changing your config. With a fault recorded, `RESUME` first clears the AMS's latched faults and re-reads the lanes, then runs only what is left:
+**RESUME finishes the toolchange.** OpenAMS wraps Klipper's own resume (the `RESUME_BASE` that Mainsail's and Fluidd's `RESUME` call), so RESUME on any screen runs it. A `RESUME` macro can stop before it reaches Klipper's resume: Mainsail's and Fluidd's do when `runout_sensor` is set and that sensor sees no filament. The retry then never runs. Run `OAMSM_RETRY` (or press the panel's **Retry**), then `RESUME`; the pause message says so. If OpenAMS cannot find Klipper's resume command at all, it warns at startup, the print still pauses, and the message tells you to run `OAMSM_RETRY`, then `RESUME`. With a fault recorded, `RESUME` first clears the AMS's latched faults and re-reads the lanes, then runs only what is left:
 
 | What it finds | What it runs |
 |---|---|
 | the target group loaded, and the AMS had fed it | the toolhead part (`_OAMS_RESUME_TOOLHEAD`): heat, re-arm the follower, inlet check, reload, outlet check, `CLEAN_NOZZLE` |
-| the target group out past its hub, but never fed to the gears | a rewind of that bay (`OAMSM_UNLOAD_FILAMENT`), then the toolchange |
-| another group loaded | the whole swap, from the cut |
+| the target group loaded, fed, and the reload had finished and passed the outlet check | only what follows the reload: `CLEAN_NOZZLE`, the after-feed hook, the move back. The reload is not pushed a second time |
+| the feed started and stopped short: the target bay is out past its hub, but never reached the gears | a rewind of that bay (`OAMSM_UNLOAD_FILAMENT`), then the toolchange |
+| it failed before its plan started (while homing, say) | the toolchange again, from the start |
+| another group loaded, or another bay of the group than the one a targeted load asked for | the whole swap, from the cut |
 | nothing loaded | the feed and the toolhead part |
 
 With gco-routines, the retry runs inside RESUME, where gco-routines starts no routines: OpenAMS runs `_TX` there in a `legacy_in_recovery()` region and it takes its serial path (feed, then the toolhead part, without the overlap). That needs gco-routines with `legacy_in_recovery()` (2026-11-08, evening); an older one refuses the retry with `Recovery macros cannot start managed routines`, and the print stays paused.
 
-A retry from the panel or the console while the print is paused belongs to the print too: if it fails, `RESUME` still retries it, and the fault goes when the print ends.
+A retry from the panel or the console while the print is paused belongs to the print too: if it fails, `RESUME` still retries it, and the fault goes when the print ends. A `T<n>` to the group that failed is such a retry: it runs the same diagnosis, never a plain toolchange that would find the group "loaded" and do nothing.
+
+**The print's failed toolchange stays until it is finished.** Anything else you do while the print is paused is your own action: an Unload, a Load of another spool, a `T<n>` to another group. It runs, and if it fails it raises its own error, but it neither clears nor replaces the print's failed toolchange. `RESUME` still finishes that one.
+
+**RESUME checks what is loaded.** Before the print goes on, the lane must hold the group of the print's last finished toolchange. If it holds nothing or another group, `RESUME` stops with `the print needs <group> loaded on lane <lane>`, and the print stays paused, with the idle timeout at `pause_idle_timeout` again (a `RESUME` macro such as Mainsail's puts its own value back before it calls Klipper's resume). Load that group, then press `RESUME`.
+
+**RESUME never homes.** If the motors were turned off while the print waited (the idle timeout does that), the printer has lost its position. `RESUME` and `OAMSM_RETRY` then refuse with `the printer lost its position`, move nothing, and keep the print paused; the print cannot be resumed safely. To keep that from happening, OpenAMS raises the idle timeout to `pause_idle_timeout` (48 hours by default) when it pauses a print for a failed toolchange, and puts it back when the print resumes, is cancelled or ends. The heaters and the motors stay on until it expires.
+
+**Keep `T<n>` out of the middle of a macro.** Klipper runs the rest of a macro after a `PAUSE`. Call `T<n>` as a line of the print file, or as the last command of a macro. If a macro does run another `T<n>` while the print is paused for a failed one, OpenAMS moves nothing: that group becomes the one `RESUME` loads.
 
 When that works, Klipper's resume returns to the print. When it fails, the print stays paused, the console says why, and `RESUME` can be pressed again. OpenAMS never retries on its own: the AMS retries before it reports a failure.
 
-**From the panel**, a failed Load or Unload raises its error; there is no print to pause. The lane's `toolchange_fault` in the status lets the panel offer **Retry** (`OAMSM_RETRY`, the same diagnosis), **Unload** (`OPENAMS_UNLOAD`) and **Reset**.
+**From the panel**, a failed Load or Unload raises its error; there is no print to pause. `OAMSM_RETRY` is refused while a print is printing; it runs while the print is paused, or with no print. The lane's `toolchange_fault` in the status lets the panel offer **Retry** (`OAMSM_RETRY`, the same diagnosis), **Unload** (`OPENAMS_UNLOAD`) and **Reset**.
 
 **Reset** (`OAMSM_CLEAR_ERRORS`) sends each unit with a latched fault its `OAMS_CLEAR_FAULT`, waits out the unit's 15 s recovery window (a fault can look cleared for a moment, then latch again), names any fault that stays latched, and re-reads the lanes. It never moves anything. It keeps an unfinished toolchange, so a later `RESUME` still finishes it; a print's fault is dropped when that print ends.
 

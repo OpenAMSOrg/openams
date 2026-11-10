@@ -2128,7 +2128,7 @@ def test_a_failed_toolchange_outside_a_print_raises(setup):
     inlet_sensor(printer, False)
     with pytest.raises(printer.command_error, match="inlet"):
         printer.gcode.run_script("T1")
-    assert "PAUSE" not in printer.trace and fault_of(manager)["panel"] is False
+    assert "PAUSE" not in printer.trace and fault_of(manager)["panel"] is True
 
 
 def test_reset_keeps_an_unfinished_toolchange_for_resume(setup):
