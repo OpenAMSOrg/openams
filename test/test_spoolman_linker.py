@@ -219,6 +219,19 @@ class CreateAndConfirmTest(unittest.TestCase):
         third.send([bay(tag=t, spool_id=spool_id, link_source="tag")])
         self.assertEqual(third.bay()["state"], "linked")
 
+    def test_a_stale_pending_entry_is_dropped_on_the_first_pass(self):
+        # Review 2026-11-10, finding 25: entries for bays that changed while
+        # Moonraker was down stayed for ever, and came back as a Confirm the
+        # next time the host linked that spool by tag.
+        stored = {"state": {"pending": {"oams1-0": 5, "oams1-1": 6,
+                                        "oams1-2": 7, "oams9-3": 8}}}
+        h = Harness(cache=self.stored_cache(stored)).start()
+        h.send([bay(),                                      # unlinked now
+                bay(spool_id=6, link_source="manual"),      # linked by hand
+                bay(spool_id=7, link_source="tag")])        # still waiting
+        self.assertEqual(stored["state"]["pending"], {"oams1-2": 7})
+        self.assertEqual(h.bay("oams1-2")["state"], "pending_confirmation")
+
     def test_a_manual_link_after_a_restart_is_not_pending(self):
         stored = {}
         h = Harness(cache=self.stored_cache(stored)).start()
@@ -1179,6 +1192,125 @@ class TagStateTest(unittest.TestCase):
                     self.assertEqual(h.sets(), [])
                     self.assertEqual(h.bay()["spool_id"], manual["id"])
                     self.assertEqual(h.bay()["source"], "manual")
+
+    # Review 2026-11-10, finding 21: the fix above held only when the
+    # component's first pass already saw the restored candidate.
+    UNKNOWN = {"state": "unknown", "reason": None, "candidates": [],
+               "other_bay": None, "reader": 0}
+
+    def test_a_klipper_restart_before_the_restore_never_unlinks(self):
+        # Moonraker stays up while Klipper restarts. Until the host has
+        # restored its attribution the bay shows no tag (unknown, or no
+        # tag_state at all): that is no removal.
+        for tag_state in (self.UNKNOWN, None):
+            with self.subTest(tag_state=tag_state):
+                h = Harness().start()
+                t = bambu_tag()
+                h.send([bay(tag=t)])
+                spool_id = h.bay()["spool_id"]
+                linked = dict(spool_id=spool_id, link_source="tag")
+                h.send([bay(tag=t, **linked)])
+                h.sent.clear()
+                h.linker.host_restarted()
+                restarting = dict(bay(**linked))
+                if tag_state is not None:
+                    restarting["tag_state"] = tag_state
+                h.send([restarting])
+                self.assertEqual(h.clears(), [])
+                self.assertEqual(h.bay()["spool_id"], spool_id)
+                candidate = dict(self.UNKNOWN, state="candidate")
+                h.send([dict(bay(**linked), tag_state=candidate)])
+                attributed = dict(self.UNKNOWN, state="attributed")
+                h.send([dict(bay(tag=t, **linked), tag_state=attributed)])
+                self.assertEqual((h.sets(), h.clears()), ([], []))
+                self.assertEqual(h.bay()["spool_id"], spool_id)
+
+    def test_after_a_restart_another_spools_tag_is_a_new_read(self):
+        h = Harness().start()
+        tagged = h.make_spool({"tray_uid": ops.encode_extra(TRAY)})
+        manual = h.make_spool()
+        linked = dict(spool_id=manual["id"], link_source="manual")
+        h.send([bay(tag=bambu_tag(uid="0d0d0d0d", bambu={"tray_uid": "3" * 32}),
+                    **linked)])
+        h.linker.host_restarted()
+        h.send([dict(bay(**linked), tag_state=self.UNKNOWN)])
+        h.sent.clear()
+        attributed = dict(self.UNKNOWN, state="attributed")
+        h.send([dict(bay(tag=sibling_tag("04a1b2c3", read_at=9.0), **linked),
+                     tag_state=attributed)])
+        self.assertEqual(len(h.sets()), 1)
+        self.assertIn("SPOOL=%d SOURCE=tag" % tagged["id"], h.sets()[0])
+
+    def test_a_power_cycle_seen_before_the_restore_keeps_a_manual_link(self):
+        # Both restarted; the component's first pass comes before the host
+        # restored the bay, which shows its candidate only on a later pass.
+        key = "bambu:" + "3" * 32
+        tag = bambu_tag(uid="0d0d0d0d", read_at=1.0,
+                        bambu={"tray_uid": "3" * 32})
+        candidate = dict(self.UNKNOWN, state="candidate", candidates=[
+            {"spool_key": key, "uid": "0d0d0d0d", "material": "PLA",
+             "color_argb": None}])
+        h = Harness().start()
+        manual = h.make_spool()
+        linked = dict(spool_id=manual["id"], link_source="manual")
+        h.send([bay(**linked)])                       # no tag_state yet
+        h.send([dict(bay(**linked), tag_state=self.UNKNOWN)])
+        h.send([dict(bay(**linked), tag_state=candidate)])
+        h.sent.clear()
+        h.send([dict(bay(tag=tag, **linked),
+                     tag_state=dict(self.UNKNOWN, state="attributed"))])
+        self.assertEqual((h.sets(), h.clears()), ([], []))
+        self.assertEqual((h.bay()["spool_id"], h.bay()["source"]),
+                         (manual["id"], "manual"))
+
+    def test_the_window_ends_at_the_first_tag_or_an_empty_bay(self):
+        h = Harness().start()
+        t = bambu_tag()
+        h.send([bay(tag=t)])
+        spool_id = h.bay()["spool_id"]
+        linked = dict(spool_id=spool_id, link_source="tag")
+        h.linker.host_restarted()
+        h.send([dict(bay(tag=t, **linked),
+                     tag_state=dict(self.UNKNOWN, state="attributed"))])
+        h.sent.clear()
+        h.send([dict(bay(**linked), tag_state=self.UNKNOWN)])
+        self.assertEqual(h.clears(), ["OAMSM_CLEAR_BAY_SPOOL OAMS=oams1 BAY=0"])
+
+    def test_a_power_cycle_without_a_tag_cache_keeps_a_manual_link(self):
+        # The host has no tag cache, so after a power cycle the bay is only
+        # `unknown`; this component starts with no memory. The tag read at
+        # the first load was there all along: the manual link the host kept
+        # stands. A manual link made after the start gets no such cover.
+        unknown = {"state": "unknown", "reason": None, "candidates": [],
+                   "other_bay": None, "reader": 0}
+        attributed = dict(unknown, state="attributed")
+        for kept in (True, False):
+            with self.subTest(kept=kept):
+                h = Harness().start()
+                tagged = h.make_spool({"tray_uid": ops.encode_extra(TRAY)})
+                manual = h.make_spool()
+                linked = dict(spool_id=manual["id"], link_source="manual")
+                first = dict(bay(**linked), tag_state=unknown) if kept \
+                    else dict(bay(), tag_state=unknown)
+                h.send([first])
+                h.send([dict(bay(**linked), tag_state=unknown)])
+                h.sent.clear()
+                h.send([dict(bay(tag=sibling_tag("04a1b2c3", read_at=9.0),
+                                 **linked), tag_state=attributed)])
+                if kept:
+                    self.assertEqual(h.sets(), [])
+                    self.assertEqual(h.bay()["spool_id"], manual["id"])
+                    self.assertEqual(h.bay()["source"], "manual")
+                else:
+                    self.assertEqual(len(h.sets()), 1)
+                    self.assertIn("SPOOL=%d SOURCE=tag" % tagged["id"],
+                                  h.sets()[0])
+                # An explicit re-read (a new read_at) still applies the tag.
+                h.sent.clear()
+                h.send([dict(bay(tag=sibling_tag("04a1b2c3", read_at=20.0),
+                                 **linked), tag_state=attributed)])
+                if kept:
+                    self.assertEqual(len(h.sets()), 1)
 
     def test_an_unknown_bay_whose_tag_went_still_unlinks(self):
         h = Harness().start()

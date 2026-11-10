@@ -52,7 +52,7 @@ jobs:
           ref: ${{ steps.krev.outputs.rev }}
           path: klipper-checkout
       - name: Run Klipper integration tests
-        run: OPENAMS_KLIPPER_DIR="${GITHUB_WORKSPACE}/klipper-checkout" python -m pytest test/test_openams_klipper.py -q
+        run: OPENAMS_KLIPPER_DIR="${GITHUB_WORKSPACE}/klipper-checkout" python -m pytest test/test_openams_klipper.py test/test_oams_menu.py -q
 
   klipper-mmu:
     runs-on: ubuntu-latest

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import contextlib
 import pathlib
 import sys
 import unittest
@@ -170,7 +171,8 @@ def test_one_driver_owns_and_serializes_both_readers():
         register_command=lambda *args, **kwargs: None,
         register_mux_command=lambda command, key, value, callback, **kwargs:
             mux_readers.append(value))
-    reactor = types.SimpleNamespace(monotonic=lambda: 100.0)
+    reactor = types.SimpleNamespace(monotonic=lambda: 100.0,
+                                    mutex=contextlib.nullcontext)
     reset_pins = {}
     pins = types.SimpleNamespace(
         setup_pin=lambda pin_type, name: reset_pins.setdefault(
@@ -471,6 +473,24 @@ class ReadUidsTests(unittest.TestCase):
         self.assertEqual([t.state for t in tags], ["IDLE", "ACTIVE"])
 
 
+class FakeMutex(object):
+    """Klipper's reactor mutex, as far as a test can tell: entering it while
+    it is held is a sample that would have to wait."""
+
+    def __init__(self):
+        self.locked = False
+
+    def __enter__(self):
+        if self.locked:
+            raise AssertionError("a second sample while one is running")
+        self.locked = True
+        return self
+
+    def __exit__(self, *exc):
+        self.locked = False
+        return False
+
+
 class FieldHandoffTests(unittest.TestCase):
     """[mfrc522] hands whole samples to the unit's TagReader."""
 
@@ -493,6 +513,7 @@ class FieldHandoffTests(unittest.TestCase):
             lookup_objects=lambda module=None: [("oams oams1", oams)],
             send_event=lambda event, *args: pair._handle_field(*args))
         pair.reactor = types.SimpleNamespace(monotonic=lambda: 5.0)
+        pair._mutex = FakeMutex()
         pair.oams_index = 1
         pair.bays = {0: (0, 1), 1: (2, 3)}
         pair.attribution_options = {"debounce": 2}
@@ -535,6 +556,42 @@ class FieldHandoffTests(unittest.TestCase):
                                                              b.hex()])))
         self.assertEqual(endpoint.last_read_status, "PRESENT")
         self.assertEqual(len(endpoint.uids), 2)
+
+    def test_a_sample_holds_the_pairs_mutex(self):
+        # Review 2026-11-10, finding 12: the poll yields at every SPI round
+        # trip; a command's sample starting meanwhile switched the antenna
+        # to the other reader under it. One mutex serialises the pair.
+        pair, endpoint, notes = self._pair()
+        held = []
+
+        class Watched(SimChip):
+            def read_uids(self, max_tags=None):
+                held.append(pair._mutex.locked)
+                return SimChip.read_uids(self, max_tags)
+
+        endpoint.reader = Watched([SimTag(bytes.fromhex("11223344"))])
+        pair.sample_reader(0)
+        self.assertEqual(held, [True])
+        self.assertFalse(pair._mutex.locked)
+        with pair._mutex:                  # a sample is running
+            with self.assertRaises(AssertionError):
+                pair.sample_reader(0)      # this one would wait
+
+    def test_an_explicit_read_retries_a_failed_decode_now(self):
+        # Review 2026-11-10, finding 11: not 10 s after the last failure.
+        pair, endpoint, notes = self._pair()
+        uid = bytes.fromhex("11223344")
+        decoded = []
+        endpoint.tag_processor = types.SimpleNamespace(
+            read_tag=lambda reader, tag_uid: decoded.append(tag_uid) or {
+                "tray_uid": "ab" * 16})
+        endpoint._decode_failed = {uid.hex(): 4.0}   # failed 1 s ago
+        endpoint.reader = SimChip([SimTag(uid)])
+        pair.readers[0]._sample(5.0)                 # the poll waits
+        self.assertEqual(decoded, [])
+        pair.sample_reader(0)                        # OAMS_RFID_SCAN BAY=
+        self.assertEqual(decoded, [uid])
+        self.assertEqual(notes[-1][2][uid.hex()]["format"], "bambu")
 
     def test_an_error_is_an_error_not_a_removal(self):
         # Was: a collision (bad BCC) counted as a miss, and two misses

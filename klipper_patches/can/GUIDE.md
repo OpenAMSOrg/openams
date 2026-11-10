@@ -139,6 +139,26 @@ record. The OpenAMS update manager entry is not affected.
 If the new Klipper changed a patched file, step 3 refuses. Your printer then runs
 plain upstream Klipper until OpenAMS ships a series rebased onto it.
 
+### When OpenAMS ships a rebased series
+
+An OpenAMS update can move the series to a newer tested base (the last move, on
+2026-11-09, went to `56a9c605`). Two things change for a printer that had the
+earlier series applied:
+
+- `apply` refuses a Klipper older than the new base: `Klipper is at <sha>, which
+  is older than or unrelated to the tested base <sha>`. Update Klipper to the
+  base or later first.
+- `apply` refuses while the earlier series is still on the tree: `a different
+  OpenAMS Klipper patch series is already applied`. Remove it first. `remove`
+  reverses exactly what was applied, from the record and the copy kept in the
+  checkout's `.git`, so the updated OpenAMS can remove the earlier series.
+
+So the order is the same as for a Klipper update:
+
+1. `bash install.sh --remove-klipper-patches` (removes the earlier series)
+2. Update Klipper to the new base or later.
+3. `bash install.sh --with-klipper-patches`
+
 ## Rebuild and flash the MCU firmware
 
 This part is generic. It does not replace your board's own flashing instructions.

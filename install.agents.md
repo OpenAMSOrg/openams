@@ -108,8 +108,8 @@ Everything else on the printer is untouched.
   - `~/klipper/scripts/<name>.py` for each `~/openams/scripts/*.py`;
   - `~/moonraker/moonraker/components/openams_spoolman` and `openams_taglib`.
 - **Copied only if absent:** `oams.cfg` (from `oams_sample.cfg`) into the config dir.
-- **Symlinked:** `oams_macros.cfg` and `oams_macros_ordered.cfg` in the config dir point at the checkout, so updates take effect. An existing unmodified copy (any version OpenAMS shipped) is replaced by the link; a customized one is moved to `<name>.bak-<YYYYmmdd-HHMMSS>` first and the installer prints a message. Never edit these files.
-- **`printer.cfg`:** one line `[include oams.cfg]`, above `[printer]`. Only if absent.
+- **Symlinked:** `oams_macros.cfg`, `oams_macros_ordered.cfg` and `oams_menu.cfg` in the config dir point at the checkout, so updates take effect. An existing unmodified copy (any version OpenAMS shipped) is replaced by the link; a customized one is moved to `<name>.bak-<YYYYmmdd-HHMMSS>` first and the installer prints a message. Never edit these files.
+- **`printer.cfg`:** one line `[include oams.cfg]`, above `[printer]`. Only if absent. Right below it, `[include oams_menu.cfg]` (the LCD menu), only when the config has a `[display]` section; without one Klipper would refuse the `[menu]` sections, so the installer then removes that line instead. `--no-lcd-menu` leaves it out.
 - **`moonraker.conf`:** `[update_manager openams]`, `[spoolman]`, `[openams_spoolman]`, `[openams_taglib]` and, once the library is downloaded, `[update_manager Bambu-Lab-RFID-Library]`, each only if absent.
 - **Tag library:** it clones `~/Bambu-Lab-RFID-Library` (about 200 MB) if absent, unless `--no-taglib-download`. A failed clone is a warning; run the installer again online.
 - **Spoolman:** if there is no Spoolman server, it installs one in `~/Spoolman` as the `Spoolman` service.

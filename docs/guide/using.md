@@ -85,12 +85,19 @@ before it reports a failure.
 While the print waits, OpenAMS raises Klipper's idle timeout to
 `pause_idle_timeout` (48 hours by default, in `[oams_manager]`), so the motors
 and heaters stay on and the printer keeps its position. If the motors do go
-off, RESUME refuses: it never homes with a part on the bed. RESUME also
+off, RESUME refuses, and so do a `T<n>`, a Load or an Unload while the print
+is paused: none of them homes with a part on the bed. RESUME also
 refuses while the toolhead does not hold the group the print was using, so a
 print cannot go on with an empty nozzle. An Unload or another Load you run
 while the print is paused does not cancel the failed toolchange; RESUME still
-finishes it. If your `RESUME` macro stops early (Mainsail's does with a
+finishes it, from where your action left the lane. A Load of the very group
+the print wanted that finishes is the toolchange done: RESUME then moves
+nothing. If your `RESUME` macro stops early (Mainsail's does with a
 `runout_sensor` that sees no filament), run `OAMSM_RETRY`, then RESUME.
+
+The pause needs Klipper's `[pause_resume]` (Mainsail's `mainsail.cfg` has
+it). Without it OpenAMS warns at startup, and a failed toolchange ends the
+print rather than letting it go on without the filament it asked for.
 
 Call `T<n>` as a line of the print file or as the last command of a macro:
 Klipper runs the rest of a macro after the pause.
@@ -145,13 +152,20 @@ re-reads the lanes without moving anything.
 A client must read command names from the status, not hard-code them; see the
 [UI API](../UI_API.md).
 
+### From the printer's display
+
+On a printer with a Klipper display, the **OpenAMS** entry of the display's
+menu runs these commands, and the other ones on this page a person runs by
+hand, from the knob: [the printer's LCD menu](lcd-menu.md).
+
 #### Stop
 
 A display's Stop button stops the **whole** running sequence (homing, heating,
 cut, retract, feed and your hooks), not only the firmware load or unload. It
 cannot be a G-code command, which would wait behind the running macro, so it is
 the Klipper webhook `openams/stop` (`POST /server/openams/stop` through
-Moonraker, optional `lane`). The firmware load or unload is canceled at once,
+Moonraker, optional `lane`), or the Stop entry of the printer's
+[LCD menu](lcd-menu.md). The firmware load or unload is canceled at once,
 the heat wait ends within half a second, and any other step ends at the next
 boundary; a move already queued (a `G1`, the cutter, homing) finishes first.
 The step that was running shows as failed with "Stopped by the user", and a
@@ -424,5 +438,6 @@ The full list is in [troubleshooting](troubleshooting.md).
 - [Configuration reference](reference.md) — every option and command.
 - [Troubleshooting](troubleshooting.md) — error text matched to causes.
 - [FAQ](faq.md) — the questions that do not belong anywhere else.
+- [The printer's LCD menu](lcd-menu.md) — the same commands from a Klipper display.
 - [UI API](../UI_API.md) — building a front end.
 - [docs/contracts/C3_commands.md](../contracts/C3_commands.md) — the command contract.

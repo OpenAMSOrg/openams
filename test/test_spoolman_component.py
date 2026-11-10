@@ -404,6 +404,29 @@ class RestartRepushTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self._filament_pushes(h)), 1)
 
 
+class KlipperRestartTest(unittest.IsolatedAsyncioTestCase):
+    async def test_a_restart_before_the_tag_restore_keeps_the_link(self):
+        # Review 2026-11-10, finding 21: Moonraker stays up, Klipper
+        # restarts, and its first statuses show the bay ready with no tag
+        # yet (the host restores its attribution a moment later).
+        h = await Harness().init()
+        await h.ready([bay(tag=bambu_tag())])
+        spool_id = h.bay()["spool_id"]
+        h.klippy_apis.gcode.clear()
+        unknown = {"state": "unknown", "reason": None, "candidates": [],
+                   "other_bay": None, "reader": 0}
+        restarting = dict(bay(spool_id=spool_id, link_source="tag"),
+                          tag_state=unknown)
+        h.klippy_apis.subscribe_result = {
+            "oams_manager": oams_status([restarting]),
+            "toolhead": {"extruder": "extruder"}}
+        await h.component._handle_klippy_ready()
+        await h.flush()
+        self.assertFalse([g for g in h.klippy_apis.gcode
+                          if g.startswith("OAMSM_CLEAR_BAY_SPOOL")])
+        self.assertEqual(h.bay()["spool_id"], spool_id)
+
+
 class NoOverlapTest(unittest.IsolatedAsyncioTestCase):
     async def test_two_quick_updates_the_pass_sees_the_latest(self):
         h = await Harness().init()

@@ -136,6 +136,21 @@ class ReasonTests(unittest.TestCase):
                                            512 + 0x25)
         self.assertEqual(text, "the AMS reported error 0x25")
 
+    def test_an_ams_jam_is_named_as_a_jam(self):
+        # 0x17 is the AMS's own feeder stall (its jam dialog on a Bambu
+        # printer); a cardboard spool's friction raised it on 2026-11-10.
+        text = make_unit()._failure_reason(S.OAMS_OP_CODE_ERROR_UNSPECIFIED,
+                                           512 + 0x17)
+        self.assertIn("jam", text)
+        self.assertIn("0x17", text)
+
+    def test_a_retract_stall_names_the_cut(self):
+        # Bridge 14: the pull back stopped because the odometer stood still.
+        unit = make_unit(bridge_capabilities(AMS_REASON_RETRACT_STALLED=34))
+        text = unit._failure_reason(S.OAMS_OP_CODE_TIMEOUT, 34)
+        self.assertIn("did not move back", text)
+        self.assertIn("cut", text)
+
     def test_older_bridge_firmware_gets_both_causes_of_a_load_timeout(self):
         unit = make_unit(capabilities={"host_arrival_confirm": True},
                          ptfe_length=1482)  # 1300 mm
@@ -164,6 +179,21 @@ class ReasonTests(unittest.TestCase):
         settle = [e for e in effects if isinstance(e, S.Settle)][0]
         self.assertEqual(settle.result.message,
                          "Spool loading failed (the filament fed 2700 mm)")
+
+
+    def test_the_reducer_shows_the_reason_of_a_failed_unload(self):
+        # 2026-11-10: an unload's reason (bridge 12: RETRACT_TIMEOUT) was
+        # dropped for the op code's generic text.
+        lane = S.LaneState(op=S.OP_UNLOADING, unit=(1, 2), op_gen=7, group="T2")
+        lw = S.LaneWorld(unit_names={1: "ams1"})
+        world = S.World(lanes={"fps1": lw})
+        state = S.SystemState(lanes={"fps1": lane})
+        _, effects = S.reduce(state, S.OpCompleted(
+            "fps1", S.OAMS_OP_CODE_TIMEOUT, 34, gen=7,
+            reason="the filament did not move back"), world, now=1.0)
+        settle = [e for e in effects if isinstance(e, S.Settle)][0]
+        self.assertEqual(settle.result.message,
+                         "Spool unloading failed (the filament did not move back)")
 
 
 class CalibrationGuardTests(unittest.TestCase):
@@ -411,6 +441,57 @@ class MeasuredPathTests(unittest.TestCase):
         unit._note_arrival_distance(1, 2314)
         self.assertEqual(unit.measured_path_mm, {})
         self.assertEqual(unit.gcode.messages, [])
+
+    def test_a_bays_own_length_left_from_an_older_calibration_is_named(self):
+        # An AMS 1 config upgraded from per-bay calibration: ptfe_length_1
+        # overrides ptfe_length for bay 1, so setting ptfe_length alone would
+        # change nothing there; the hint names the options to remove.
+        unit = make_unit(ptfe_length=2850)
+        unit.ptfe_lengths = [None, 2850, None, 2700]
+        unit._note_arrival_distance(1, 2314)
+        message = unit.gcode.messages[-1]
+        self.assertIn("(ptfe_length_1: 2500 mm)", message)
+        self.assertIn("OAMS_CALIBRATE_PTFE_LENGTH OAMS=1 SPOOL=1", message)
+        self.assertIn("set ptfe_length: 2314 under [oams ams1] and remove"
+                      " ptfe_length_1 and ptfe_length_3", message)
+
+    def test_a_unit_of_no_known_family_is_told_to_set_the_bays_own_length(self):
+        caps = bridge_capabilities()
+        caps.pop("family", None)
+        unit = make_unit(capabilities=caps, ptfe_length=2850)
+        unit.ptfe_lengths = [None, 2850, None, None]
+        unit._note_arrival_distance(1, 2314)
+        message = unit.gcode.messages[-1]
+        self.assertIn("set ptfe_length_1: 2314 under [oams ams1].", message)
+        self.assertNotIn("remove", message)
+
+
+class UnitCalibrationStateTests(unittest.TestCase):
+    """The unit's calibration.state (C2 5.4): configured with a shared
+    ptfe_length, or when every bay has its own length (a config left from
+    per-bay calibration, which is never migrated silently)."""
+
+    def test_a_unit_whose_bays_all_have_their_own_length_is_calibrated(self):
+        unit = make_unit(ptfe_length=0)
+        unit.ptfe_lengths = [2382, 2370, 2369, 2358]
+        status = unit._calibration_status()
+        self.assertEqual(status["state"], "configured")
+        self.assertAlmostEqual(status["path_length_mm"],
+                               2382 / oams.FILAMENT_PATH_LENGTH_FACTOR)
+
+    def test_one_bay_without_a_length_leaves_the_unit_uncalibrated(self):
+        unit = make_unit(ptfe_length=0)
+        unit.ptfe_lengths = [2382, 2370, None, 2358]
+        self.assertEqual(unit._calibration_status(),
+                         {"state": "uncalibrated", "path_length_mm": 0.0})
+
+    def test_the_shared_length_still_decides_when_it_is_set(self):
+        unit = make_unit(ptfe_length=2850)
+        unit.ptfe_lengths = [2382, None, None, None]
+        status = unit._calibration_status()
+        self.assertEqual(status["state"], "configured")
+        self.assertAlmostEqual(status["path_length_mm"],
+                               2850 / oams.FILAMENT_PATH_LENGTH_FACTOR)
 
 
 class CalibrationSenderTests(unittest.TestCase):

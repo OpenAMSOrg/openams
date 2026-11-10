@@ -14,6 +14,15 @@ import contextlib
 import inspect
 import logging
 import os
+import sys
+
+# install.sh links each module into klippy/extras when it runs, and an update
+# is only a git pull: a module a later release added has no link of its own, so
+# the package also looks for siblings in this file's checkout (install.md).
+if __package__:
+    _CHECKOUT = os.path.dirname(os.path.realpath(__file__))
+    if _CHECKOUT not in sys.modules[__package__].__path__:
+        sys.modules[__package__].__path__.append(_CHECKOUT)
 
 from . import oams_state as S
 from . import oams_topology as T
@@ -135,6 +144,11 @@ TRAY_WRITE_REMOTE_METHOD = "openams_spoolman_tray_write"
 # range OAMSM_SET_BAY_FILAMENT accepts.
 TRAY_TEMP_MIN_C = 150
 TRAY_TEMP_MAX_C = 400
+
+# The Stop entry of the printer's LCD menu (oams_menu.cfg). Klipper's menu sends
+# this event when the entry is opened, from the reactor like a webhook, so it
+# can stop a running sequence that a G-code command would wait behind.
+MENU_STOP_EVENT = "menu:__main __openams __stop:populate"
 
 # HelixScreen UI API v1 (docs/UI_API.md): a small, versioned status/command
 # contract for native UIs, independent of AFC and of any particular OAMS
@@ -273,6 +287,7 @@ class OAMSManager(oams_ext.ManagerHooks):
                                             self._handle_disconnect)
         self.printer.register_event_handler("gcode:command_error",
                                             self._handle_command_error)
+        self.printer.register_event_handler(MENU_STOP_EVENT, self._menu_stop)
         # A newly loaded print file starts with no remembered group.
         self.printer.register_event_handler(
             "virtual_sdcard:reset_file",
@@ -785,7 +800,9 @@ class OAMSManager(oams_ext.ManagerHooks):
         except Exception:
             logging.exception("OpenAMS: could not wrap Klipper's resume;"
                               " RESUME will not retry a failed toolchange")
-        if not self.__dict__.get("_resume_wrapped"):
+        if self.printer.lookup_object("pause_resume", None) is None:
+            self._warn_no_pause_resume()
+        elif not self.__dict__.get("_resume_wrapped"):
             self._warn_resume_not_wrapped()
         self.start_monitor()
 
@@ -1916,10 +1933,15 @@ class OAMSManager(oams_ext.ManagerHooks):
         lane's stop flag, which OAMSM_HEAT_WAIT and OAMSM_CHECK_STOP turn into
         a raise at the next boundary, and cancels the firmware load or unload
         in flight right now, the way openams/cancel_load does."""
-        lane = request.get("lane", None)
+        stopped = self.stop_sequences(request.get("lane", None))
+        request.send({"result": "stopping" if stopped else "nothing running"})
+
+    def stop_sequences(self, lane=None):
+        """Stop the running sequence on `lane`, or on every lane running one
+        when `lane` is None. True when there was one to stop; an unknown lane
+        has none."""
         if lane is not None and lane not in self.fpss:
-            request.send({"result": "nothing running"})
-            return
+            return False
         targets = [lane] if lane is not None else list(self.fpss)
         stopped = False
         for fps in targets:
@@ -1928,7 +1950,19 @@ class OAMSManager(oams_ext.ManagerHooks):
             stopped = True
             self._stop_requested.add(fps)
             self.runtime.dispatch(S.Cancel(fps))
-        request.send({"result": "stopping" if stopped else "nothing running"})
+        return stopped
+
+    def _menu_stop(self, *_args):
+        """The LCD menu's Stop entry was opened (oams_menu.cfg): stop every
+        running sequence, as openams/stop does without a lane. Never raises:
+        it runs inside Klipper's menu key handling."""
+        try:
+            stopped = self.stop_sequences()
+            self.printer.lookup_object("gcode").respond_info(
+                "OpenAMS: Stop from the printer's menu: %s"
+                % ("stopping" if stopped else "nothing running"))
+        except Exception:
+            logging.exception("OpenAMS: the menu's Stop failed")
 
     def _stop_lane(self, gcmd, heater=None):
         """The lane a stop check applies to: FPS=, else the lane that owns
@@ -2539,6 +2573,7 @@ class OAMSManager(oams_ext.ManagerHooks):
             fps = self._resolve_fps(gcmd, prefer_op=S.OP_LOADED, required=True)
             intent = {"kind": "unload", "group": None, "slot": None,
                       "temp": temp}
+            self._require_position(gcmd, intent)
             script = "SAFE_UNLOAD_FILAMENT STRICT=1 FPS=%s%s" % (fps, temp_arg)
             # An unload is never the print's own toolchange.
             self._run_toolchange(gcmd, fps, script, intent, owned=False,
@@ -2561,8 +2596,11 @@ class OAMSManager(oams_ext.ManagerHooks):
         # (SLOT=) comes from the panel, and anything run while the print is
         # paused or with no print is a manual action.
         own = printing and slot is None
+        # Before the position check: a toolchange left for RESUME moves
+        # nothing, and an error here would reach the print.
         if slot is None and self._defer_toolchange(gcmd, fps, intent):
             return
+        self._require_position(gcmd, intent)
         fault = self._tc_faults().get(fps)
         if (fault is not None and fault["kind"] == "load"
                 and fault["group"] == group
@@ -2571,10 +2609,14 @@ class OAMSManager(oams_ext.ManagerHooks):
             # is a retry of it, with the same diagnosis as OAMSM_RETRY. A
             # plain _TX would find the group "loaded" after a feed that never
             # reached the nozzle and do nothing.
+            if own and fault["panel"]:
+                # The print's own T<n> takes a panel load of its group over
+                # as its toolchange: any bay of the group, not the bay the
+                # panel asked for (which may be empty by now). The diagnosis
+                # still runs, since a fresh _TX would take a fed but not
+                # reloaded bay for loaded.
+                fault["slot"] = None
             owned = own or not fault["panel"]
-            if owned and (self._print_is_paused()
-                          or self._print_state() == "paused"):
-                self._require_position(gcmd)
             self._retry_toolchange(gcmd, fps, resuming=False, owned=owned,
                                    pause=own)
             return
@@ -2593,13 +2635,23 @@ class OAMSManager(oams_ext.ManagerHooks):
         old = faults.get(fps)
         if not (old is not None and not old["panel"] and old["kind"] == "load"
                 and old["group"] == intent["group"]):
+            # Nothing of this toolchange ran, but the lane is where the
+            # failed one left it: the step it stopped in and whether its plan
+            # had started stay, so RESUME's diagnosis sees, say, a filament
+            # cut and still loaded rather than a lane nobody touched. What
+            # was fed counts only for the same group.
+            note = self._tc_notes().get(fps) or {}
+            same = (old is not None and old["kind"] == "load"
+                    and old["group"] == intent["group"])
             faults[fps] = dict(
-                intent, step=None, panel=False, fed=False,
+                intent, step=old["step"] if old is not None else None,
+                panel=False, fed=bool(same and old["fed"]),
                 reason=("not run: the print was paused for a failed toolchange"
                         if old is None or old["panel"] else old["reason"]),
                 since=round(self.reactor.monotonic(), 3))
-            # Nothing of this toolchange ran: RESUME runs all of it.
-            self._tc_notes()[fps] = {"started": False, "reloaded": False}
+            self._tc_notes()[fps] = {
+                "started": bool(old is not None and note.get("started", True)),
+                "reloaded": bool(same and old["fed"] and note.get("reloaded"))}
         gcmd.respond_info(
             "OpenAMS: the print is paused for a failed toolchange; the"
             " toolchange to %s on lane %s is left for RESUME"
@@ -2607,14 +2659,17 @@ class OAMSManager(oams_ext.ManagerHooks):
         return True
 
     def _run_toolchange(self, gcmd, fps, script, intent, owned, pause,
-                        resuming):
+                        resuming, retry=False):
         """Run one toolchange or unload script and turn any error into a fault
         on the lane. `owned`: the run is the print's own toolchange or a retry
         of one, so its fault is the print's. `pause`: the print itself called
         it, so on a failure the print pauses and nothing is raised (the file
-        stays open after the T<n> line); otherwise the error stands.
-        A manual action (not `owned`) that fails while the lane holds the
-        print's fault raises its error and leaves that fault as it was."""
+        stays open after the T<n> line); otherwise the error stands, and it
+        stands too when the print could not be paused. `retry`: a load counts
+        as finished only with the lane holding its target.
+        A manual action (not `owned`) on a lane that holds the print's fault
+        raises its own error and keeps that fault, updated with where the
+        manual run left the lane (_note_manual_run)."""
         gcode = self.printer.lookup_object("gcode")
         guard = self.TOOLCHANGE_GUARD_STATE
         # A toolchange that homes first saves the guard before homing: that
@@ -2633,8 +2688,11 @@ class OAMSManager(oams_ext.ManagerHooks):
             # takes its serial path (the printer is paused).
             with self._gco_handled_region(), self._gco_legacy_in_recovery():
                 gcode.run_script_from_command(script)
+            if retry:
+                self._require_target_loaded(gcmd, fps, intent)
         except self.printer.command_error as exc:
             reason = self._error_reason(exc)
+            paused = False
             # The recovery's own commands get a region too: a restore that
             # cannot move (axes not homed) raises, and is caught below.
             with self._gco_handled_region():
@@ -2647,6 +2705,9 @@ class OAMSManager(oams_ext.ManagerHooks):
                 if owned or kept is None or kept["panel"]:
                     self._record_toolchange_fault(fps, intent, reason, owned,
                                                   started, step)
+                elif started:
+                    self._note_manual_run(fps, intent, started, step=step,
+                                          reason=reason)
                 if started:
                     # Stops the follower the run armed, once that is safe:
                     # never under a print still printing, so after PAUSE.
@@ -2659,23 +2720,89 @@ class OAMSManager(oams_ext.ManagerHooks):
                     gcode, guard,
                     move=pause and homed and not self._print_is_paused())
                 if pause:
-                    self._pause_print(gcode, fps)
+                    paused = self._pause_print(gcode, fps)
             if resuming:
                 raise gcmd.error(self._fault_message(fps, resuming=True))
-            if not pause:
+            if not paused:
+                # From the panel the error stands; and a print that could not
+                # be paused is better ended by it than printing on without
+                # the filament it asked for.
                 raise
             return
-        self._toolchange_done(fps, intent, owned)
+        self._toolchange_done(fps, intent, owned,
+                              started=serials.get(fps, 0) != before)
 
-    def _toolchange_done(self, fps, intent, owned):
+    def _lane_holds(self, fps, group, slot):
+        """Whether the lane is loaded with `group`, and for a targeted load
+        (`slot`) with that very bay."""
+        lane = self.runtime.get_state().lanes.get(fps)
+        return (lane is not None and lane.op == S.OP_LOADED
+                and lane.group == group and self._on_target_bay(lane, slot))
+
+    def _require_target_loaded(self, gcmd, fps, intent):
+        """A retry finished only when the lane holds what the failed load
+        was for: a _TX that moved nothing (a printer's own _TX, say) leaves
+        the fault in place, and the print paused."""
+        if intent["kind"] != "load" or self._lane_holds(
+                fps, intent["group"], intent["slot"]):
+            return
+        lane = self.runtime.get_state().lanes.get(fps)
+        holds = (lane.group if lane is not None and lane.op == S.OP_LOADED
+                 else None)
+        raise gcmd.error(
+            "the retry ended with %s on lane %s, not %s"
+            % ("%s loaded" % holds if holds else "nothing is loaded", fps,
+               intent["group"]))
+
+    def _note_manual_run(self, fps, intent, started, step=None, reason=None,
+                         finished=False):
+        """A manual action (an Unload, a Load, a T<n> run while the print is
+        paused) that started its plan on a lane holding the print's fault:
+        the lane is no longer where that fault says it stopped, so RESUME's
+        diagnosis must not act on the old picture (a bare rewind of a group
+        now loaded to the nozzle, a reload of a filament since cut).
+        - It finished, and the lane holds the print's group: the print's
+          toolchange is done; its group is what the print now holds.
+        - Otherwise the fault takes this run's progress: the step it stopped
+          in (none when it finished), and what was fed only when this run
+          was a load of the print's group and fed it. The fault stays the
+          print's, with its own group and slot."""
+        faults = self._tc_faults()
+        fault = faults.get(fps)
+        if fault is None or fault["panel"] or not started:
+            return
+        same = (intent["kind"] == "load" and fault["kind"] == "load"
+                and intent["group"] == fault["group"])
+        if finished and same and self._lane_holds(fps, fault["group"],
+                                                  fault["slot"]):
+            del faults[fps]
+            self._tc_notes().pop(fps, None)
+            if self._print_state() in ("printing", "paused"):
+                self._print_groups()[fps] = fault["group"]
+            return
+        # Against this run's own target: a swap that stopped at the cut
+        # left the old bay loaded, which is not fed.
+        fed = bool(same and not finished
+                   and self._lane_holds(fps, intent["group"], intent["slot"])
+                   and self._lane_holds(fps, fault["group"], fault["slot"]))
+        fault.update(step=None if finished else step, fed=fed)
+        if reason is not None:
+            fault["reason"] = reason
+        self._tc_notes()[fps] = {"started": True,
+                                 "reloaded": fed and self._reload_confirmed()}
+
+    def _toolchange_done(self, fps, intent, owned, started=True):
         """A toolchange or unload finished. It clears the lane's fault, unless
         that is the print's and this was a manual action: the print's fault
-        goes only when its own toolchange (or a retry of it) finishes."""
+        goes only when its own toolchange (or a retry of it) finishes, or a
+        manual load of its group does (_note_manual_run)."""
         faults = self._tc_faults()
         old = faults.get(fps)
         if old is None or old["panel"] or owned:
             faults.pop(fps, None)
             self._tc_notes().pop(fps, None)
+        else:
+            self._note_manual_run(fps, intent, started, finished=True)
         if not owned or intent["kind"] != "load":
             return
         # What the print now holds, and must still hold when it resumes. A
@@ -2687,17 +2814,29 @@ class OAMSManager(oams_ext.ManagerHooks):
             self._print_groups()[fps] = intent["group"]
 
     def _pause_print(self, gcode, fps):
-        """Pause the print for the fault just recorded on `fps`. An error of
-        PAUSE itself (a PAUSE macro's park move, say) never reaches the
-        print: Klipper's own pause is then taken directly."""
+        """Pause the print for the fault just recorded on `fps`; True when
+        the print is paused. An error of PAUSE itself (a PAUSE macro's park
+        move, say) never reaches the print: Klipper's own pause is then taken
+        directly. When nothing could pause it (no [pause_resume]), the caller
+        raises the toolchange's error, which ends the print."""
         try:
             gcode.run_script_from_command("PAUSE")
         except self.printer.command_error:
             logging.exception("OpenAMS: PAUSE failed after a failed"
                               " toolchange; pausing the print directly")
             self._pause_directly(gcode)
+        if not self._print_is_paused():
+            message = ("OpenAMS could not pause the print for %s, so its error"
+                       " ends the print: printing on without the filament it"
+                       " asked for would ruin it. Check that [pause_resume]"
+                       " and PAUSE are configured."
+                       % self._fault_subject(self._tc_faults()[fps]))
+            logging.warning(message)
+            gcode.respond_info(message)
+            return False
         self._raise_idle_timeout(gcode)
         gcode.respond_raw("!! " + self._fault_message(fps, resuming=False))
+        return True
 
     def _pause_directly(self, gcode):
         pause_resume = self.printer.lookup_object("pause_resume", None)
@@ -2779,10 +2918,25 @@ class OAMSManager(oams_ext.ManagerHooks):
         self._restore_idle_timeout(gcode.run_script)
 
     def _warn_resume_not_wrapped(self):
-        message = ("OpenAMS could not find Klipper's resume command, so RESUME"
-                   " will not retry a failed toolchange on this Klipper: after"
-                   " a failed toolchange pauses a print, run OAMSM_RETRY, then"
-                   " RESUME")
+        self._runtime_warning(
+            "OpenAMS could not find Klipper's resume command, so RESUME"
+            " will not retry a failed toolchange on this Klipper: after"
+            " a failed toolchange pauses a print, run OAMSM_RETRY, then"
+            " RESUME")
+
+    def _warn_no_pause_resume(self):
+        """Klipper starts without [pause_resume], and so does OpenAMS; but a
+        failed toolchange then cannot pause the print, and its error ends
+        the print (the shipped macros also read printer.pause_resume)."""
+        self._runtime_warning(
+            "OpenAMS: this printer has no [pause_resume] section, so a failed"
+            " toolchange cannot pause a print and its error ends the print"
+            " instead. Add [pause_resume] (Mainsail's mainsail.cfg and"
+            " Fluidd's client macros include it)")
+
+    def _runtime_warning(self, message):
+        """Klipper's log, and a configfile runtime warning where Klipper has
+        them (shown by Mainsail and Fluidd)."""
         logging.warning(message)
         warn = getattr(self.printer.lookup_object("configfile", None),
                        "runtime_warning", None)
@@ -2792,16 +2946,32 @@ class OAMSManager(oams_ext.ManagerHooks):
             except Exception:
                 logging.exception("OpenAMS: runtime warning")
 
-    def _require_position(self, gcmd):
-        """A retry for a paused print never homes: with the motors off the
+    def _print_paused(self):
+        return self._print_is_paused() or self._print_state() == "paused"
+
+    def _require_position(self, gcmd, intent=None):
+        """Nothing OpenAMS runs homes a paused print: with the motors off the
         printer has lost its position, and homing with a part on the bed, or
-        resuming without it, is not safe."""
-        if not self._axes_homed():
+        resuming without it, is not safe. `intent`: a toolchange or unload
+        about to run, refused only while a print is paused; None for the
+        retry of a failed toolchange, which RESUME checks itself."""
+        if self._axes_homed():
+            return
+        if intent is None:
             raise gcmd.error(
                 "OpenAMS cannot retry the failed toolchange: the printer lost"
                 " its position (the motors were turned off, for example by the"
                 " idle timeout), so the print cannot resume safely. Nothing"
                 " was moved and the print stays paused; cancel the print.")
+        if not self._print_paused():
+            return
+        what = ("the unload" if intent["kind"] == "unload"
+                else "the toolchange to %s" % intent["group"])
+        raise gcmd.error(
+            "OpenAMS will not run %s while the print is paused: the printer"
+            " lost its position (the motors were turned off, for example by"
+            " the idle timeout), and it would home with the print on the bed."
+            " Nothing was moved; cancel the print first." % what)
 
     def _require_print_group(self, gcmd):
         """Before Klipper's resume: every lane the print loaded must still
@@ -3019,8 +3189,9 @@ class OAMSManager(oams_ext.ManagerHooks):
         if fps is None or fps not in faults:
             gcmd.respond_info("OAMSM_RETRY: no failed toolchange to retry")
             return
-        if not faults[fps]["panel"] and (state == "paused"
-                                         or self._print_is_paused()):
+        # A retry homes when it must, never in a paused print: the print's
+        # fault or a panel one alike.
+        if state == "paused" or self._print_is_paused():
             self._require_position(gcmd)
         self._retry_toolchange(gcmd, fps, resuming=False)
 
@@ -3034,11 +3205,25 @@ class OAMSManager(oams_ext.ManagerHooks):
                                              "reloaded": False}
         if owned is None:
             owned = not fault["panel"]
-        still_latched = self._reset_errors(gcmd)
+        intent = {key: fault[key] for key in ("kind", "group", "slot", "temp")}
+        try:
+            still_latched = self._reset_errors(gcmd)
+        except self.printer.command_error as exc:
+            if not pause:
+                raise
+            self._pause_before_retry(gcmd, fps, intent, owned, note, exc,
+                                     self._error_reason(exc))
+            return
         if still_latched:
             message = ("OpenAMS could not retry %s: a fault stayed latched on"
                        " %s" % (self._fault_subject(fault),
                                 ", ".join(still_latched)))
+            if pause:
+                # The print's own T<n>: an error here would end the print.
+                self._pause_before_retry(
+                    gcmd, fps, intent, owned, note, gcmd.error(message),
+                    "a fault stayed latched on %s" % ", ".join(still_latched))
+                return
             raise gcmd.error(message + (". The print stays paused."
                                         if resuming else ""))
         lane = self.runtime.get_state().lanes[fps]
@@ -3059,6 +3244,10 @@ class OAMSManager(oams_ext.ManagerHooks):
             args = "GROUP=%s%s%s" % (
                 group, "" if fault["slot"] is None
                 else " SLOT=%s" % fault["slot"], temp_arg)
+            # RETRY=1: _TX finishes the toolchange even when the object the
+            # print is in was excluded during the pause. It skips a T<n> of
+            # an excluded object; the T<n> it retries was not one.
+            tx = "_TX %s RETRY=1" % args
             # The target itself is what the lane holds: the group, and for a
             # targeted load the very bay. Another bay of the group is another
             # filament in the toolhead, which only the whole swap removes.
@@ -3067,8 +3256,7 @@ class OAMSManager(oams_ext.ManagerHooks):
             if not note["started"]:
                 # It failed before its plan: nothing moved, so the whole
                 # toolchange is still to run, and _TX decides from the lane.
-                plan, script = ("the toolchange, which had not started",
-                                "_TX " + args)
+                plan, script = ("the toolchange, which had not started", tx)
             elif on_target and fault["fed"] and note["reloaded"]:
                 # The reload finished and was confirmed: never push it again.
                 plan, script = ("what follows the reload",
@@ -3078,24 +3266,39 @@ class OAMSManager(oams_ext.ManagerHooks):
                 plan, script = ("the toolhead part only",
                                 "_OAMS_RESUME_TOOLHEAD %s FPS=%s"
                                 % (args, fps))
-            elif on_target and fault["step"] not in ("home", "heat", "cut",
-                                                     "retract"):
+            elif on_target and fault["step"] == "feed":
                 # The feed started and stopped short: out past its hub, but
-                # never at the gears. Only then is a bare rewind safe; before
-                # the feed, what the lane holds is still in the toolhead.
+                # never at the gears. Only then is a bare rewind safe.
                 plan, script = ("a rewind of that bay, then the toolchange",
-                                "OAMSM_UNLOAD_FILAMENT FPS=%s\n_TX %s"
-                                % (fps, args))
+                                "OAMSM_UNLOAD_FILAMENT FPS=%s\n%s" % (fps, tx))
+            elif on_target:
+                # The target is loaded but this toolchange never fed it: it
+                # stopped before its feed (it was cut there, say), or the lane
+                # changed during the pause. _TX would take it for loaded and
+                # do nothing, and where its filament ends is not known: take
+                # it out through the cutter, then load it again.
+                plan, script = ("an unload, then the toolchange",
+                                "SAFE_UNLOAD_FILAMENT STRICT=1 FPS=%s%s\n%s"
+                                % (fps, temp_arg, tx))
             elif lane.op == S.OP_LOADED:
-                plan, script = ("the whole swap, from the cut", "_TX " + args)
+                plan, script = ("the whole swap, from the cut", tx)
             else:
-                plan, script = ("the feed, then the toolhead part",
-                                "_TX " + args)
+                plan, script = ("the feed, then the toolhead part", tx)
         gcmd.respond_info("OpenAMS: retrying %s on lane %s: %s"
                           % (self._fault_subject(fault), fps, plan))
-        intent = {key: fault[key] for key in ("kind", "group", "slot", "temp")}
         self._run_toolchange(gcmd, fps, script, intent, owned=owned,
-                             pause=pause, resuming=resuming)
+                             pause=pause, resuming=resuming, retry=True)
+
+    def _pause_before_retry(self, gcmd, fps, intent, owned, note, exc, reason):
+        """The print's own T<n>, run as a retry, could not get as far as its
+        script (the reset refused): record that and pause, as a failure of
+        the toolchange itself would, so the error never reaches the print.
+        Nothing moved, so where the lane stopped stays as it was recorded."""
+        self._tc_notes().setdefault(fps, dict(note))
+        self._record_toolchange_fault(fps, intent, reason, owned,
+                                      started=False, step=None)
+        if not self._pause_print(self.printer.lookup_object("gcode"), fps):
+            raise exc
 
     def _wrap_resume(self):
         """Put the retry in front of Klipper's own resume: the command that
@@ -3164,14 +3367,26 @@ class OAMSManager(oams_ext.ManagerHooks):
                 # back before Klipper's resume (Mainsail's does) must not
                 # turn the motors off under it meanwhile. A printer that lost
                 # its position cannot resume, so it gets nothing longer.
-                if self._print_is_paused() and self._axes_homed():
-                    self._raise_idle_timeout(
-                        self.printer.lookup_object("gcode"))
+                self._keep_pause_timeout()
                 raise
-        original(gcmd)
+        try:
+            original(gcmd)
+        except self.printer.command_error:
+            # Klipper's own resume refused (a move back out of range, say):
+            # the print stays paused just the same. Only for a pause OpenAMS
+            # raised the idle timeout for; any other pause is left as it is.
+            if self.__dict__.get("_idle_timeout_saved") is not None:
+                self._keep_pause_timeout()
+            raise
         if not self._print_is_paused():
             self._restore_idle_timeout(
                 self.printer.lookup_object("gcode").run_script_from_command)
+
+    def _keep_pause_timeout(self):
+        """A RESUME that leaves the print paused: the idle timeout back at
+        pause_idle_timeout, unless the printer lost its position already."""
+        if self._print_is_paused() and self._axes_homed():
+            self._raise_idle_timeout(self.printer.lookup_object("gcode"))
 
     cmd_STAGE_help = "Report a toolchange/unload plan and its progress (never fails)"
 

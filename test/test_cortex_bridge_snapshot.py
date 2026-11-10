@@ -558,7 +558,8 @@ class FeedFailureTests(unittest.TestCase):
             "slot": 0, "index": 0, "odo_start_mm": 1200, "odo_low_mm": 600,
             "odo_at_mm": 601, "since_progress_ms": 4000, "feed_ms": 6193,
             "odo_flags": {"start": True, "base": True, "rewind_seen": True,
-                          "rewinding": True, "at_valid": True, "rule": True},
+                          "rewinding": True, "at_valid": True, "rule": True,
+                          "retract": False},
             "ams_state": "moving"})
         self.assertEqual((second["odo_start_mm"], second["odo_low_mm"],
                           second["odo_at_mm"]), (-25, -40, -31))
@@ -617,6 +618,16 @@ class FeedFailureTests(unittest.TestCase):
             "Last load of AMS df5d1d75218e failed: the AMS rewound from "
             "1200 mm to 601 mm and then stopped moving for 4 s, 6.2 s into "
             "the feed; it was still rewinding. AMS state: moving."])
+
+    def test_a_stalled_pull_back_reads_as_an_unload(self):
+        # Bridge 14: the row of an unload whose filament did not move back.
+        decoded = VECTORS["ams1_retract_stalled"]["decoded"]
+        uid = decoded["units"][0]["uid"]
+        self.assertEqual(snap.classify(decoded)["feed_failures"], [
+            "Last unload of AMS %s failed: the odometer stood at 2000 mm "
+            "while the AMS pulled the filament back, and then it stopped "
+            "moving for 4 s, 6.5 s into the pull back. AMS state: moving."
+            % uid])
 
     def test_only_its_fields_pass_the_allowlist(self):
         decoded = self.decode(encode_feed_failure())

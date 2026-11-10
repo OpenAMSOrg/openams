@@ -13,10 +13,20 @@
 # the low-level OAMS_* commands.
 
 import logging
+import os
 import struct
+import sys
 from collections import deque
 
 import mcu
+
+# install.sh links each module into klippy/extras when it runs, and an update
+# is only a git pull: a module a later release added has no link of its own, so
+# the package also looks for siblings in this file's checkout (install.md).
+if __package__:
+    _CHECKOUT = os.path.dirname(os.path.realpath(__file__))
+    if _CHECKOUT not in sys.modules[__package__].__path__:
+        sys.modules[__package__].__path__.append(_CHECKOUT)
 
 from . import oams_state as S
 from . import ams_family
@@ -719,8 +729,17 @@ class OAMS(oams_ext.UnitHooks):
                 else "uncalibrated")
 
     def _calibration_status(self):
-        """The unit's shared PTFE length state and length in millimetres."""
+        """The unit's shared PTFE length state and length in millimetres. A
+        unit with no shared ptfe_length whose bays all have their own
+        ptfe_length_<bay> (a config left from per-bay calibration; nothing
+        migrates it) is calibrated too, with the longest of them."""
         length = getattr(self, "filament_path_length", None)
+        if self._length_state(length) == "uncalibrated":
+            bays = [self._ptfe_length_for_bay(bay)
+                    for bay in range(getattr(self, "bay_count", 0))]
+            if bays and all(self._length_state(value) == "configured"
+                            for value in bays):
+                length = max(bays)
         state = self._length_state(length)
         if (state == "configured"
                 and self.action_status == getattr(self, "status_calibrating", None)):
@@ -932,7 +951,10 @@ class OAMS(oams_ext.UnitHooks):
         return caps
 
     def get_webhook_status(self):
-
+        tag_reader = getattr(self, "tag_reader", None)
+        if tag_reader is not None and hasattr(tag_reader, "settle"):
+            # A published tag status reflects the restored attribution.
+            tag_reader.settle()
         f1s, hub = self.f1s_hes_value, self.hub_hes_value
         return self._ext_status({
             "schema_version": 1,
@@ -2786,12 +2808,12 @@ class OAMS(oams_ext.UnitHooks):
         on a unit whose reads the host attributes. ``TURN=1`` (the identify
         turn, C3) needs a unit operation no unit offers yet."""
         raw_bay = gcmd.get("BAY", None)
-        bay = None if raw_bay is None else int(raw_bay)
+        bay = None if raw_bay is None else self._scan_int(gcmd, "BAY", raw_bay)
         if bay is not None and not 0 <= bay < self.bay_count:
             raise gcmd.error(
                 "BAY must be between 0 and %d" % (self.bay_count - 1))
-        assert_ = int(gcmd.get("ASSERT", 0) or 0)
-        turn = int(gcmd.get("TURN", 0) or 0)
+        assert_ = self._scan_int(gcmd, "ASSERT", gcmd.get("ASSERT", 0) or 0)
+        turn = self._scan_int(gcmd, "TURN", gcmd.get("TURN", 0) or 0)
         if assert_ not in (0, 1) or turn not in (0, 1):
             raise gcmd.error("ASSERT and TURN take 0 or 1")
         if turn:
@@ -2801,6 +2823,15 @@ class OAMS(oams_ext.UnitHooks):
         if bay is None and assert_:
             raise gcmd.error("ASSERT=1 needs BAY")
         return bay, bool(assert_)
+
+    @staticmethod
+    def _scan_int(gcmd, name, raw):
+        """An OAMS_RFID_SCAN number read raw: a typo is a command error,
+        never a ValueError (which Klipper turns into a shutdown)."""
+        try:
+            return int(str(raw).strip())
+        except (TypeError, ValueError):
+            raise gcmd.error("%s must be a whole number, not %r" % (name, raw))
 
     def _cmd_attributed_scan(self, gcmd):
         """``OAMS_RFID_SCAN BAY=<i> [ASSERT=1]`` through host-driven readers:
@@ -2826,7 +2857,7 @@ class OAMS(oams_ext.UnitHooks):
         if raw_bay is None:
             raise gcmd.error("BAY is required: this unit reads its spools'"
                              " tags per bay")
-        bay = int(raw_bay)
+        bay = self._scan_int(gcmd, "BAY", raw_bay)
         if not 0 <= bay < self.bay_count:
             raise gcmd.error(
                 "BAY must be between 0 and %d" % (self.bay_count - 1))
@@ -3072,6 +3103,13 @@ class OAMS(oams_ext.UnitHooks):
     MEASURED_PATH_NOTICE_MM = 100.0
     MEASURED_PATH_NOTICE_FRACTION = 0.05
 
+    @staticmethod
+    def _and_list(names):
+        """"a", "a and b", "a, b and c"."""
+        if len(names) < 2:
+            return "".join(names)
+        return "%s and %s" % (", ".join(names[:-1]), names[-1])
+
     def _note_arrival_distance(self, bay, clicks):
         """A unit with AMS_CAP_ARRIVAL_DISTANCE reports, in a successful
         load's value, the filament it fed to the arrival the host confirmed:
@@ -3091,23 +3129,41 @@ class OAMS(oams_ext.UnitHooks):
         configured = self._ptfe_length_for_bay(bay)
         configured_mm = (configured / FILAMENT_PATH_LENGTH_FACTOR
                          if configured else 0.0)
+        # The bays' own lengths (ptfe_length_<bay>) override ptfe_length; an
+        # AMS config can still carry them from an older calibration.
+        lengths = getattr(self, "ptfe_lengths", None) or []
+        overrides = ["ptfe_length_%d" % other
+                     for other, value in enumerate(lengths) if value is not None]
+        in_force = ("ptfe_length_%d" % bay if "ptfe_length_%d" % bay in overrides
+                    else "ptfe_length")
         logging.info("OAMS[%s]: %s reached the toolhead after %.0f mm"
-                     " (ptfe_length %.0f mm)", self.oams_idx,
-                     self.spool_label(bay), mm, configured_mm)
+                     " (%s %.0f mm)", self.oams_idx,
+                     self.spool_label(bay), mm, in_force, configured_mm)
         far = configured_mm > 0 and abs(mm - configured_mm) >= max(
             self.MEASURED_PATH_NOTICE_MM,
             self.MEASURED_PATH_NOTICE_FRACTION * configured_mm)
         if not (first or far):
             return
         message = ("%s reached the toolhead after %.0f mm of filament path"
-                   " (ptfe_length: %.0f mm)."
-                   % (self.spool_label(bay), mm, configured_mm))
+                   " (%s: %.0f mm)."
+                   % (self.spool_label(bay), mm, in_force, configured_mm))
         if far:
             option = self._ptfe_option(bay)
             message += (" To use the measured length, run"
                         " OAMS_CALIBRATE_PTFE_LENGTH OAMS=%d SPOOL=%d, or set"
-                        " %s: %d under [%s]."
+                        " %s: %d under [%s]"
                         % (self.oams_idx, bay, option, clicks, self.name))
+            if option == "ptfe_length" and overrides:
+                # One path for every bay: setting ptfe_length changes nothing
+                # for a bay that keeps its own length. Calibrating removes
+                # them; by hand, the user does (the config is never migrated
+                # behind their back).
+                message += (" and remove %s: every bay of %s shares one path,"
+                            " and a bay's own ptfe_length_<bay> overrides it."
+                            % (self._and_list(overrides),
+                               self.name.split()[-1]))
+            else:
+                message += "."
         try:
             self.printer.lookup_object("gcode").respond_info(message)
         except Exception:
@@ -3144,7 +3200,14 @@ class OAMS(oams_ext.UnitHooks):
         base = next((code_ for code_, name in names.items()
                      if name == "ERROR_BASE"), None)
         if base is not None and base <= value < base + 0x100:
-            return "the AMS reported error 0x%02x" % (value - base)
+            error = value - base
+            if error == 0x17:
+                # The AMS's own feeder stall: the jam dialog on a Bambu printer.
+                return ("the AMS reported a jam (error 0x17): its feeder"
+                        " stalled, on a spool that turns hard (a cardboard"
+                        " spool, a tangle) or filament caught near the AMS;"
+                        " free it, then Retry")
+            return "the AMS reported error 0x%02x" % error
         name = names.get(value)
         if name == "FEED_OVERRUN":
             if calibrating:
@@ -3172,6 +3235,12 @@ class OAMS(oams_ext.UnitHooks):
                                    " arrival_threshold",
             "MOVING_NOT_OBSERVED": "the AMS did not start feeding",
             "RETRACT_TIMEOUT": "the AMS did not finish rewinding the filament",
+            "RETRACT_STALLED": "the filament did not move back: the AMS's"
+                               " odometer stood still while it pulled, so the"
+                               " cut most likely did not sever the filament,"
+                               " or it is caught in the toolhead; the AMS"
+                               " stopped at once. Check the cutter, then"
+                               " Retry, which cuts again",
             "FOLLOW_NOT_CONFIRMED": "the AMS did not confirm the follower"
                                     " after the load",
             "STOP_NOT_CONFIRMED": "the AMS did not confirm that it stopped",

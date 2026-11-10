@@ -12,9 +12,9 @@ digraph recovery {
   t_n      [style="filled,bold", fillcolor="#ffffff", color="#2b2f36",
             label=<<b>T0, T1, …</b> in a print<br/><font point-size="10">or the panel's Load / Unload (no print)</font>>];
   catch    [fillcolor="#f0f1f4", color="#2b2f36", style="rounded,filled,bold",
-            label=<<font face="Courier"><b>OAMSM_TOOLCHANGE</b></font><br/><font point-size="10">one Python command runs the whole macro chain (_TX …)<br/>and catches every error inside it (under gco-routines,<br/>inside its handled region, so the print's run is not faulted)</font>>];
+            label=<<font face="Courier"><b>OAMSM_TOOLCHANGE</b></font><br/><font point-size="10">one Python command runs the whole macro chain (_TX …)<br/>and catches every error inside it (under gco-routines,<br/>inside its handled region, so the print's run is not faulted).<br/>Refused, nothing moved, while a paused print has lost its position</font>>];
   same     [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a",
-            label=<The group of the lane's<br/>failed toolchange?>];
+            label=<The group of the lane's<br/>failed toolchange?<br/><font point-size="10">the print's T&lt;n&gt; takes a panel<br/>one over: any bay of the group</font>>];
   chain    [fillcolor="#ffffff", color="#8a919b",
             label=<the toolchange, as today<br/><font point-size="10">home, heat, cut, retract, rewind, feed,<br/>inlet check, reload, outlet check, CLEAN_NOZZLE, hooks</font>>];
   done     [style="rounded,filled,bold", fillcolor="#1f7a45", color="#1f7a45", fontcolor="white",
@@ -23,10 +23,12 @@ digraph recovery {
   fault    [style="rounded,filled,bold", fillcolor="#fde2e2", color="#c62828",
             label=<<b>FAULT</b><br/><font point-size="10">any error: a failed check, the AMS refusing, a hook or CLEAN_NOZZLE<br/>error, homing, a cold extrude, the Stop button.<br/>Records the step, the reason, the target group and whether the reload<br/>had finished, puts the toolhead back where the toolchange started<br/>(in a print, unless it had to home first or the print is already paused),<br/>and stops the follower once the print is no longer printing</font>>];
   where    [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a", label=<In a print?>];
+  ends     [style="rounded,filled,bold", fillcolor="#fde2e2", color="#c62828",
+            label=<<b>The error ends the print</b><br/><font point-size="10">nothing could pause it (no [pause_resume]: OpenAMS<br/>warns at startup), and printing on without the<br/>filament it asked for would ruin it</font>>];
   paused   [style="rounded,filled,bold", fillcolor="#fff0c2", color="#b8900a",
             label=<<b>PAUSED</b><br/><font point-size="10">PAUSE (or Klipper's own pause if PAUSE fails), the reason in the console;<br/>the idle timeout goes to <font face="Courier">pause_idle_timeout</font> (48 h), so the heaters<br/>and motors stay on and the printer keeps its position.<br/>The file stays open after the T&lt;n&gt; line</font>>];
   during   [shape=note, style="filled", fillcolor="#ffffff", color="#b9bfc8", fontsize=10,
-            label=<While the print is paused:<br/>• a later T&lt;n&gt; of the same macro moves nothing;<br/>   its group becomes the one RESUME loads<br/>• an Unload, a Load or another T&lt;n&gt; (panel, console)<br/>   keeps the print's failed toolchange<br/>• a T&lt;n&gt; to the failed group is its retry>];
+            label=<While the print is paused:<br/>• a later T&lt;n&gt; of the same macro moves nothing;<br/>   its group becomes the one RESUME loads,<br/>   from where the failed toolchange stopped<br/>• an Unload, a Load or another T&lt;n&gt; (panel, console)<br/>   keeps the print's failed toolchange, with where<br/>   it left the lane; a Load of the failed group<br/>   that finishes finishes it<br/>• a T&lt;n&gt; to the failed group is its retry<br/>• once the printer lost its position, nothing runs>];
   error    [fillcolor="#fde2e2", color="#c62828",
             label=<<b>Error on the panel</b>, no pause<br/><font point-size="10">buttons: Retry, Unload, Reset</font>>];
 
@@ -35,7 +37,7 @@ digraph recovery {
   rec      [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a", label=<An OpenAMS fault recorded?>];
   homed    [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a", label=<Still homed?>];
   lost     [style="rounded,filled,bold", fillcolor="#fde2e2", color="#c62828",
-            label=<<b>Refused</b>: the printer lost its position<br/><font point-size="10">the motors went off while it waited. RESUME never homes<br/>with a part on the bed: nothing moves, the print stays<br/>paused; cancel it</font>>];
+            label=<<b>Refused</b>: the printer lost its position<br/><font point-size="10">the motors went off while it waited. Nothing homes a paused<br/>print with a part on the bed: nothing moves, the print stays<br/>paused; cancel it</font>>];
   reset    [fillcolor="#dceafe", color="#2f6fd0",
             label=<<b>Reset</b> (as <font face="Courier">OAMSM_CLEAR_ERRORS</font>)<br/><font point-size="10">clears latched unit faults, waits out the unit's 15 s recovery,<br/>clears host errors, re-reads the lanes (operation numbers keep<br/>counting, so the next load's arrival is confirmed)</font>>];
   diag     [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a",
@@ -50,9 +52,12 @@ digraph recovery {
             label=<the whole swap<br/><font point-size="10">from the cut</font>>];
   c_rew    [fillcolor="#dceafe", color="#2f6fd0",
             label=<rewind that bay (no cut),<br/>then the feed and the toolhead part>];
+  c_unl    [fillcolor="#efe5ff", color="#7d4fc7",
+            label=<an unload through the cutter,<br/>then the toolchange<br/><font point-size="10">where its filament ends is not known</font>>];
   c_feed   [fillcolor="#dceafe", color="#2f6fd0",
             label=<the feed, then the toolhead part>];
-  ok       [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a", label=<It worked?>];
+  ok       [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a",
+            label=<It worked, and the lane<br/>holds the group?>];
   group    [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a",
             label=<The print's group loaded?<br/><font point-size="10">the group of its last finished toolchange</font>>];
   needs    [style="rounded,filled,bold", fillcolor="#fff0c2", color="#b8900a",
@@ -67,6 +72,7 @@ digraph recovery {
   chain -> fault [label=" any error", color="#c62828", fontcolor="#c62828"];
   fault -> where;
   where -> paused [label=" yes"];
+  where -> ends [label=" yes, but nothing\n can pause it", color="#c62828", fontcolor="#c62828"];
   where -> error [label=" no (panel)"];
   paused -> during [style=dotted, arrowhead=none];
   paused -> resume [label=" you fix the cause"];
@@ -78,20 +84,22 @@ digraph recovery {
   homed -> reset [label=" yes"];
   error -> reset [label=" Retry (homes first\n if it must)", style=dashed];
   reset -> diag;
+  reset -> fault [label=" a fault stays latched\n (the print's T<n>: paused)", color="#c62828", fontcolor="#c62828", constraint=false];
   diag -> c_start [label=" it never started\n (a later T<n>)"];
   diag -> c_after [label=" the target reloaded,\n outlet check passed"];
   diag -> c_tool  [label=" the target at the\n gears, not reloaded"];
   diag -> c_swap  [label=" another group\n is loaded"];
   diag -> c_rew   [label=" its feed stopped short\n on the target bay"];
+  diag -> c_unl   [label=" the target loaded, never\n fed: stopped before its\n feed, or changed since"];
   diag -> c_feed  [label=" nothing loaded"];
-  c_start -> ok; c_after -> ok; c_tool -> ok; c_swap -> ok; c_rew -> ok; c_feed -> ok;
+  c_start -> ok; c_after -> ok; c_tool -> ok; c_swap -> ok; c_rew -> ok; c_unl -> ok; c_feed -> ok;
   ok -> group [label=" yes (RESUME)"];
   ok -> fault [label=" no: paused again,\n 48 h again", color="#c62828", fontcolor="#c62828", constraint=false];
   group -> cont [label=" yes"];
   group -> needs [label=" no"];
 
   note [shape=note, style="filled", fillcolor="#ffffff", color="#b9bfc8", fontsize=10,
-        label=<OpenAMS never retries on its own:<br/>the AMS retries before it reports a failure.<br/>Reset alone moves nothing and resumes nothing,<br/>and keeps an unfinished toolchange for RESUME.<br/>A print's fault and its group are dropped when<br/>the print ends or is cancelled, and the idle<br/>timeout goes back.<br/>With gco-routines the retry inside RESUME runs<br/>serially (<font face="Courier">legacy_in_recovery()</font>): no overlap.>];
+        label=<OpenAMS never retries on its own:<br/>the AMS retries before it reports a failure.<br/>Reset alone moves nothing and resumes nothing,<br/>and keeps an unfinished toolchange for RESUME.<br/>A print's fault and its group are dropped when<br/>the print ends or is cancelled, and the idle<br/>timeout goes back; a RESUME that Klipper's<br/>own resume refuses puts it back to 48 h.<br/>A retry loads the group even if its object was<br/>excluded during the pause.<br/>With gco-routines the retry inside RESUME runs<br/>serially (<font face="Courier">legacy_in_recovery()</font>): no overlap.>];
   {rank=same; where; note;}
   {rank=same; paused; during;}
 }

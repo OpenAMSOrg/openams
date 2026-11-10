@@ -344,6 +344,13 @@ by more than 100 mm, with the command that updates it:
 ams1 Spool 2 reached the toolhead after 2030 mm of filament path (ptfe_length: 2500 mm). To use the measured length, run OAMS_CALIBRATE_PTFE_LENGTH OAMS=1 SPOOL=1, or set ptfe_length: 2314 under [oams ams1].
 ```
 
+A config from before one length served the whole AMS can still hold a bay's
+own `ptfe_length_<bay>`, which overrides `ptfe_length` for that bay. The
+message then names it, `(ptfe_length_1: 2500 mm)`, and ends `... and remove
+ptfe_length_1: every bay of ams1 shares one path ...`: setting `ptfe_length`
+alone would change nothing for that bay. OpenAMS never rewrites those lines
+on its own; the calibration command removes them, or you do.
+
 **Measure it by hand (older firmware).** Measure the filament path from the
 AMS outlet, through the buffer, to the extruder gears, in millimetres: the
 length of the tube from the AMS to the buffer, plus the tube from the buffer

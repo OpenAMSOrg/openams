@@ -24,8 +24,18 @@
 
 import logging
 import math
+import os
+import sys
 
 import mcu
+
+# install.sh links each module into klippy/extras when it runs, and an update
+# is only a git pull: a module a later release added has no link of its own, so
+# the package also looks for siblings in this file's checkout (install.md).
+if __package__:
+    _CHECKOUT = os.path.dirname(os.path.realpath(__file__))
+    if _CHECKOUT not in sys.modules[__package__].__path__:
+        sys.modules[__package__].__path__.append(_CHECKOUT)
 
 from . import oams_state as S
 from .oams_state import (

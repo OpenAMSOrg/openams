@@ -284,16 +284,21 @@ command), Unload and Reset while it is present.
 Retry resets as above, then continues from where the lane is: the toolhead part
 alone when the target group was fed, the feed when nothing is loaded, the whole
 swap when another group is still loaded, a rewind then the toolchange when the
-target bay stopped short of the gears. It raises when that fails, and the fault
-stays. In a print the same happens on `RESUME`: a failed toolchange pauses the
+target bay stopped short of the gears in its feed, an unload through the cutter
+then the toolchange when the target is loaded but was never fed. It counts
+only with the lane then holding the target, and raises when that fails, and
+the fault stays. In a print the same happens on `RESUME`: a failed toolchange pauses the
 print instead of ending it, and `RESUME` finishes it before the print goes on.
 
-While a lane holds the print's fault (`panel` false), a manual action does not
-change it: an Unload or a Load of another spool runs, and if it fails it
-raises its own error and the lane's `toolchange_fault` stays as it was. Send
-Retry once per fault (`since` tells two faults on a lane apart). The host
-refuses `OAMSM_RETRY` while a print is printing, and, in a paused print whose
-motors were turned off, with `the printer lost its position`.
+While a lane holds the print's fault (`panel` false), a manual action never
+replaces it: an Unload or a Load of another spool runs, and if it fails it
+raises its own error and the lane keeps the print's `toolchange_fault`. Its
+`step` and `fed` follow what the action did to the lane, and a Load of the
+fault's own group that finishes clears it (the print's toolchange is done).
+Send Retry once per fault (`since` tells two faults on a lane apart). The host
+refuses `OAMSM_RETRY` while a print is printing; in a paused print whose
+motors were turned off it refuses Retry, Load and Unload alike, with `the
+printer lost its position`, and moves nothing.
 
 `OAMSM_LOAD_FILAMENT_CANCEL` is ordinary G-code, so it runs only once Klipper's
 G-code queue is free. It can reach a load the manager runs on its own, such as

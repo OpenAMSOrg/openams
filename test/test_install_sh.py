@@ -456,6 +456,117 @@ class InstallShTests(unittest.TestCase):
             self.assertTrue((ROOT / name).is_file(), name)
 
     # ------------------------------------------------------------------
+    # The LCD menu: always linked, included only with a [display]
+    # ------------------------------------------------------------------
+
+    PRINTER_WITH_DISPLAY = ("[printer]\nkinematics: none\n\n"
+                            "[display]\nlcd_type: st7920\n")
+
+    def printer_cfg(self, text=None):
+        path = self.config / "printer.cfg"
+        if text is not None:
+            path.write_text(text)
+        return path.read_text()
+
+    def menu_includes(self):
+        return self.printer_cfg().count("[include oams_menu.cfg]")
+
+    def test_the_menu_is_linked_but_not_included_without_a_display(self):
+        """Klipper reads [menu] sections only through [display] and refuses
+        them as unused sections without one, so a printer with no display
+        gets the link and no include."""
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_linked("oams_menu.cfg")
+        self.assertEqual(self.menu_includes(), 0)
+        self.assertIn("no [display] section, so no LCD menu", result.stdout)
+
+    def test_a_display_gets_the_menu_included_below_oams_cfg(self):
+        self.printer_cfg(self.PRINTER_WITH_DISPLAY)
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(self.printer_cfg().startswith(
+            "[include oams.cfg]\n[include oams_menu.cfg]\n\n[printer]\n"),
+            self.printer_cfg())
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.menu_includes(), 1)
+        self.assertIn("oams_menu.cfg already included", result.stdout)
+
+    def test_a_display_in_an_included_file_counts(self):
+        (self.config / "hardware").mkdir()
+        (self.config / "hardware/lcd.cfg").write_text(
+            "#[display] is in the next line\n[display]\nlcd_type: uc1701\n")
+        self.printer_cfg("[include hardware/*.cfg]\n[printer]\nkinematics: none\n")
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.menu_includes(), 1)
+
+    def test_only_a_display_klipper_reads_counts(self):
+        """A named [display <name>] gets no menu, a commented-out [display]
+        is none, and a [display] in a file printer.cfg does not include
+        (an old backup) is not read by Klipper either."""
+        (self.config / "printer-backup.cfg").write_text(self.PRINTER_WITH_DISPLAY)
+        self.printer_cfg("[printer]\nkinematics: none\n\n#[display]\n"
+                         "[display second]\nlcd_type: st7920\n")
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.menu_includes(), 0)
+
+    def test_a_removed_display_takes_the_menu_include_out_again(self):
+        self.printer_cfg(self.PRINTER_WITH_DISPLAY)
+        self.assertEqual(self.install().returncode, 0)
+        self.assertEqual(self.menu_includes(), 1)
+        self.printer_cfg(self.printer_cfg().replace(
+            "[display]\nlcd_type: st7920\n", ""))
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.menu_includes(), 0)
+        self.assertIn("[include oams_menu.cfg] removed", result.stdout)
+        self.assertIn("[include oams.cfg]\n\n[printer]", self.printer_cfg())
+
+    def test_no_lcd_menu_leaves_the_menu_out(self):
+        self.printer_cfg(self.PRINTER_WITH_DISPLAY)
+        result = self.install("--no-lcd-menu")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.menu_includes(), 0)
+        self.assertIn("[SKIPPED] --no-lcd-menu", result.stdout)
+        self.assertEqual(self.install().returncode, 0)
+        self.assertEqual(self.menu_includes(), 1)
+        result = self.install("--no-lcd-menu")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.menu_includes(), 0)
+        self.assertIn("--no-lcd-menu: [include oams_menu.cfg] removed", result.stdout)
+
+    def test_an_unreadable_config_leaves_the_menu_out(self):
+        self.printer_cfg("[include missing.cfg]\n" + self.PRINTER_WITH_DISPLAY)
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.menu_includes(), 0)
+        self.assertIn("could not read the printer config", result.stdout)
+
+    def test_the_owners_own_menu_file_is_left_alone(self):
+        own = "[menu __main __octoprint]\ntype: disabled\n"
+        (self.config / "menu.cfg").write_text(own)
+        self.printer_cfg(self.PRINTER_WITH_DISPLAY + "\n[include menu.cfg]\n")
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.config / "menu.cfg").read_text(), own)
+        text = self.printer_cfg()
+        # OpenAMS's entries come first, so the owner's file can override them.
+        self.assertLess(text.index("[include oams_menu.cfg]"),
+                        text.index("[include menu.cfg]"))
+
+    def test_uninstall_removes_the_menu_include_and_link(self):
+        self.printer_cfg(self.PRINTER_WITH_DISPLAY)
+        self.assertEqual(self.install().returncode, 0)
+        result = self.install("-u", answer="y")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.printer_cfg(), self.PRINTER_WITH_DISPLAY)
+        self.assertFalse(os.path.lexists(self.config / "oams_menu.cfg"))
+        self.assertTrue((ROOT / "oams_menu.cfg").is_file())
+
+    # ------------------------------------------------------------------
     # One update entry covers klipper_mmu/ too
     # ------------------------------------------------------------------
 
@@ -679,6 +790,54 @@ class InstallShTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual((self.mainsail / "index.html").read_text(), "stock\n")
         self.assertEqual(self._mainsail_repo(), ["mainsail-crew/mainsail"])
+
+
+class HasDisplayTests(unittest.TestCase):
+    """install_helpers/has_display.py, which tells install.sh whether the
+    printer config has a [display] section, reading includes as Klipper does."""
+
+    HELPER = ROOT / "install_helpers/has_display.py"
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="openams-has-display-")
+        self.addCleanup(self.temp.cleanup)
+        self.config = Path(self.temp.name)
+
+    def check(self, files, main="printer.cfg"):
+        for name, text in files.items():
+            path = self.config / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        return subprocess.run(
+            ["python3", str(self.HELPER), str(self.config), main],
+            text=True, capture_output=True, timeout=30).returncode
+
+    def test_a_display_in_printer_cfg(self):
+        self.assertEqual(self.check({"printer.cfg": "[display]\nlcd_type: st7920\n"}), 0)
+
+    def test_no_display(self):
+        self.assertEqual(self.check({"printer.cfg": "[printer]\n"}), 1)
+
+    def test_a_comment_or_a_named_display_is_not_one(self):
+        self.assertEqual(self.check({"printer.cfg": (
+            "[printer] # [display]\n#[display]\n[display mini12864]\n")}), 1)
+
+    def test_includes_are_followed_relative_to_the_including_file(self):
+        self.assertEqual(self.check({
+            "printer.cfg": "[include parts/main.cfg]\n",
+            "parts/main.cfg": "[include lcd/*.cfg]\n",
+            "parts/lcd/one.cfg": "[display]\n"}), 0)
+
+    def test_an_empty_pattern_is_fine_and_a_missing_file_is_not(self):
+        self.assertEqual(self.check({"printer.cfg": "[include none/*.cfg]\n[printer]\n"}), 1)
+        self.assertEqual(self.check({"printer.cfg": "[include gone.cfg]\n[display]\n"}), 2)
+
+    def test_a_recursive_include_cannot_be_read(self):
+        self.assertEqual(self.check({"printer.cfg": "[include a.cfg]\n",
+                                     "a.cfg": "[include printer.cfg]\n"}), 2)
+
+    def test_a_missing_printer_cfg_cannot_be_read(self):
+        self.assertEqual(self.check({}), 2)
 
 
 if __name__ == "__main__":

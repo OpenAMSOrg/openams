@@ -82,6 +82,10 @@ class SpoolCache(object):
             self.duplicates = kept
             self.persist()
 
+    def pending_bays(self):
+        """The bay keys a confirmation waits on."""
+        return list(self._pending)
+
     def pending_spool(self, bay_key):
         """The spool a bay's tag link waits on the user to confirm, or None."""
         return self._pending.get(bay_key)

@@ -1287,8 +1287,15 @@ def _complete(lane, code, value, now, fps, timed_out=False, fault=None,
                                                 "Spool unloading cancelled")))
             return nl, effects
         # Unload failed: still loaded; stop the follower so it can't keep rewinding.
-        msg = ("timed out unloading spool" if timed_out
-               else "Spool unloading failed (%s)" % describe_code(code, fault))
+        # A unit that names its reason (the bridge's RETRACT_STALLED, say) is
+        # quoted, as for a load: the op code alone only says "timeout".
+        if timed_out:
+            msg = "timed out unloading spool"
+        elif code_text is not None:
+            msg = "Spool unloading failed (%s)" % (
+                "%s; %s" % (code_text, fault) if fault else code_text)
+        else:
+            msg = "Spool unloading failed (%s)" % describe_code(code, fault)
         nl = replace(lane, op=OP_LOADED, following=False, op_deadline=None,
                      message="unload failed",
                      fault_unit=lane.unit, fault_text=msg)

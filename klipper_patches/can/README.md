@@ -28,6 +28,13 @@ The series applies to exactly that commit, and was built and tested there. It wa
 first made on `ac2a7f8b0e1b`, then moved onto `7bc4d09465d3` (upstream `master` on
 2026-09-30), and on 2026-11-09 onto `BASE`, 47 upstream commits later.
 
+After such a move, `tools/klipper_patches.py apply` refuses a Klipper older than
+the new `BASE`, and refuses while the earlier series is still applied (`a
+different OpenAMS Klipper patch series is already applied`): run `remove` first
+(it works from the record in the checkout's `.git`, whichever series that was),
+update Klipper, then `apply`. The [guide](GUIDE.md#when-openams-ships-a-rebased-series)
+has the steps for users.
+
 Both moves applied all 56 commits without a conflict. The move to `7bc4d09465d3`
 merged two upstream commits that touch files the series also touches
 (`docs/Status_Reference.md`, `klippy/mcu.py`). The move to `BASE` merged four:

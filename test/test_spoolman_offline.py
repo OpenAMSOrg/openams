@@ -236,6 +236,54 @@ class ReplayTest(unittest.TestCase):
         self.assertIsNone(b["spool_id"])
         self.assertFalse([s for s in h.sent if "SET_BAY_SPOOL" in s])
         self.assertEqual(h.linker.status()["queued_writes"], 0)
+        # ... and no spool is made for it: its location would name a bay it
+        # is not in (stack review 2026-11-10, 25)
+        self.assertEqual(h.spools(), [])
+
+    def test_a_spool_made_meanwhile_for_a_bay_that_moved_on_is_remembered_not_linked(self):
+        h = Harness().start()
+        h.api.down = True
+        t = bambu_tag(uid="58585858", tray="3" * 32)
+        h.send([bay(tag=t)])
+        h.send([bay(ready=False, tag=None)])
+
+        h.api.down = False
+        made = run(_make_matching_spool(h.api, "58585858", "3" * 32))
+        h.clock.advance(6)
+        h.send([bay(ready=False, tag=None)])
+
+        self.assertIsNone(h.bay()["spool_id"])
+        self.assertEqual(len(h.spools()), 1)
+        self.assertEqual(h.linker._cache.lookup(t), made["id"])
+
+    def test_a_bay_that_moves_on_while_its_spool_is_created_leaves_no_location(self):
+        h = Harness().start()
+        h.api.down = True
+        t = bambu_tag(uid="59595959", tray="4" * 32)
+        h.send([bay(tag=t)])
+
+        # The spool leaves the bay while the replay is creating its record.
+        machine = h.linker._bays["oams1-0"]
+        request = h.api.request
+
+        async def leaves_during_the_create(method, path, query=None, body=None):
+            result = await request(method, path, query, body)
+            if method == "POST" and path == "/v1/spool":
+                machine.state = "unlinked"
+                machine.last_tag = None
+            return result
+
+        h.api.down = False
+        h.api.request = leaves_during_the_create
+        h.clock.advance(6)
+        h.send([bay(ready=False, tag=None)])        # the replay runs first
+        h.api.request = request
+
+        spools = h.spools()
+        self.assertEqual(len(spools), 1)
+        self.assertFalse(spools[0].get("location"),
+                         "the new spool names a bay it is not in")
+        self.assertNotEqual(h.bay()["spool_id"], spools[0]["id"])
 
 
 class StatusSchemaOfflineTest(unittest.TestCase):

@@ -58,6 +58,7 @@ Nothing in a slicer profile or a macro has to know what is behind the unit.
 | [Install](install.md) | You are setting up a printer, or moving from `klipper_openams`. |
 | [Configure](configure.md) | OpenAMS is installed and you are editing `oams.cfg`. |
 | [Using OpenAMS](using.md) | It runs, and you want to load, unload, toolchange, edit groups or calibrate. |
+| [The printer's LCD menu](lcd-menu.md) | Your printer has a Klipper display, and you want to run OpenAMS from its knob. |
 | [How the macros run](macro-sequence.md) | You want to know what a toolchange does, step by step: every macro, what it moves, and which value sets it. |
 | [Configuration reference](reference.md) | You need an option, its default, or a command's arguments. |
 | [Troubleshooting](troubleshooting.md) | Something is wrong and you want the error text matched to a cause. |

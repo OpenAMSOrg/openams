@@ -99,7 +99,10 @@ POLICY_BITS = ("master", "motion", "dryer")
 HOST_BITS = ("attached", "configured", "heard")
 FLAG_BITS = ("model", "identity", "status", "announce", "conflict", "fresh",
              "synthetic")
-ODO_BITS = ("start", "base", "rewind_seen", "rewinding", "at_valid", "rule")
+# retract (bridge 14): the row is a pull back's (an unload, or a calibration's
+# return), not a feed's.
+ODO_BITS = ("start", "base", "rewind_seen", "rewinding", "at_valid", "rule",
+            "retract")
 # The dryer vent loop (bridge firmware 10, section 0x13).
 # Bridge firmware 11 follows the stock printer's schedule (an exhaust request
 # held about 9.5 s every 327 s); firmware 10 ran a moisture loop, and its rows
@@ -691,16 +694,26 @@ def feed_failure_lines(snapshot) -> list:
         unit = units.get(row.get("slot")) or {}
         flags = row.get("odo_flags") or {}
         kind = unit.get("last_failure_kind")
-        operation = {"load": "load", "calibrate": "calibration"}.get(
-            kind, "load or calibration")
+        retract = bool(flags.get("retract"))
+        if retract:
+            operation = {"calibrate": "calibration"}.get(kind, "unload")
+        else:
+            operation = {"load": "load", "calibrate": "calibration"}.get(
+                kind, "load or calibration")
         who = "AMS %s" % unit["uid"] if unit.get("uid") else \
             "the AMS at index %s" % row.get("index")
         start, low, at = (row.get("odo_start_mm"), row.get("odo_low_mm"),
                           row.get("odo_at_mm"))
         known_start = flags.get("start") and isinstance(start, int)
         known_at = flags.get("at_valid") and isinstance(at, int)
-        if known_start and known_at and (flags.get("rewind_seen") or
-                                         at < start):
+        if retract and known_start and known_at and at >= start - 10:
+            motion = "the odometer stood at %d mm while the AMS pulled the " \
+                "filament back" % at
+        elif retract and known_start and known_at:
+            motion = "the AMS pulled the filament back from %d mm to %d mm" \
+                % (start, at)
+        elif known_start and known_at and (flags.get("rewind_seen") or
+                                           at < start):
             motion = "the AMS rewound from %d mm to %d mm" % (start, at)
             if isinstance(low, int) and abs(low - at) >= 10:
                 motion += " (lowest %d mm)" % low
@@ -713,10 +726,12 @@ def feed_failure_lines(snapshot) -> list:
             motion = "the odometer gave no reading at the failure"
         since = row.get("since_progress_ms")
         if isinstance(since, int):
-            motion += " and then stopped moving for %s" % _seconds(since)
+            motion += (", and then it stopped moving for %s" if retract
+                       else " and then stopped moving for %s") % _seconds(since)
         feed = row.get("feed_ms")
         if isinstance(feed, int):
-            motion += ", %s into the feed" % _seconds(feed)
+            motion += ", %s into the %s" % (
+                _seconds(feed), "pull back" if retract else "feed")
         if flags.get("rewinding"):
             motion += "; it was still rewinding"
         state = row.get("ams_state")

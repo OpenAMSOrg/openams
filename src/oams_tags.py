@@ -31,34 +31,21 @@
 import json
 import logging
 import os
+import sys
 from collections import OrderedDict
 
-def _load_tag_identity():
-    """The tag_identity module (the spool key, C2 section 4.6). Deployed as Klipper extras, each OpenAMS module is linked into klippy/extras
-    one file at a time when install.sh runs; a module an update added (a git pull
-    through Moonraker's update manager) has no link until install.sh runs again,
-    so it is loaded from beside this file's real path, the OpenAMS checkout."""
-    try:                              # deployed as a Klipper extras package
-        from . import tag_identity as module
-        return module
-    except ImportError:
-        pass
-    try:                              # imported standalone (src/ on sys.path)
-        import tag_identity as module
-        return module
-    except ImportError:
-        pass
-    import importlib.util
-    import sys
-    path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                        "tag_identity.py")
-    spec = importlib.util.spec_from_file_location("tag_identity", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return sys.modules.setdefault("tag_identity", module)
+# install.sh links each module into klippy/extras when it runs, and an update
+# is only a git pull: a module a later release added has no link of its own, so
+# the package also looks for siblings in this file's checkout (install.md).
+if __package__:
+    _CHECKOUT = os.path.dirname(os.path.realpath(__file__))
+    if _CHECKOUT not in sys.modules[__package__].__path__:
+        sys.modules[__package__].__path__.append(_CHECKOUT)
 
-
-tag_identity = _load_tag_identity()
+try:                                  # deployed as a Klipper extras package
+    from . import tag_identity
+except ImportError:                   # imported standalone (src/ on sys.path)
+    import tag_identity
 
 # Busy retries (C1 §4.7), 1 s apart, up to 5 times.
 _BUSY_RETRIES = 5
@@ -92,8 +79,17 @@ T_HAND_S = 30.0
 #: inserted.
 ORPHAN_S = 120.0
 #: A UID present in every good sample across this many samples of one bay's
-#: turn is not that bay's tag.
+#: turn is not that bay's tag, once the turn is a real one (below).
 N_STATIC = 8
+#: A bay flagged as turning may stand still (the positioning window after a
+#: ready edge, an unload whose op is set while the toolhead still cuts), so
+#: static evidence, and the no-tag wait, count only a turn that lasted this
+#: long ...
+STATIC_TURN_S = 3.0
+#: ... and showed motion: this much filament through the unit's encoder (one
+#: turn of a full spool), or a tag coming or going while only that bay
+#: turned.
+STATIC_TURN_MM = 630.0
 #: Consecutive good samples a UID must be present (absent) before it counts as
 #: entering (leaving) the field, so a one-sample dropout is not a change.
 FIELD_DEBOUNCE = 2
@@ -286,12 +282,28 @@ class _Reader(object):
         self.enumerates = enumerates
         self.debounce = max(1, int(debounce))
         self.inset = frozenset()       # the debounced field
+        #: Such a reader's remembered field: every UID its scans answered,
+        #: until the bay holding it is emptied. One scan shows one tag of
+        #: the field, so this, not the last scan, is what was there.
+        self.seen = set()
         self.raw = None                # the last good sample, or None
         self.present_count = {}
         self.absent_count = {}
         self.times = []                # times of the last good samples
         self.errors = 0
         self.orphans = []              # (time, uid, since)
+
+
+class _Static(object):
+    """One bay's turn as one reader saw it: the UIDs present in every good
+    sample, how many samples, whether another covered bay moved meanwhile,
+    and whether the static rule already fired for this turn."""
+
+    def __init__(self, present):
+        self.common = set(present)
+        self.count = 0
+        self.disturbed = False
+        self.fired = False
 
 
 class _Bay(object):
@@ -312,8 +324,12 @@ class _Bay(object):
         #: Just inserted, its insertion read still to come (a reader that is
         #: read only when asked).
         self.awaiting_read = False
+        #: reader -> the UIDs in its field before this bay's ready rose: the
+        #: read after the insertion gives the bay only the others.
+        self.field_before = {}
         self.turn_keys = {}            # key -> uid seen by motion this turn
-        self.static = {}               # reader -> [common, count, moved, fired]
+        self.turn_travel = 0.0         # mm of filament the encoder saw
+        self.static = {}               # reader -> _Static of this turn
         self.reset()
 
     def reset(self):
@@ -347,12 +363,17 @@ class Attribution(object):
     def __init__(self, bay_count, coverage, cache=None, enumerates=True,
                  debounce=FIELD_DEBOUNCE, hand_s=T_HAND_S, orphan_s=ORPHAN_S,
                  static_samples=N_STATIC, insertion_read_trusted=None,
-                 no_tag_turn_s=NO_TAG_TURN_S):
+                 no_tag_turn_s=NO_TAG_TURN_S, static_turn_s=STATIC_TURN_S,
+                 static_turn_mm=STATIC_TURN_MM):
         self.cache = cache if cache is not None else TagCache()
         self.hand_s = float(hand_s)
         self.orphan_s = float(orphan_s)
         self.static_samples = int(static_samples)
         self.no_tag_turn_s = float(no_tag_turn_s)
+        self.static_turn_s = float(static_turn_s)
+        self.static_turn_mm = float(static_turn_mm)
+        self._travel = None            # the encoder's last reading, mm
+        self._hold_elimination = False  # while one sample's changes run
         #: A reader that answers one UID per sample and is sampled only when
         #: the unit is idle (an extension's reader) cannot show motion: the
         #: read after a bay's insertion goes to that bay, under the spool-key
@@ -403,6 +424,16 @@ class Attribution(object):
     def _held_elsewhere(self, key, bay):
         return any(other.index != bay and other.holds(key)
                    for other in self.bays)
+
+    def _claimed_elsewhere(self, key, bay):
+        """Held by another bay, or that bay's candidate restored after a
+        restart (its spool is most likely still there): weak evidence never
+        gives such a key to this bay. Strong evidence still may (a spool
+        swapped while the host was down shows on the bay that turns it)."""
+        return self._held_elsewhere(key, bay) or any(
+            other.index != bay and other.state == CANDIDATE
+            and other.restored is not None and other.restored[0] == key
+            for other in self.bays)
 
     def holder_of(self, key, exclude=None):
         for other in self.bays:
@@ -514,6 +545,9 @@ class Attribution(object):
             bs.rise_at = now
             bs.reset()               # a kept runout tag is dropped first
             bs.awaiting_read = True
+            bs.field_before = dict(
+                (r.index, frozenset(r.inset if r.enumerates else r.seen))
+                for r in self.readers_of(bay))
             self._promote_orphans(bay, now)
             for reader in self.readers_of(bay):
                 self._eliminate(reader, now)
@@ -526,7 +560,22 @@ class Attribution(object):
             bs.kept = True
             bs.ready_fell = True
             return
+        self._forget_seen(bs)
         bs.reset()
+
+    def _forget_seen(self, bs):
+        """``bs``'s spool left: on a reader that cannot enumerate (it never
+        shows a tag leaving) its tags leave the remembered field, so the
+        same spool put in again is read again."""
+        uids = set()
+        if bs.holds():
+            uids.add(bs.uid)
+            uids.update(self.cache.uids_of(bs.key))
+        if bs.restored is not None:
+            uids.add(bs.restored[1])
+        for r in self.readers_of(bs.index):
+            if not r.enumerates:
+                r.seen -= uids
 
     def resync_ready(self, bay, ready, now, keep=False):
         """A bay's ready found changed after a time nobody watched (the unit
@@ -548,6 +597,7 @@ class Attribution(object):
         not in use and its ready is still false)."""
         bs = self.bays[bay]
         if bs.kept and not bs.ready:
+            self._forget_seen(bs)
             bs.reset()
             return True
         return False
@@ -558,20 +608,46 @@ class Attribution(object):
             bs.turning = True
             bs.turn_start = now
             bs.turn_keys = {}
+            bs.turn_travel = 0.0
             bs.static = {}
         elif not on and bs.turning:
             bs.turning = False
             bs.turn_end = now
             self._note_silent_turn(bs, now)
 
+    def note_travel(self, value, now):
+        """The unit's filament encoder, in mm: what it moved since the last
+        reading is the turning bays' motion. Its origin resets at every
+        operation (C1 §4.1), so a drop is a new origin, not motion; None
+        (no encoder) changes nothing."""
+        if value is None:
+            return
+        last, self._travel = self._travel, float(value)
+        if last is None or self._travel <= last:
+            return
+        for bs in self.bays:
+            if bs.turning:
+                bs.turn_travel += self._travel - last
+
+    def _turned_for_real(self, bs, now):
+        """The bay's spool really turned this turn: it lasted
+        ``static_turn_s`` and the encoder saw ``static_turn_mm``, or a tag
+        came or went while only this bay turned."""
+        if bs.turn_start is None or now - bs.turn_start < self.static_turn_s:
+            return False
+        return bool(bs.turn_keys) or bs.turn_travel >= self.static_turn_mm
+
     def _note_silent_turn(self, bs, now):
         """A turn that ended with nothing seen: once a ready bay has turned
-        ``no_tag_turn_s`` in all, sampled throughout and undisturbed, with
-        no tag showing, its spool carries no tag this reader can see."""
-        sampled = any(track[1] >= self.static_samples and not track[2]
+        ``no_tag_turn_s`` in all, really turning (the encoder saw the
+        filament move), sampled throughout and undisturbed, with no tag
+        showing, its spool carries no tag this reader can see."""
+        sampled = any(track.count >= self.static_samples
+                      and not track.disturbed
                       for track in bs.static.values())
         if (not bs.ready or bs.state != UNKNOWN or bs.turn_keys
-                or not sampled or bs.turn_start is None):
+                or not sampled or bs.turn_start is None
+                or bs.turn_travel < self.static_turn_mm):
             return
         bs.silent_s += max(0.0, now - bs.turn_start)
         if bs.silent_s >= self.no_tag_turn_s:
@@ -601,6 +677,8 @@ class Attribution(object):
             self.bays[trigger_bay].awaiting_read = False
         first = r.raw is None
         r.raw = present
+        if not r.enumerates:
+            r.seen |= present
         r.times = (r.times + [now])[-(r.debounce + 2):]
         self._track_static(r, present, now)
         if first:
@@ -628,13 +706,26 @@ class Attribution(object):
             entered, left = set(), set()
         elif (trigger_bay is not None and self.insertion_read_trusted
                 and trigger_bay in r.bays):
-            for uid in sorted(present):
+            # Only a tag the field did not hold before the bay's ready rose
+            # can be the inserted spool's: another is a neighbour's still
+            # spool, answering again.
+            before = self.bays[trigger_bay].field_before.get(r.index, ())
+            for uid in sorted(present - frozenset(before)):
                 self._insertion_read(trigger_bay, uid, now)
             entered = entered - present
-        for uid in sorted(entered) + sorted(left):
-            self._change(r, uid, now, since)
+        # Every change of this sample first, elimination after: with two
+        # tags changing in one sample, the first must not hand the second to
+        # the neighbour before the second has been weighed itself.
+        self._hold_elimination = True
+        try:
+            for uid in sorted(entered) + sorted(left):
+                self._change(r, uid, now, since)
+        finally:
+            self._hold_elimination = False
         self._static_check(r, now)
-        self._eliminate(r, now)
+        for bay in r.bays:
+            for other in self.readers_of(bay):
+                self._eliminate(other, now)
 
     def note_record(self, uid, now):
         """``uid``'s record arrived (decoded): re-key what it changed."""
@@ -669,17 +760,25 @@ class Attribution(object):
         elif single and bs.ready and len(keys) == 1:
             key, uid = next(iter(keys.items()))
             self._strong(bay, uid, key, SINGLE, now, reread=True)
+        elif bs.state == CONFLICT:
+            # A sample at rest shows no motion: it settles only what no
+            # longer contradicts itself (_recheck_conflict), and adds no
+            # candidate to the conflict. Loading the spool, or ASSERT=1,
+            # settles the rest.
+            self._recheck_conflict(bs)
         elif bs.ready and not bs.holds():
             own = [(k, u) for k, u in keys.items()
-                   if not self._held_elsewhere(k, bay)]
+                   if not self._claimed_elsewhere(k, bay)]
             for key, uid in own[:2]:
                 self._add_candidate(bay, uid, key)
         return self.outcome(bay, keys)
 
     def assert_bay(self, bay, uids, now):
         """``OAMS_RFID_SCAN BAY= ASSERT=1``: the single spool key in the
-        fresh sample is this bay's. Returns the outcome; its word is
-        ``not_ready``, ``empty`` or ``two`` when refused."""
+        fresh sample is this bay's, whatever the bay's state (a conflict
+        too), and any other bay holding that key loses it. Returns the
+        outcome; its word is ``not_ready``, ``empty`` or ``two`` when
+        refused."""
         bs = self.bays[bay]
         keys = self._keys_of(uids)
         if not bs.ready:
@@ -689,8 +788,32 @@ class Attribution(object):
         if len(keys) > 1:
             return {"word": "two", "keys": list(keys)}
         key, uid = next(iter(keys.items()))
+        if (bs.state == CANDIDATE and bs.candidates
+                and not any(k == key for k, _ in bs.candidates)):
+            # The tag in the field is not the one this bay showed (the
+            # neighbour's turned in, say): the user confirmed another tag
+            # than the one they were looking at. Show this one instead; a
+            # second ASSERT=1 confirms it.
+            bs.candidates = [(key, uid)]
+            bs.restored = None
+            result = self.outcome(bay, keys)
+            result["other_tag"] = True
+            return result
         self._strong(bay, uid, key, ASSERTED, now, reread=True)
         return self.outcome(bay, keys)
+
+    def note_operated(self, bay, now):
+        """The unit finished loading or unloading ``bay``. A reader that is
+        read only when asked never sees that turn, so it has no motion to
+        settle a conflict with: the conflict ends here instead. What the bay
+        held stands; a claim it only inferred (a tag another bay holds, two
+        tags a re-read showed) lapses, and the bay is unknown again. True
+        when anything changed."""
+        bs = self.bays[bay]
+        if bs.state != CONFLICT or not self._read_only_when_asked(bay):
+            return False
+        self._settle(bs, bs.key if bs.holds() else None)
+        return True
 
     def assert_uid(self, bay, uid, now):
         """A tag this host just wrote on ``bay``'s reader is that bay's."""
@@ -765,9 +888,11 @@ class Attribution(object):
             self._weak(r, handled[0], uid, key, now, since)
         elif handled:
             for bay in handled:
-                if not self._held_elsewhere(key, bay):
+                if not self._claimed_elsewhere(key, bay):
                     self._add_candidate(bay, uid, key)
-        else:
+        elif r.enumerates:
+            # A reader that cannot enumerate shows only which tag answered
+            # this scan: its "change" is no orphan of a later insertion.
             r.orphans = [o for o in r.orphans
                          if now - o[0] <= self.orphan_s]
             r.orphans.append((now, uid, since))
@@ -806,7 +931,7 @@ class Attribution(object):
 
     def _weak(self, r, bay, uid, key, now, since):
         bs = self.bays[bay]
-        if not bs.ready or self._held_elsewhere(key, bay):
+        if not bs.ready or self._claimed_elsewhere(key, bay):
             return
         if bs.holds():
             return               # weak evidence never displaces a tag
@@ -868,6 +993,9 @@ class Attribution(object):
 
     def _remove_candidate(self, bs, key):
         bs.candidates = [(k, u) for k, u in bs.candidates if k != key]
+        if bs.state == CONFLICT:
+            self._recheck_conflict(bs)
+            return
         if bs.holds():
             return
         if bs.restored is not None and bs.restored[0] == key:
@@ -876,9 +1004,69 @@ class Attribution(object):
             bs.state = UNKNOWN if bs.ready else NONE
             bs.reason = None
             bs.other_bay = None
-        elif bs.state == CONFLICT and bs.reason == AMBIGUOUS_PAIR:
+
+    def _recheck_conflict(self, bs):
+        """Settle a conflict whose contradiction is gone (never by time).
+        A key another bay holds by its own evidence (``motion``, ``single``,
+        ``asserted``) is that bay's, so it drops out of this bay's
+        candidates; then:
+
+        * ``claimed_twice``: once no other bay holds the key, the claim
+          stands alone: a candidate of it;
+        * ``changed_in_place``: once the different key is gone, the bay
+          keeps the key it held (``read_at`` unchanged);
+        * ``two_moving``, ``ambiguous_pair``: with one key left, a bay that
+          held a key keeps it when that is the one left (else the other key
+          is ``changed_in_place``), and a bay that held none has the one
+          left as a candidate; with none left, the key it held or
+          ``unknown``.
+        """
+        if bs.state != CONFLICT:
+            return
+        if bs.reason == CLAIMED_TWICE:
+            claim = bs.candidates[:1]
+            if not claim:
+                self._settle(bs, None)
+            elif self.holder_of(claim[0][0], exclude=bs.index) is None:
+                self._settle(bs, None, claim)
+            return
+        bs.candidates = [
+            (k, u) for k, u in bs.candidates
+            if k == bs.key or not self._held_directly_elsewhere(k, bs.index)]
+        if bs.reason == CHANGED_IN_PLACE:
+            if not any(k != bs.key for k, _ in bs.candidates):
+                self._settle(bs, bs.key)
+            return
+        if len(bs.candidates) >= 2:
+            return                          # still two keys
+        if not bs.holds():
+            self._settle(bs, None, bs.candidates)
+            return
+        others = [(k, u) for k, u in bs.candidates if k != bs.key]
+        if not others:
+            self._settle(bs, bs.key)
+        else:
+            bs.reason = CHANGED_IN_PLACE
+            bs.candidates = others[:1]
+
+    def _held_directly_elsewhere(self, key, bay):
+        return any(other.index != bay and other.holds(key)
+                   and other.evidence in DIRECT for other in self.bays)
+
+    def _settle(self, bs, key, candidates=()):
+        """End ``bs``'s conflict: attributed again with the ``key`` it held,
+        else a candidate of ``candidates``, else unknown."""
+        bs.reason = None
+        bs.other_bay = None
+        bs.candidates = list(candidates)
+        if key is not None and bs.key == key:
+            bs.state = ATTRIBUTED
+        elif bs.candidates:
+            bs.key = None
             bs.state = CANDIDATE
-            bs.reason = None
+        else:
+            bs.key = None
+            bs.state = UNKNOWN if bs.ready else NONE
 
     def _strong(self, bay, uid, key, evidence, now, reread=False):
         """Strong evidence that ``key`` is ``bay``'s (C2 §4.6.1)."""
@@ -911,7 +1099,9 @@ class Attribution(object):
                 bs.candidates = [(key, uid)]
             return
         for other in holders:
-            protected = (other in in_place
+            # ASSERT=1 is the user's word: the key is this bay's, and a bay
+            # that held it loses it, clone protection or not.
+            protected = (evidence != ASSERTED and other in in_place
                          and other.evidence in (MOTION, ASSERTED))
             if not protected:
                 other.reset()                # the spool moved here
@@ -955,7 +1145,7 @@ class Attribution(object):
     def _eliminate(self, r, now):
         """A covered bay whose neighbours are all accounted for by direct
         evidence gets the one remaining key (C2 §4.6.1)."""
-        if len(r.bays) < 2:
+        if len(r.bays) < 2 or self._hold_elimination:
             return
         for bay in r.bays:
             bs = self.bays[bay]
@@ -970,7 +1160,10 @@ class Attribution(object):
             for key, uid in bs.candidates:
                 if key not in taken and not self._held_elsewhere(key, bay):
                     options[key] = uid
-            for uid in sorted(r.inset):
+            # The field, from a reader that shows it; a reader that cannot
+            # enumerate only remembers, and a tag it remembers may have left
+            # the unit long ago.
+            for uid in (sorted(r.inset) if r.enumerates else ()):
                 key = self.key_of(uid)
                 if key not in taken and not self._held_elsewhere(key, bay):
                     options.setdefault(key, uid)
@@ -985,31 +1178,35 @@ class Attribution(object):
                 continue
             track = bs.static.get(r.index)
             if track is None:
-                track = bs.static[r.index] = [set(present), 0, False, False]
+                track = bs.static[r.index] = _Static(present)
             else:
-                track[0] &= present
-            track[1] += 1
+                track.common &= present
+            track.count += 1
             if any(self.bays[o].turning or self.handled(o, now)
                    for o in r.bays if o != bay):
-                track[2] = True
+                track.disturbed = True
 
     def _static_check(self, r, now):
+        """The static rule: a UID present in every sample of a real turn of
+        one covered bay is not that bay's tag. Its candidate goes, and the
+        other covered bay gets it as a candidate; a bay that holds it keeps
+        it (static evidence alone never resets a bay: the bay's own motion,
+        or the other bay's, corrects a wrong inference)."""
         for bay in r.bays:
             bs = self.bays[bay]
             track = bs.static.get(r.index)
-            if (not bs.turning or track is None or track[3] or track[2]
-                    or track[1] < self.static_samples):
+            if (not bs.turning or track is None or track.fired
+                    or track.disturbed or track.count < self.static_samples
+                    or not self._turned_for_real(bs, now)):
                 continue
-            track[3] = True
+            track.fired = True
             others = [o for o in r.bays if o != bay]
-            for uid in sorted(track[0]):
+            for uid in sorted(track.common):
                 key = self.key_of(uid)
                 if any(k == key for k, _ in bs.candidates) and not bs.holds():
                     self._remove_candidate(bs, key)
-                elif bs.holds(key) and bs.evidence not in DIRECT:
-                    bs.reset()               # a promoted insertion, wrong
-                if len(others) == 1 and not self._held_elsewhere(key,
-                                                                 others[0]):
+                if len(others) == 1 and not self._claimed_elsewhere(
+                        key, others[0]):
                     self._add_candidate(others[0], uid, key)
 
     def _promote_orphans(self, bay, now):
@@ -1022,7 +1219,7 @@ class Attribution(object):
                 rivals = [o for o in r.bays if o != bay
                           and self.handled(o, now)]
                 if rivals:
-                    if not self._held_elsewhere(key, bay):
+                    if not self._claimed_elsewhere(key, bay):
                         self._add_candidate(bay, uid, key)
                 else:
                     self._weak(r, bay, uid, key, now, since)
@@ -1056,11 +1253,13 @@ class TagReader(object):
         self.attr = None
         self._source = None
         self._turning = frozenset()
+        self._operating = frozenset()  # bays of a load/unload in flight
         self._restored = False
         self._saved = None
         self._saved_signature = None
         self._kept_timer = False
         self._decode_failures = {}
+        self._given_up = set()         # UIDs published as ``unknown``
         self._turning_error_logged = False
 
     # ------------------------------------------------------------ publishing
@@ -1183,9 +1382,12 @@ class TagReader(object):
         except Exception:
             pass
         manager = self._manager()
+        operating = self._operating
         if manager is not None and hasattr(manager, "turning_bays"):
             try:
-                turning |= set(manager.turning_bays(self.oams.oams_idx))
+                operating = frozenset(
+                    manager.turning_bays(self.oams.oams_idx))
+                turning |= operating
             except Exception:
                 if not self._turning_error_logged:
                     self._turning_error_logged = True
@@ -1193,6 +1395,15 @@ class TagReader(object):
                                       self.oams.oams_idx)
         turning = frozenset(b for b in turning
                             if 0 <= b < len(self.attr.bays))
+        # A load or unload that ended: a reader read only when asked settles
+        # the bay's conflict by it (it has no motion to settle it with).
+        ended, self._operating = self._operating - operating, operating
+        for bay in ended:
+            if 0 <= bay < len(self.attr.bays):
+                self.attr.note_operated(bay, now)
+        # What the encoder moved since the last look belongs to the bays
+        # that were turning meanwhile, so it goes in before the edges.
+        self.attr.note_travel(self._travel_mm(), now)
         for bay in range(len(self.attr.bays)):
             on = bay in turning
             if on != self.attr.bays[bay].turning:
@@ -1213,6 +1424,18 @@ class TagReader(object):
     def note_turning(self, bay, on, now):
         if self.attr is not None:
             self.attr.note_turning(bay, on, now)
+
+    def _travel_mm(self):
+        """The unit's filament encoder in mm (C1 §4.1 ``encoder_clicks``,
+        origin-relative), or None for a unit that reports none."""
+        clicks = getattr(self.oams, "encoder_clicks", None)
+        if clicks is None:
+            return None
+        to_mm = getattr(self.oams, "_length_mm", None)
+        try:
+            return float(to_mm(clicks) if to_mm is not None else clicks)
+        except (TypeError, ValueError):
+            return None
 
     def focus_readers(self, now=None):
         """The readers to sample fast right now (C2 §4.6.1)."""
@@ -1235,14 +1458,37 @@ class TagReader(object):
         """The record of a MIFARE Classic tag not decoded yet: a Bambu tag
         whose content is pending (``bambu`` null), so a spool link waits for
         the decode; ``unknown`` once its decode failed DECODE_ATTEMPTS
-        times."""
-        if self._decode_failures.get(_norm_uid(uid), 0) >= DECODE_ATTEMPTS:
+        times, until retry_decodes."""
+        uid = _norm_uid(uid)
+        if self._decode_failures.get(uid, 0) >= DECODE_ATTEMPTS:
+            self._given_up.add(uid)
             return tag_record("unknown")
         return tag_record("bambu")
 
     def note_decode_failed(self, uid):
         uid = _norm_uid(uid)
         self._decode_failures[uid] = self._decode_failures.get(uid, 0) + 1
+
+    def retry_decodes(self, uids=None, now=None):
+        """Forget the failed decodes of ``uids`` (of every UID when None):
+        on a bay's ready rise, an explicit read, a tag back in the field. A
+        tag given up as ``unknown`` is a Bambu tag whose content is pending
+        again, in the cache (and its file) too, so its bay waits for the
+        decode instead of being linked by its UID alone. The caller syncs."""
+        if uids is None:
+            uids = set(self._decode_failures) | self._given_up
+        now = self._now() if now is None else now
+        for uid in [_norm_uid(u) for u in uids]:
+            self._decode_failures.pop(uid, None)
+            if uid not in self._given_up:
+                continue
+            self._given_up.discard(uid)
+            record = self.cache.record(uid)
+            if (record is not None and record.get("format") == "unknown"
+                    and not record.get("bambu")
+                    and self.cache.put(uid, tag_record("bambu"))
+                    and self.attr is not None):
+                self.attr.note_record(uid, now)
 
     def record_for_key(self, key):
         return self.cache.bambu_record_for_key(key)
@@ -1267,7 +1513,10 @@ class TagReader(object):
         for uid, record in (records or {}).items():
             if self.cache.put(uid, record):
                 attr.note_record(uid, now)    # re-key first, then the sample
+        before = attr.readers[reader].inset
         attr.note_field(reader, uids_or_error, now, trigger_bay=trigger_bay)
+        # A tag back in the field may rest where it decodes this time.
+        self.retry_decodes(attr.readers[reader].inset - before, now)
         self._sync()
 
     def note_record(self, uid, record, now=None):
@@ -1309,8 +1558,10 @@ class TagReader(object):
         reader = attr.reader_of(bay)
         if self._source is None or reader is None:
             return {"word": "error", "error": "no reader covers this bay"}
+        self.retry_decodes()          # an explicit read decodes afresh
         uids = self._source.sample_reader(reader)
         if uids is None:
+            self._sync()
             return {"word": "error", "error": "the reader did not answer"}
         return self.apply_explicit(bay, uids, assert_)
 
@@ -1343,6 +1594,10 @@ class TagReader(object):
                 label, outcome.get("key"),
                 "" if outcome.get("in_field") else " (not in the field now)")
         if word == "candidate":
+            if outcome.get("other_tag"):
+                return True, ("%s: candidate %s (not the tag this bay"
+                              " showed; ASSERT=1 again confirms it)"
+                              % (label, outcome.get("key")))
             return True, ("%s: candidate %s (not confirmed: load, or"
                           " OAMS_RFID_SCAN ... ASSERT=1)"
                           % (label, outcome.get("key")))
@@ -1375,13 +1630,24 @@ class TagReader(object):
             return None
 
     def _cache_path(self):
-        """The persisted cache: next to the OpenAMS config file, and only
-        when that file exists (a test or a bare install writes nothing)."""
+        """The persisted cache: next to the OpenAMS config file, or, when
+        the ``[oams]`` sections live in Klipper's main config (no OpenAMS
+        config file), next to that file. Only beside a file that exists (a
+        test or a bare install writes nothing)."""
         manager = self._manager()
-        config = getattr(manager, "openams_config_path", None)
-        if not config or not os.path.isfile(config):
+        for config in (getattr(manager, "openams_config_path", None),
+                       self._main_config_path()):
+            if config and os.path.isfile(config):
+                return os.path.join(os.path.dirname(config), CACHE_FILE)
+        return None
+
+    def _main_config_path(self):
+        """Klipper's main config file (printer.cfg), or None."""
+        printer = getattr(self.oams, "printer", None)
+        try:
+            return printer.get_start_args().get("config_file")
+        except Exception:
             return None
-        return os.path.join(os.path.dirname(config), CACHE_FILE)
 
     def _unit_key(self):
         name = getattr(self.oams, "name", None)
@@ -1491,6 +1757,8 @@ class TagReader(object):
                 self.oams.oams_idx)
 
     def _handle_ready_rise(self, bay, now):
+        # A new spool, or the same one put back: its tag may decode now.
+        self.retry_decodes(now=now)
         if self.attr is not None and 0 <= bay < len(self.attr.bays):
             self.attr.note_ready(bay, True, now)
             self._sync()
@@ -1521,26 +1789,57 @@ class TagReader(object):
                 self.oams.oams_idx)
 
     def _handle_hardware_ready(self):
-        if self._ext_reads() and not self._uses_tray_info():
-            self._ensure_attribution(**self._ext_attribution_options())
-        if self.attr is not None:
-            values = getattr(self.oams, "f1s_hes_value", None) or []
-            now = self._now()
-            for bay in range(len(self.attr.bays)):
-                ready = bool(bay < len(values) and values[bay])
-                if self._restored and ready != self.attr.bays[bay].ready:
-                    # The unit came back (a reconnect) with this bay's
-                    # ready changed while nobody watched: an edge.
-                    self.attr.resync_ready(
-                        bay, ready, now,
-                        keep=not ready and self._in_use(bay))
-                else:
-                    self.attr.init_ready(bay, ready)
-            self._restore_state()
-            self._sync()
-            self._arm_kept_check()
+        self._settle_attribution()
         if self._reads_by_trigger():
             self._start_startup_read()
+
+    def settle(self):
+        """Called before the unit's status is read: once its first hardware
+        snapshot is in, the attribution is restored first (a bay still
+        ready resumes as a candidate). The restore otherwise runs from a
+        deferred callback, and a status read in between would show a ready
+        bay with no tag and no candidate, which a Spoolman link takes for a
+        removal (C4 §3). Nothing to do once restored."""
+        if self._restored:
+            if self.attr is not None and self._source is None:
+                # A reader read only when asked hands in no samples while a
+                # spool turns, so the unit's loads and unloads are watched
+                # from here (note_operated).
+                before = [(bs.state, bs.reason) for bs in self.attr.bays]
+                self.update_turning()
+                if before != [(bs.state, bs.reason)
+                              for bs in self.attr.bays]:
+                    self._sync()
+            return
+        if not getattr(self.oams, "hardware_snapshot_ready", False):
+            return
+        if self.attr is None and not self._ext_attributes():
+            return
+        self._settle_attribution()
+
+    def _ext_attributes(self):
+        return self._ext_reads() and not self._uses_tray_info()
+
+    def _settle_attribution(self):
+        """The bays' ready as the unit reports it, and the restored cache."""
+        if self._ext_attributes():
+            self._ensure_attribution(**self._ext_attribution_options())
+        if self.attr is None:
+            return
+        values = getattr(self.oams, "f1s_hes_value", None) or []
+        now = self._now()
+        for bay in range(len(self.attr.bays)):
+            ready = bool(bay < len(values) and values[bay])
+            if self._restored and ready != self.attr.bays[bay].ready:
+                # The unit came back (a reconnect) with this bay's ready
+                # changed while nobody watched: an edge.
+                self.attr.resync_ready(
+                    bay, ready, now, keep=not ready and self._in_use(bay))
+            else:
+                self.attr.init_ready(bay, ready)
+        self._restore_state()
+        self._sync()
+        self._arm_kept_check()
 
     def _ext_attribution_options(self):
         """Extension hook: the Attribution options of an extension reader."""

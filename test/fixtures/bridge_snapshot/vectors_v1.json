@@ -586,7 +586,8 @@
        "rewind_seen": true,
        "rewinding": true,
        "at_valid": true,
-       "rule": true
+       "rule": true,
+       "retract": false
       },
       "ams_state": "moving"
      }
@@ -970,6 +971,182 @@
       "start_bay": 2
      }
     ],
+    "refusals": []
+   }
+  },
+  {
+   "name": "ams1_retract_stalled",
+   "reading": "none",
+   "body_hex": "01011900000009000061ab1800007f007709000100000fa0000002b2023000008b9d00000000000000000000000000000000000002f100000000000000000000000000000fa20000616500006165031c000004a6000002f1000000eb000000000000000000000000000004a6043300000000000000000000000000ff000000000000ff0000000000000000000000002100000000000000000000010100000000000516000000010000000000000000000000000000000000001038006af420814dce0002011d15000302f10000000061650000010f070001000000000f0002010100ff07f800010103001d000059da4e30303012180000000007d0000007d0000007d000000fa0000019647303",
+   "message_hex": "04090112010203040001011900000009000061ab1800007f007709000100000fa0000002b2023000008b9d00000000000000000000000000000000000002f100000000000000000000000000000fa20000616500006165031c000004a6000002f1000000eb000000000000000000000000000004a6043300000000000000000000000000ff000000000000ff0000000000000000000000002100000000000000000000010100000000000516000000010000000000000000000000000000000000001038006af420814dce0002011d15000302f10000000061650000010f070001000000000f0002010100ff07f800010103001d000059da4e30303012180000000007d0000007d0000007d000000fa0000019647303",
+   "decoded": {
+    "format": 1,
+    "system": {
+     "app_version": 9,
+     "uptime_ms": 25003,
+     "reset_flags": 24,
+     "boot_status": 0,
+     "genuine_status": 0,
+     "image": {
+      "tx": true,
+      "motion": true,
+      "dryer": true,
+      "tray_info": true,
+      "tag_read": true,
+      "diagnostics": true,
+      "production": true,
+      "application": false
+     },
+     "min_evidence": "hypothesis",
+     "policy": {
+      "requested": {
+       "master": true,
+       "motion": true,
+       "dryer": true
+      },
+      "effective": {
+       "master": true,
+       "motion": true,
+       "dryer": true
+      }
+     },
+     "role": {
+      "master": true,
+      "foreign_master": false,
+      "tx_fault": false,
+      "awaiting": true
+     },
+     "master_acquisitions": 1,
+     "master_since_ms": 4000,
+     "max_pass_gap_us": 690
+    },
+    "line": {
+     "bytes": 35741,
+     "parity_errors": 0,
+     "framing_errors": 0,
+     "noise_errors": 0,
+     "overruns": 0,
+     "messages": 753,
+     "check_errors": 0,
+     "malformed": 0,
+     "skipped_bytes": 0,
+     "first_rx_ms": 4002,
+     "last_rx_ms": 24933,
+     "last_answer_ms": 24933
+    },
+    "master": {
+     "requests": 1190,
+     "answers": 753,
+     "unanswered": 235,
+     "send_failures": 0,
+     "foreign_requests": 0,
+     "unmatched_answers": 0,
+     "sent_messages": 1190
+    },
+    "discovery": {
+     "announces": 0,
+     "first_announce_ms": null,
+     "last_announce_ms": null,
+     "last_announce_marker": null,
+     "last_announce_tag_family": "none",
+     "offers": 0,
+     "offer_giveups": 0,
+     "last_offer_index": null,
+     "last_offer_basis": "none",
+     "last_offer_ms": null,
+     "identity_conflicts": 0,
+     "candidates_dropped": 0,
+     "index_polls": 33,
+     "refused_unsupported_family": 0,
+     "refused_index_mismatch": 0,
+     "refused_over_capacity": 0,
+     "refused_duplicate_identity": 0,
+     "refused_tag_model_mismatch": 0,
+     "admitted": 1,
+     "candidates": 1,
+     "omitted": 0,
+     "last_announce_tag_suffix": null
+    },
+    "host": {
+     "usb_sessions": 1,
+     "protocol_faults": 0,
+     "recoveries": 0,
+     "host_messages": 0,
+     "host_dropped": 0,
+     "host_stale": 0,
+     "update_refused": 0,
+     "attach_refused": 0,
+     "roster_rejected": 0
+    },
+    "units": [
+     {
+      "slot": 0,
+      "uid": "6af420814dce",
+      "index": 0,
+      "link": "online",
+      "family": "ams1",
+      "ams_version": [
+       29,
+       21,
+       0,
+       3
+      ],
+      "answers": 753,
+      "timeouts": 0,
+      "last_answer_ms": 24933,
+      "ams_error": 0,
+      "motion_error": 0,
+      "ams_state": "idle",
+      "spools_present": 15,
+      "host": {
+       "attached": true,
+       "configured": true,
+       "heard": true,
+       "latch": "none"
+      },
+      "configurations": 1,
+      "host_quiet_ms": 0,
+      "operation": {
+       "active": false,
+       "kind": null
+      },
+      "stage": "none",
+      "fault_severity": "pause",
+      "fault_code": 257,
+      "fault_bay": 0,
+      "loaded_bay": null,
+      "path_mm": 2040,
+      "failures": 1,
+      "last_failure_kind": "unload",
+      "last_failure_outcome": "timeout",
+      "last_failure_detail": 29,
+      "last_failure_ms": 23002,
+      "tag_suffix": "N000"
+     }
+    ],
+    "candidates": [],
+    "feed_failures": [
+     {
+      "slot": 0,
+      "index": 0,
+      "odo_start_mm": 2000,
+      "odo_low_mm": 2000,
+      "odo_at_mm": 2000,
+      "since_progress_ms": 4000,
+      "feed_ms": 6500,
+      "odo_flags": {
+       "start": true,
+       "base": true,
+       "rewind_seen": false,
+       "rewinding": false,
+       "at_valid": true,
+       "rule": true,
+       "retract": true
+      },
+      "ams_state": "moving"
+     }
+    ],
+    "dryers": [],
     "refusals": []
    }
   }

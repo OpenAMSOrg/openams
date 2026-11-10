@@ -274,8 +274,10 @@ class OpenAmsSpoolman(object):
         self._repush_pending = True
         if self.linker is not None:
             # Klipper restarted and kept nothing of what it was told, so the
-            # next pass pushes every bay's filament again (C4 §7.4).
+            # next pass pushes every bay's filament again (C4 §7.4), and
+            # every bay waits for its tag to be restored (C4 §3).
             self.linker.forget_filament()
+            self.linker.host_restarted()
         self._schedule_pass()
 
     def _log_no_oams(self, error):

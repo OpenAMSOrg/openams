@@ -6,7 +6,17 @@
 
 import json
 import logging
+import os
 import re
+import sys
+
+# install.sh links each module into klippy/extras when it runs, and an update
+# is only a git pull: a module a later release added has no link of its own, so
+# the package also looks for siblings in this file's checkout (install.md).
+if __package__:
+    _CHECKOUT = os.path.dirname(os.path.realpath(__file__))
+    if _CHECKOUT not in sys.modules[__package__].__path__:
+        sys.modules[__package__].__path__.append(_CHECKOUT)
 
 try:
     from . import bus
@@ -15,10 +25,10 @@ except (ImportError, ValueError):
 
 try:
     from . import oams_tags
+    from . import tag_identity
 except (ImportError, ValueError):
     import oams_tags
-# oams_tags loads it even where an update left it without its own link.
-tag_identity = oams_tags.tag_identity
+    import tag_identity
 
 
 # A MIFARE Classic SAK: 1K (0x08, 0x88 on some clones) or 4K (0x18).
@@ -637,7 +647,16 @@ class OpenAmsMfrc522:
     def _sample(self, eventtime):
         """One sample of this reader: every UID in its field, handed on as
         one ``mfrc522:field`` event. A sample that went wrong is an error
-        (None), never an empty field (C2 §4.6.1)."""
+        (None), never an empty field (C2 §4.6.1).
+
+        One sample at a time for the pair: a sample yields at every SPI
+        round trip, and the poll timer, ``OAMS_RFID_SCAN BAY=`` and
+        ``MFRC522_QUERY`` all sample; a second sample starting meanwhile
+        would switch the antenna to the other reader under the first."""
+        with self.owner._mutex:
+            return self._sample_locked(eventtime)
+
+    def _sample_locked(self, eventtime):
         self.last_read_time = eventtime
         try:
             self.version = self.owner.activate_reader(self)
@@ -756,6 +775,8 @@ class OpenAmsMfrc522Pair:
             "focus_poll_interval", 0.1, minval=0.1)
         self.tag_processor = None
         self.active_reader = None
+        # Serialises the two readers' SPI work (OpenAmsMfrc522._sample).
+        self._mutex = self.reactor.mutex()
         # C2 §4.6: which bays each reader's field covers. The defaults split
         # the four bays in two (still to be confirmed on the hardware); a
         # mainboard whose readers cover other bays sets them.
@@ -777,6 +798,10 @@ class OpenAmsMfrc522Pair:
                 "static_samples", oams_tags.N_STATIC, minval=2),
             "no_tag_turn_s": config.getfloat(
                 "no_tag_turn_time", oams_tags.NO_TAG_TURN_S, minval=1.),
+            "static_turn_s": config.getfloat(
+                "static_turn_time", oams_tags.STATIC_TURN_S, minval=0.),
+            "static_turn_mm": config.getfloat(
+                "static_turn_length", oams_tags.STATIC_TURN_MM, minval=0.),
         }
         self._attached = None
 
@@ -854,8 +879,11 @@ class OpenAmsMfrc522Pair:
 
     def sample_reader(self, index):
         """Sample one reader now (``OAMS_RFID_SCAN BAY=``): its UIDs, or
-        None when the sample went wrong."""
-        return self.readers[index]._sample(self.reactor.monotonic())
+        None when the sample went wrong. An explicit read decodes a tag at
+        rest now, whenever its last decode failed."""
+        reader = self.readers[index]
+        reader._decode_failed.clear()
+        return reader._sample(self.reactor.monotonic())
 
     def activate_reader(self, reader, force=False):
         """Select one reader and ensure only its RF field is enabled."""
@@ -880,8 +908,9 @@ class OpenAmsMfrc522Pair:
         self.tag_processor = self.printer.lookup_object(
             "bambu_lab_tag_processor", None)
         self.tag_reader()
-        for reader in self.readers:
-            reader._initialize(eventtime)
+        with self._mutex:
+            for reader in self.readers:
+                reader._initialize(eventtime)
 
     def _poll(self, eventtime):
         """Both readers in turn every ``poll_interval``; only the readers

@@ -53,6 +53,7 @@ cd ~/openams
 | `--cortex-bridge` | Install the Cortex Bridge relay even with no bridge connected | when a bridge is connected |
 | `--no-cortex-bridge` | Do not install the Cortex Bridge relay | — |
 | `--no-taglib-download` | Do not download the tag library (about 200 MB) | off |
+| `--no-lcd-menu` | Leave the OpenAMS entries out of the printer's LCD menu, and remove the include an earlier run added | off: included when the printer has a `[display]` |
 
 Three pairs cannot be combined: `--skip-gco-routines` with
 `--require-gco-routines`, `--spoolman-url` with `--no-spoolman`, and
@@ -76,18 +77,38 @@ bridge in, and `OPENAMS_BRIDGE_PYTHON` is the Python its relay runs with.
 
 | What | Change |
 |---|---|
-| `~/klipper/klippy/extras/` | One symlink per `src/*.py` |
+| `~/klipper/klippy/extras/` | One symlink per `src/*.py` (a module added by a later update is found in the checkout until the next run links it) |
 | `~/klipper/klippy/extras/klipper_mmu` | Symlink to `klipper_mmu/host` |
 | `~/klipper/scripts/` | One symlink per `scripts/*.py` |
 | `~/moonraker/moonraker/components/openams_spoolman` | Symlink to `moonraker/openams_spoolman` |
-| Config directory | `oams.cfg` (from [`oams_sample.cfg`](../../oams_sample.cfg)) — **only if absent**; `oams_macros.cfg` and `oams_macros_ordered.cfg` — **symlinks** to the checkout |
-| `printer.cfg` | `[include oams.cfg]` above `[printer]` — only if absent |
+| Config directory | `oams.cfg` (from [`oams_sample.cfg`](../../oams_sample.cfg)) — **only if absent**; `oams_macros.cfg`, `oams_macros_ordered.cfg` and `oams_menu.cfg` — **symlinks** to the checkout |
+| `printer.cfg` | `[include oams.cfg]` above `[printer]` — only if absent; `[include oams_menu.cfg]` right below it, only when the printer has a `[display]` ([LCD menu](#lcd-menu)) |
 | `~/moonraker/moonraker/components/openams_taglib` | Symlink to `moonraker/openams_taglib` |
 | `moonraker.conf` | `[update_manager openams]`, `[spoolman]`, `[openams_spoolman]`, `[openams_taglib]`, and `[update_manager Bambu-Lab-RFID-Library]` once the library is downloaded — each only if absent |
 | `~/Bambu-Lab-RFID-Library` | The tag library, cloned if absent (about 200 MB; `--no-taglib-download` skips it) |
 | Cortex Bridge only | See [Cortex Bridge](#cortex-bridge) below |
 
 Running the installer twice changes nothing.
+
+### LCD menu
+
+On a printer with a Klipper display, the installer adds the OpenAMS entries to
+the display's menu ([the printer's LCD menu](lcd-menu.md)). It always links
+`oams_menu.cfg`, and adds `[include oams_menu.cfg]` only when it finds a
+`[display]` section in `printer.cfg` or in a file it includes, read the way
+Klipper reads them. Klipper reads `[menu]` sections only through that display;
+on a printer without one they are sections nothing reads, and Klipper refuses
+to start. A named second display (`[display <name>]`) has no menu, so it does
+not count.
+
+| The printer | The installer |
+|---|---|
+| Has a `[display]` | Adds the include below `[include oams.cfg]`, once |
+| Has no `[display]` | Adds nothing; takes out an include an earlier run added, so a printer whose display was removed still starts |
+| Config it cannot read (an include that does not exist) | Leaves the include as it is, and says so |
+| `--no-lcd-menu` | Adds nothing, and takes out an include an earlier run added |
+
+Your own `menu.cfg` stays as it is and keeps working.
 
 ### Cortex Bridge
 
@@ -390,13 +411,19 @@ cd ~/openams && ./install.sh
 
 Then run the bring-up ladder again. The installer added an
 `[update_manager openams]` entry, so Moonraker's update button does the same
-`git pull`. Run `./install.sh` afterward to link any files the release added.
+`git pull`. Moonraker cannot run the installer, so a module the release added
+has no link in `klippy/extras` yet; Klipper still starts, because OpenAMS looks
+for such a module in the checkout itself. Run `./install.sh` afterward to link
+the files the release added: a new config section, script or Moonraker
+component needs its link, and the release notes say when one is new.
 On a Cortex Bridge printer the update restarts the bridge relay too; new
 bridge firmware arrives with it and is installed separately
 ([update the Cortex Bridge firmware](cortex-bridge-update.md)).
 
-`oams_macros.cfg` and `oams_macros_ordered.cfg` in your config directory are
-links to the checkout, so the pull is enough to update them. Running the
+`oams_macros.cfg`, `oams_macros_ordered.cfg` and `oams_menu.cfg` in your
+config directory are links to the checkout, so the pull is enough to update
+them. The LCD menu arrived after some printers were installed: on such a
+printer, run `./install.sh` once to link `oams_menu.cfg` and include it. Running the
 installer on an older install replaces an unmodified copy with the link. A copy
 you edited is kept as `oams_macros.cfg.bak-<date>` and the installer says so;
 move what you changed into the hook macros in your own file
@@ -412,7 +439,7 @@ cd ~/openams && ./install.sh -u
 
 It removes the OpenAMS links (including the Moonraker component link), the
 `klipper_mmu` host symlink, the MCU add-on hooks when present, the
-`[include oams.cfg]` line, `[update_manager openams]`, `[openams_spoolman]`,
+`[include oams.cfg]` and `[include oams_menu.cfg]` lines, `[update_manager openams]`, `[openams_spoolman]`,
 `[openams_taglib]` and `[update_manager Bambu-Lab-RFID-Library]` (the downloaded library
 stays). On a Cortex Bridge printer it also stops and removes the relay service and its
 `/etc` files, the `openams_bridge` component and section, and its
@@ -425,8 +452,8 @@ Spoolman, its data, the `[spoolman]` section and the gco-routines checkout stay.
 
 - **Never run it as root.** It calls `sudo` itself where it must.
 - **Never run it during a print.** It stops and starts Klipper.
-- `oams_macros.cfg` and `oams_macros_ordered.cfg` in your config directory are
-  links to the checkout, so do not edit them: an edit would change the
+- `oams_macros.cfg`, `oams_macros_ordered.cfg` and `oams_menu.cfg` in your
+  config directory are links to the checkout, so do not edit them: an edit would change the
   checkout. An older install had copies; the installer replaces an unmodified
   copy with the link and keeps a customized one as `<name>.bak-<date>`. Put your
   changes in your own file, through the hooks
@@ -436,6 +463,7 @@ Spoolman, its data, the `[spoolman]` section and the gco-routines checkout stay.
 
 - [Configure](configure.md) — edit `oams.cfg`.
 - [Using OpenAMS](using.md) — load, unload, toolchange, calibrate.
+- [The printer's LCD menu](lcd-menu.md) — the OpenAMS entries on a Klipper display.
 - [Troubleshooting](troubleshooting.md) — match an error to a fix.
 - [oams_sample.cfg](../../oams_sample.cfg) — the annotated reference config.
 - [install.agents.md](../../install.agents.md) — the same install for an AI agent.

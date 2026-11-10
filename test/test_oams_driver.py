@@ -852,5 +852,55 @@ class V2WireBytesUnchangedTests(unittest.TestCase):
         self.assertEqual(runtime.system.lanes[rt.FPS].op_gen, 300)
 
 
+class GcodeError(Exception):
+    pass
+
+
+class RawGcmd(object):
+    """Raw ``get()`` values, as the OAMS_RFID_SCAN handlers read them."""
+
+    def __init__(self, values):
+        self.values = values
+        self.responses = []
+
+    def get(self, name, default=None):
+        return self.values.get(name, default)
+
+    def error(self, message):
+        return GcodeError(message)
+
+    def respond_info(self, message):
+        self.responses.append(message)
+
+
+class RfidScanArgumentTests(unittest.TestCase):
+    """A typo in OAMS_RFID_SCAN's numbers is a command error, never a
+    ValueError: Klipper shuts down on an exception that is not a command
+    error, mid-print if one runs (review 2026-11-10, finding 13)."""
+
+    def _oams(self):
+        o = OAMS.__new__(OAMS)
+        o.bay_count = 4
+        return o
+
+    def test_bad_bay_assert_or_turn_is_a_command_error(self):
+        for values in ({"BAY": "a"}, {"BAY": "1", "ASSERT": "yes"},
+                       {"BAY": "1", "TURN": "x"}, {"BAY": "1.5"}):
+            with self.subTest(values=values):
+                with self.assertRaises(GcodeError):
+                    self._oams().rfid_scan_args(RawGcmd(values))
+
+    def test_good_values_still_parse(self):
+        self.assertEqual(self._oams().rfid_scan_args(
+            RawGcmd({"BAY": "2", "ASSERT": "1"})), (2, True))
+        self.assertEqual(self._oams().rfid_scan_args(RawGcmd({})),
+                         (None, False))
+
+    def test_a_bad_bay_on_a_unit_that_reads_its_own_tags(self):
+        o = self._oams()
+        with self.assertRaises(GcodeError):
+            o._cmd_tray_read(RawGcmd({"BAY": "b"}))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

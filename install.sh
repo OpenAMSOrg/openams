@@ -40,7 +40,7 @@ if [ ! -d "${MOONRAKER_CONFIG_DIR}" ]; then
     MOONRAKER_CONFIG_DIR="${HOME}/klipper_config"
 fi
 
-usage(){ echo "Usage: $0 [-k <klipper path>] [-s <klipper service name>] [-c <configuration path>] [-r <gco-routines checkout>] [-u] [--with-mcu-addon] [--skip-gco-routines | --require-gco-routines] [--with-klipper-patches | --remove-klipper-patches] [--spoolman-url <url> | --no-spoolman] [--cortex-bridge | --no-cortex-bridge] [--no-taglib-download] [--mainsail-panel]" 1>&2; exit 1; }
+usage(){ echo "Usage: $0 [-k <klipper path>] [-s <klipper service name>] [-c <configuration path>] [-r <gco-routines checkout>] [-u] [--with-mcu-addon] [--skip-gco-routines | --require-gco-routines] [--with-klipper-patches | --remove-klipper-patches] [--spoolman-url <url> | --no-spoolman] [--cortex-bridge | --no-cortex-bridge] [--no-taglib-download] [--mainsail-panel] [--no-lcd-menu]" 1>&2; exit 1; }
 # Parse command line arguments. The one long option is pulled out first so
 # getopts never sees it, then the short options are parsed as before.
 SHORT_ARGS=()
@@ -65,6 +65,7 @@ for arg in "$@"; do
         --cortex-bridge) CORTEX_BRIDGE_ON=1;;
         --no-cortex-bridge) CORTEX_BRIDGE_OFF=1;;
         --mainsail-panel) MAINSAIL_PANEL=1;;
+        --no-lcd-menu) NO_LCD_MENU=1;;
         --no-taglib-download) NO_TAGLIB_DOWNLOAD=1;;
         -h|--help) usage;;
         *) SHORT_ARGS+=("$arg");;
@@ -212,7 +213,12 @@ check_folders()
     fi
 }
 
-# Link OpenAMS extension modules to Klipper
+# Link OpenAMS extension modules to Klipper: one link per module, since Klipper
+# loads a config section's module only from its own file in klippy/extras. An
+# update through Moonraker's update manager is a git pull and runs none of
+# this, so a module a later release adds has no link until the next run: every
+# module that imports a sibling first puts its own checkout on the package's
+# path, and the sibling is found there (test/test_updated_install.py).
 link_extension()
 {
     echo -n "Linking OpenAMS extension to Klipper... "
@@ -1087,6 +1093,9 @@ install_config()
     # Optional gco-routines opt-in. Linking it enables nothing: it only takes
     # effect when included after [gco_routines] is added (see README).
     link_shipped_macro "oams_macros_ordered.cfg"
+    # The LCD menu entries. Linking it enables nothing either: add_menu_include
+    # includes it where the printer has a [display].
+    link_shipped_macro "oams_menu.cfg"
 
     echo "[OK]"
 }
@@ -1135,6 +1144,98 @@ add_printer_includes()
     echo "[OK]"
 }
 
+# Whether printer.cfg, with the files it includes, has a [display] section:
+# 0 yes, 1 no, anything else when it cannot tell (install_helpers/has_display.py).
+printer_has_display()
+{
+    command -v python3 >/dev/null 2>&1 || return 2
+    python3 "${SCRIPT_DIR}/install_helpers/has_display.py" "${MOONRAKER_CONFIG_DIR}" printer.cfg
+}
+
+# Take [include oams_menu.cfg] out of printer.cfg, nothing else.
+remove_menu_include_line()
+{
+    local printer_cfg="${MOONRAKER_CONFIG_DIR}/printer.cfg"
+    local tmp_cfg bak_cfg
+    tmp_cfg="$(mktemp)"
+    bak_cfg="$(mktemp)"
+    cp -p "$printer_cfg" "$bak_cfg"
+    awk '!/^\[include[[:space:]]*oams_menu\.cfg\]$/' "$printer_cfg" > "$tmp_cfg" || { rm -f "$tmp_cfg" "$bak_cfg"; return 1; }
+    cat "$tmp_cfg" > "$printer_cfg" || { cp -p "$bak_cfg" "$printer_cfg"; rm -f "$tmp_cfg" "$bak_cfg"; return 1; }
+    rm -f "$tmp_cfg" "$bak_cfg"
+}
+
+# Include the OpenAMS entries of the printer's LCD menu (oams_menu.cfg) from
+# printer.cfg, right below [include oams.cfg], on a printer with a [display]
+# section. Klipper reads [menu] sections only through its primary [display];
+# on a printer without one they are unused sections, and Klipper refuses to
+# start. So a printer with no [display], or a run with --no-lcd-menu, gets no
+# include, and loses one an earlier run added (its display was removed since).
+add_menu_include()
+{
+    echo -n "Adding the OpenAMS LCD menu to printer.cfg... "
+    local printer_cfg="${MOONRAKER_CONFIG_DIR}/printer.cfg"
+    local included=0 found=0 tmp_cfg bak_cfg
+
+    if [ ! -f "$printer_cfg" ]; then
+        echo "[SKIPPED] printer.cfg not found."
+        return
+    fi
+    if grep -q '^\[include[[:space:]]*oams_menu\.cfg\]$' "$printer_cfg"; then
+        included=1
+    fi
+
+    if [ "${NO_LCD_MENU:-0}" = "1" ]; then
+        if [ "$included" = "1" ]; then
+            remove_menu_include_line || return 1
+            echo "--no-lcd-menu: [include oams_menu.cfg] removed [OK]"
+        else
+            echo "[SKIPPED] --no-lcd-menu"
+        fi
+        return
+    fi
+
+    printer_has_display || found=$?
+    if [ "$found" = "1" ]; then
+        if [ "$included" = "1" ]; then
+            remove_menu_include_line || return 1
+            echo "the printer has no [display] section, so Klipper would refuse the menu; [include oams_menu.cfg] removed [OK]"
+        else
+            echo "[SKIPPED] the printer has no [display] section, so no LCD menu."
+        fi
+        return
+    fi
+    if [ "$found" != "0" ]; then
+        echo "[SKIPPED] could not read the printer config to look for a [display] section;"
+        echo "  on a printer with one, add [include oams_menu.cfg] below [include oams.cfg] by hand."
+        return
+    fi
+    if [ "$included" = "1" ]; then
+        echo "oams_menu.cfg already included [SKIPPED]"
+        return
+    fi
+
+    tmp_cfg="$(mktemp)"
+    bak_cfg="$(mktemp)"
+    cp -p "$printer_cfg" "$bak_cfg"
+    awk '
+    { print }
+    !inserted && /^\[include[[:space:]]*oams\.cfg\]$/ {
+        print "[include oams_menu.cfg]"
+        inserted=1
+    }
+    END { if (!inserted) exit 3 }
+    ' "$printer_cfg" > "$tmp_cfg" || {
+        rm -f "$tmp_cfg" "$bak_cfg"
+        echo "[SKIPPED] printer.cfg has no [include oams.cfg] line to put it under;"
+        echo "  add [include oams_menu.cfg] next to wherever oams.cfg is included."
+        return
+    }
+    cat "$tmp_cfg" > "$printer_cfg" || { cp -p "$bak_cfg" "$printer_cfg"; rm -f "$tmp_cfg" "$bak_cfg"; return 1; }
+    rm -f "$tmp_cfg" "$bak_cfg"
+    echo "[OK]"
+}
+
 # Remove OpenAMS config include from printer.cfg without deleting nearby config
 remove_printer_includes()
 {
@@ -1156,6 +1257,10 @@ remove_printer_includes()
     BEGIN { skip_blank=0 }
     /^\[include[[:space:]]*oams\.cfg\]$/ {
         skip_blank=1
+        next
+    }
+    # The menu include sits right below it; the blank line after both goes.
+    /^\[include[[:space:]]*oams_menu\.cfg\]$/ {
         next
     }
     skip_blank && /^$/ {
@@ -1241,11 +1346,12 @@ uninstall()
             rm -f "${KLIPPER_PATH}/scripts/$(basename "$file")"
         done
         echo "[OK]"
-        read -p "Remove oams.cfg, oams_macros.cfg and oams_macros_ordered.cfg from ${MOONRAKER_CONFIG_DIR}? [y/N] " confirm
+        read -p "Remove oams.cfg, oams_macros.cfg, oams_macros_ordered.cfg and oams_menu.cfg from ${MOONRAKER_CONFIG_DIR}? [y/N] " confirm
         if [[ "$confirm" =~ ^[Yy]$ ]]; then
             rm -f "${MOONRAKER_CONFIG_DIR}/oams.cfg"
             rm -f "${MOONRAKER_CONFIG_DIR}/oams_macros.cfg"
             rm -f "${MOONRAKER_CONFIG_DIR}/oams_macros_ordered.cfg"
+            rm -f "${MOONRAKER_CONFIG_DIR}/oams_menu.cfg"
             echo "Config files removed."
         else
             echo "Config files kept."
@@ -1317,6 +1423,7 @@ if [[ -z "${UNINSTALL:-}" ]]; then
     fi
     install_config
     add_printer_includes
+    add_menu_include
     configure_cortex_bridge_units
     configure_spoolman
     configure_taglib

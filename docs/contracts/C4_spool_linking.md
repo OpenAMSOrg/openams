@@ -65,6 +65,9 @@ spool, is kept with the cache (§6), so a Moonraker restart asks again: adopting
 the host's tag link to that same spool after the restart restores
 `pending_confirmation` instead of `linked` (2026-11-09). A confirmation, a
 confirming edit, a manual link, a relink to another spool or an unlink clears it.
+So does the component's first pass after it starts for a bay whose host link is
+no longer that spool by tag (the bay changed while Moonraker was down), and for
+a bay the host no longer reports.
 
 | From | Event | Condition | To | Component does |
 |---|---|---|---|---|
@@ -84,8 +87,9 @@ confirming edit, a manual link, a relink to another spool or an unlink clears it
 | `linked` (tag) | a UI assigns another spool (host `link_source` becomes `manual`) | — | `linked` (manual) | mirror `location` for the new spool, clear it on the old one |
 | `linked` (manual), tagged bay | a re-read is requested | — | `resolving` | re-apply the tag (manual wins until re-read: gap analysis step 5) |
 | `linked`, `pending_confirmation` | removal: `ready` falls **and** the tag is gone | — | `unlinked` | `OAMSM_CLEAR_BAY_SPOOL`; clear `location` |
-| `linked` (tag), `pending_confirmation` | `ready` true and the bay's tag disappears (a re-read found no tag) | `tag_state.state` is not `candidate` or `conflict` | `unlinked` | `OAMSM_CLEAR_BAY_SPOOL`; clear `location` |
-| any | `tag` absent while `tag_state.state` is `candidate` (restored after a host restart) or `conflict` | — | unchanged | nothing: a two-tag host publishes only an attributed tag; the spool is still in the bay. The tag coming back with the same key and `read_at` is no new read. When the component itself started with the bay in that state (a power cycle: no read remembered), the bay's one candidate key (`tag_state.candidates[0].spool_key`) is the tag it waits for: that key confirmed is no new read either, so a manual link the host kept is not overridden; another key is a new read |
+| `linked` (tag), `pending_confirmation` | `ready` true and the bay's tag disappears (a re-read found no tag) | `tag_state.state` is not `candidate` or `conflict`, and the bay is past its startup window (below) | `unlinked` | `OAMSM_CLEAR_BAY_SPOOL`; clear `location` |
+| any | `tag` absent while `tag_state.state` is `candidate` (restored after a host restart) or `conflict` | — | unchanged | nothing: a two-tag host publishes only an attributed tag; the spool is still in the bay. The tag coming back with the same key and `read_at` is no new read |
+| any | the startup window: after the component starts, or Klipper restarts while it runs, until the bay first shows a tag or `ready` false | — | unchanged | nothing: a bay with no tag yet is no removal, whatever its `tag_state` (none, `unknown`, `candidate`), since the host may still be restoring it. The bay waits for a key: the spool key read on it before Klipper restarted, or, with no read remembered (a power cycle), its one restored candidate (`tag_state.candidates[0].spool_key`, on whichever pass of the window it first shows, with a host link). That key confirmed is no new read, so a link the host kept, a manual one too, is not overridden; another key is a new read. With neither (a power cycle of a host that kept no tag cache), a bay the host already held manually linked on the first pass of the window keeps that link over the first tag it shows, which was there all along; a manual link made later in the window gets no such cover, and an explicit re-read (a new `read_at`) applies the tag as always. A unit-decoded summary has no spool key: a bay whose last read was one keeps it remembered across a Klipper restart, as before |
 | any | tag read with `format` `unknown`, or OpenSpool without an id | — | unchanged, unless a spool lists its UID (§4.2 step 8): then `linked` (tag) | nothing else; UIs offer Assign spool |
 | any | `OAMSM_SET_BAY_SPOOL` names a spool already linked to another bay | — | `linked` on the new bay | **RESOLVED (C4 13): move.** The component clears the old bay's link (`OAMSM_CLEAR_BAY_SPOOL`) and reports the move in its response, rather than refusing |
 

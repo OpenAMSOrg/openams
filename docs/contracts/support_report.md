@@ -181,7 +181,9 @@ failed (`odo_start_mm`, `odo_low_mm`, `odo_at_mm`, signed, so a reading
 below park is negative), `since_progress_ms` (since the last counted
 progress; `null` for none), `feed_ms` (from the start to the failure; a
 duration, so 0 stays 0), `odo_flags` (`start`, `base`, `rewind_seen`,
-`rewinding`, `at_valid`, `rule`) and `ams_state` at the failure. Production
+`rewinding`, `at_valid`, `rule`, and from bridge firmware 14 `retract`: the
+row is a pull back's, an unload or a calibration's return that stopped
+because the odometer stood still) and `ams_state` at the failure. Production
 firmware shows its odometer nowhere else, so this row is how a report shows
 the rewind profile of, say, an AMS 1 whose load failed.
 

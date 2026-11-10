@@ -115,6 +115,9 @@ Details: [the install guide](docs/guide/install.md#tag-library).
   the OpenAMS build of Mainsail that carries it
   ([OpenAMSOrg/mainsail](https://github.com/OpenAMSOrg/mainsail), built from
   [openams-ui](https://github.com/OpenAMSOrg/openams-ui)).
+- **The printer's LCD:** on a printer with a Klipper display, the installer
+  adds an OpenAMS entry to its menu: load, unload, retry, tags, calibration
+  and the dryer from the knob ([the LCD menu](docs/guide/lcd-menu.md)).
 - **HelixScreen** supports OpenAMS natively: the OpenAMS backend is part of
   upstream HelixScreen. It ships in the v1.1.0 pre-releases now and in stable
   releases from v1.1.0; v1.0.x does not have it.

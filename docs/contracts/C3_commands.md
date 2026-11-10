@@ -147,24 +147,51 @@ restores the guard state. Then:
   runs `PAUSE`, writes
   `"!! OpenAMS: <the toolchange to T1> failed at the <step> step: <reason>. The
   print is paused: fix it and press RESUME, which retries it."` and returns
-  without an error, so the print file stays open;
+  without an error, so the print file stays open. If the print is still not
+  paused after that (no `[pause_resume]`, or a `PAUSE` that does not pause;
+  2026-11-10), it says `"OpenAMS could not pause the print for <the
+  toolchange to T1>, so its error ends the print ..."` and re-raises the
+  original error, which ends the print: printing on without the filament it
+  asked for would ruin it;
 - otherwise: re-raises the original error.
 A group the topology does not know runs `_TX` unguarded (a configuration
-error, which `_TX` names).
+error, which `_TX` names). Klipper starts without `[pause_resume]`, and so
+does OpenAMS, but the manager then gives a configuration warning at ready
+(`"OpenAMS: this printer has no [pause_resume] section, so a failed toolchange
+cannot pause a print and its error ends the print instead ..."`, Klipper's log
+and a configfile runtime warning); the shipped macros also read
+`printer.pause_resume` and fail without it.
+
+While a print is paused (`print_stats.state` is `paused`, or
+`pause_resume.is_paused`) and the axes are not all homed, every call is
+refused before anything runs (2026-11-10): `"OpenAMS will not run <the
+toolchange to T1 | the unload> while the print is paused: the printer lost
+its position ..."`. Each would home with the print on the bed. A further
+`GROUP=` call from the print file that is left for `RESUME` (below) is taken
+first: it moves nothing.
 
 Ownership. A fault is the print's (`panel` false) when the print's own
 toolchange recorded it (a `GROUP=` call without `SLOT=` while `print_stats` is
 `printing`), or a retry of such a fault. Every other run is a manual action
 (`panel` true): an unload, a `SLOT=` load, anything run while the print is
-paused or with no print. A manual action that fails while the lane holds the
-print's fault raises its own error and records nothing; one that succeeds
-leaves the print's fault in place. A successful run otherwise clears the
-lane's fault.
+paused or with no print. A manual action on a lane that holds the print's
+fault raises its own error when it fails and never replaces that fault, but
+when its run started its plan the fault follows the lane (2026-11-10): a load
+of the print's group that succeeds with the lane holding that group finishes
+the print's fault (and sets the print's group); any other started run gives
+the fault its own failed step (none when it succeeded) and `fed` only when it
+was a load of the print's group that fed it, so `RESUME` never acts on where
+the lane was before. A successful run otherwise clears the lane's fault.
 
 A `GROUP=` call for the group of the lane's unfinished load fault (without
 `SLOT=`, or with the fault's own `SLOT=`) runs as a retry of that fault: the
 diagnosis of `OAMSM_RETRY`, keeping the fault's ownership. Called by the print
-itself, it pauses the print when it fails.
+itself, it pauses the print when it fails, and also when its reset refuses (a
+unit fault stays latched, a unit offline): the fault is recorded with that
+reason and its step and `fed` unchanged, and nothing reaches the print. The
+print's own call meeting a panel fault of its group takes it over as the
+print's, with `slot` cleared: any bay of the group, still through the
+diagnosis (a fresh `_TX` would take a fed, not reloaded bay for loaded).
 
 The pause. After `PAUSE` the command runs `SET_IDLE_TIMEOUT
 TIMEOUT=<pause_idle_timeout>` (`[oams_manager] pause_idle_timeout`, default
@@ -172,8 +199,9 @@ TIMEOUT=<pause_idle_timeout>` (`[oams_manager] pause_idle_timeout`, default
 long), having read the current value from the `idle_timeout` object. It is
 put back with `SET_IDLE_TIMEOUT` after a successful `RESUME`, or on the
 monitor tick once the print is no longer paused, unless something else has set
-another value since. A `RESUME` that refuses (`the print needs <group>`) or
-whose retry fails, with the axes still homed, runs the same
+another value since. A `RESUME` that refuses (`the print needs <group>`),
+whose retry fails, or (when OpenAMS raised the timeout for this pause) whose
+Klipper resume raises, with the axes still homed, runs the same
 `SET_IDLE_TIMEOUT` again before it raises: a `RESUME` macro (Mainsail's) puts
 its own saved value back before it calls Klipper's resume. After `the printer
 lost its position` it does not. If `PAUSE` raises, the command calls
@@ -188,7 +216,10 @@ OAMSM_RETRY, then press RESUME."`.
 A further `GROUP=` call (no `SLOT=`) that comes from the print file
 (`virtual_sdcard.is_cmd_from_sd()`) while the print is paused and holds a
 print's fault moves nothing and raises nothing: the lane's fault takes its
-group, and `RESUME` runs the toolchange to it.
+group, and `RESUME` runs the toolchange to it. The fault keeps the `step` and
+the started note of the toolchange that failed on that lane (2026-11-10), and
+`fed` only when it was for the same group, so a filament cut and still loaded
+is unloaded first rather than taken for printable.
 
 ### `OAMSM_RETRY [FPS=<lane>]`
 `cmd_RETRY` (2026-11-08), the UI's `retry` command. Without `FPS=` it takes the
@@ -197,22 +228,35 @@ specify FPS=<name>"` when there are more). It resets as `OAMSM_CLEAR_ERRORS`
 (raising when a unit fault stays latched), then continues from the lane state:
 a load whose target group is loaded and was `fed` runs `_OAMS_RESUME_TOOLHEAD`
 (heat, forward follower, inlet check, reload, outlet check, `CLEAN_NOZZLE`);
-loaded but not fed runs `OAMSM_UNLOAD_FILAMENT` then `_TX`; another group
+loaded but not fed runs `OAMSM_UNLOAD_FILAMENT` then `_TX` when the fault's
+step is `feed`, else `SAFE_UNLOAD_FILAMENT STRICT=1` then `_TX`; another group
 loaded, or nothing loaded, runs `_TX`; an unload runs the unload again, or
 clears the fault when the lane is already unloaded. It runs inside the same
 guard and raises on failure. More exactly, for a load: a fault whose run never
 started its plan runs `_TX` again; fed with the reload confirmed
 (`_OAMS_FINISH_TOOLCHANGE` was reached, so the outlet check had passed) runs
 `_OAMS_RESUME_TOOLHEAD ... RELOADED=1`, which skips the inlet check and the
-reload and runs what follows them; the rewind is chosen only when the plan had
-reached the feed and the lane holds the very bay being fed; a targeted load
+reload and runs what follows them (that macro sets the plan's `reloaded`
+again right after its plan, so a retry that fails before the finish keeps
+it); the bare rewind is chosen only when the fault's step is `feed` and the
+lane holds the very bay being fed (2026-11-10: before, any step after
+`retract`, so a hook step or a lane loaded during the pause got it); a target
+that is loaded but was not fed by the failed toolchange (it stopped before the
+feed, or the lane changed during the pause) is unloaded through the cutter
+first, since `_TX` would take it for loaded and do nothing; a targeted load
 with another bay of its group loaded runs the whole swap. `fed` is never true
 for a run that did not start its plan, and for a targeted load only when the
-target bay is the one loaded.
+target bay is the one loaded. Every `_TX` of a retry carries `RETRY=1`, which
+makes `_TX` finish the toolchange even when the current object is excluded
+(a `T<n>` of an excluded object is skipped; the one it retries was not). A
+load retry counts only when the lane then holds the fault's group (and bay,
+for a targeted load); otherwise it fails with `"the retry ended with <nothing
+is loaded | <group> loaded> on lane <lane>, not <group>"` and the fault stays.
 It raises `"OAMSM_RETRY: a print is printing ..."` while `print_stats` is
-`printing`, and runs nothing. For a print's fault in a paused print with the
-axes not all homed it raises `"OpenAMS cannot retry the failed toolchange: the
-printer lost its position ..."`, moves nothing and keeps the fault.
+`printing`, and runs nothing. For any fault (the print's or a panel one) in a
+paused print with the axes not all homed it raises `"OpenAMS cannot retry the
+failed toolchange: the printer lost its position ..."`, moves nothing and
+keeps the fault.
 
 ### `RESUME` (Klipper's, wrapped)
 At ready the manager finds the command whose handler unwraps to
@@ -428,25 +472,42 @@ and answers with the bay's attribution (C2 §4.6.1), one of:
   OAMS_RFID_SCAN ... ASSERT=1)"`: one spool key no other bay holds was in
   the field; the bay now has it as a candidate, never as its `tag`;
 - `"<unit> Spool <n>: conflict <reason>"` (`reason` as C2 §4.5.2, with
-  `" (also on Spool <m>)"` for `claimed_twice`);
+  `" (also on Spool <m>)"` for `claimed_twice`). A sample at rest shows no
+  motion, so a re-read settles a conflict only when its contradiction is
+  gone (C2 §4.6.1): `claimed_twice` once no other bay holds the key (it
+  answers `candidate`), `changed_in_place` once the different key is another
+  bay's by its own evidence (`attributed`, `read_at` unchanged),
+  `two_moving` / `ambiguous_pair` once one of the two keys is (the other
+  key a `candidate`, or the bay's own key `attributed`). It never adds a
+  candidate to a conflict. Otherwise it answers `conflict` again: load the
+  spool, or `ASSERT=1`;
 - `"<unit> Spool <n>: no tag in the field"`, with `" (the tag in the field
   is Spool <m>'s)"` when the only tag answering belongs to another bay, or
   `" (the bay holds no spool)"` when its `ready` is false.
 
-A sample that finds no tag never clears the bay's `tag`. Without `BAY`
-the command is unchanged.
+A sample that finds no tag never clears the bay's `tag`. An explicit read
+decodes a tag at rest afresh: a Bambu tag given up as `unknown` after failed
+decodes is tried again. Without `BAY` the command is unchanged.
 
 `ASSERT=1` is the user saying "the tag in this bay's field is this bay's"
 (the display's "It is this slot"): the single spool key in a fresh sample is
-attributed to the bay (evidence `asserted`, a new `read_at`), moving it from
-a bay that held it by inference. Refused with `"<unit> Spool <n> holds no
+attributed to the bay (evidence `asserted`, a new `read_at`), whatever the
+bay's state, a `conflict` of any reason too, and any other bay that held
+that key loses it (`unknown`), however it got it: the user's word beats the
+clone rule (C2 §4.6). One exception keeps the user from confirming a tag
+they were not shown: on a `candidate` bay whose candidates do not include the
+key in the field, the first `ASSERT=1` only makes that key the bay's candidate
+(`"<unit> Spool <n>: candidate <key> (not the tag this bay showed; ASSERT=1
+again confirms it)"`), and the next one attributes it. Refused with `"<unit> Spool <n> holds no
 spool (its sensor reads empty)"` on a bay whose `ready` is false, `"No tag in
 the field of <unit> Spool <n>'s reader"` when nothing answers, and `"Two tags
 answer this reader; turn the other spool away"` when two spool keys do.
 `TURN=1` asks for a bounded turn of the spool to bring its tag past the
 reader; no unit offers that operation, so it is refused with `"This unit
 cannot turn a spool to read its tag"`. `ASSERT` and `TURN` take 0 or 1
-(`"ASSERT and TURN take 0 or 1"`). `supported_actions` lists `rfid_scan` for
+(`"ASSERT and TURN take 0 or 1"`); `BAY`, `ASSERT` and `TURN` that are not
+whole numbers are refused (`"<NAME> must be a whole number, not '<value>'"`),
+never an internal error. `supported_actions` lists `rfid_scan` for
 such a unit.
 
 **The reader service (S4b, EXISTS — `src/oams_tags.py`).** One `TagReader`
@@ -678,6 +739,13 @@ native-operation protocol) still stops its follower; the sequence then stops
 when the unload ends, at the next boundary.
 
 Moonraker exposes it as `POST /server/openams/stop` (C4 §9.1).
+
+The printer's LCD menu reaches the same stop without G-code (2026-11-10).
+Klipper's menu sends the printer event `menu:__main __openams __stop:populate`
+when the Stop entry of `oams_menu.cfg` is opened, from the reactor; the manager
+handles it as `openams/stop` without `lane` (`MENU_STOP_EVENT`,
+`_menu_stop`), answers in the console (`"OpenAMS: Stop from the printer's
+menu: stopping"`, or `nothing running`), and never raises into the menu.
 
 ### `OAMS_DRYER_START ... ROTATE=<0|1>` (H6)
 Extends the existing `OAMS_DRYER_START` (§2) with spool rotation during

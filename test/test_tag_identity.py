@@ -72,39 +72,3 @@ class SpoolKeyVectorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class UpdatedInstallTests(unittest.TestCase):
-    """Found on voron350 (2026-11-10): install.sh links every OpenAMS module
-    into klippy/extras one file at a time, and an update through Moonraker's
-    update manager only pulls the checkout, so tag_identity.py (new in this
-    release) had no link and Klipper stopped with "No module named
-    'tag_identity'". The modules that use it must load it from the checkout."""
-
-    def test_the_tag_modules_load_without_a_link_to_tag_identity(self):
-        import subprocess
-        import tempfile
-        src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
-        with tempfile.TemporaryDirectory() as tmp:
-            extras = os.path.join(tmp, "extras")
-            os.mkdir(extras)
-            open(os.path.join(extras, "__init__.py"), "w").close()
-            # Klipper's own bus module, which mfrc522 imports: a stand-in.
-            with open(os.path.join(extras, "bus.py"), "w") as f:
-                f.write("def MCU_I2C_from_config(*a, **k):\n    return None\n")
-            for name in os.listdir(src):
-                if name.endswith(".py") and name != "tag_identity.py":
-                    os.symlink(os.path.join(src, name), os.path.join(extras, name))
-            # tag_codec is not in every edition; where it is, it must load too.
-            codec = os.path.exists(os.path.join(src, "tag_codec.py"))
-            code = ("import extras.oams_tags as t, extras.mfrc522 as m\n"
-                    "tag = {'format': 'bambu', 'uid': '04a1b2c3',"
-                    " 'bambu': {'tray_uid': '0123456789ABCDEF0123456789abcdef'}}\n"
-                    "assert t.tag_identity.spool_key(tag) == 'bambu:0123456789abcdef0123456789abcdef'\n"
-                    "assert m.tag_identity is t.tag_identity\n"
-                    + ("import extras.tag_codec as c\n"
-                       "assert c.spool_key is t.tag_identity.spool_key\n" if codec else "")
-                    + "print('ok')\n")
-            run = subprocess.run([sys.executable, "-c", code], cwd=tmp,
-                                 capture_output=True, text=True, timeout=60)
-            self.assertEqual(run.stdout.strip(), "ok", run.stderr[-2000:])

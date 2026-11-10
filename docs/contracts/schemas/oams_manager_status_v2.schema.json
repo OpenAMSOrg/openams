@@ -431,7 +431,7 @@
             "group": {"type": ["string", "null"], "description": "The target group of a load; null for an unload."},
             "slot": {"type": ["string", "null"], "description": "The targeted slot id of a panel load, as given; null otherwise."},
             "temp": {"type": ["string", "null"], "description": "The TEMP= override, as given; null otherwise."},
-            "step": {"type": ["string", "null"], "description": "The plan step that was running (C2 §5.3), or null when it failed before its plan started."},
+            "step": {"type": ["string", "null"], "description": "The plan step that was running (C2 §5.3), or null when it failed before its plan started. A manual action that started on the lane since (a print's fault) sets its own failed step, or null when it finished."},
             "reason": {"type": "string", "description": "The error, operator-readable."},
             "panel": {"type": "boolean", "description": "True when the panel started it (no print to pause)."},
             "fed": {"type": "boolean", "description": "True when the AMS had fed the target group to the extruder gears: a retry then finishes the toolhead part only."},

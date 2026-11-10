@@ -158,7 +158,7 @@ One entry per FPS lane (one per toolhead), keyed by the lane's short name.
 | `extruder` | string | — | no | NEW-v2 | HC | H1 | the lane's extruder; today only in the `openams/status` webhook (`src/oams_manager.py:419-420`); C4 needs it for `SET_PRESSURE_ADVANCE EXTRUDER=` |
 | `motion_settled` | bool | — | no | NEW-v2 | HR | H1 | ; published form of the motion-safety predicate (§5.6): `true` iff nothing is moving and no motion action is in progress: op is `UNLOADED` or `LOADED` with runout `idle`, the printer is not printing, `following` is not `null`, no bay positioning, no `stop`/`pause` fault on any unit of the lane, no `follower_uncertain`, and all units connected. `following` may be `true` on an idle `LOADED` lane (corrected 2026-09-28: requiring `false` made every loaded lane unsettled and hid **Unload**). A UI uses this in place of re-deriving the predicate itself |
 | `motion_blocked_reason` | string | — | n/a (absent when not applicable) | NEW-v2 (additive) | HR | — | non-null only while `following` is `null`: why `motion_settled` is false (follower state unknown after a restart, or a follower command was not acknowledged). absent otherwise. After a restart the manager resolves it itself (see the restart note below), so it is normally transient |
-| `toolchange_fault` | object | — | n/a (absent when not applicable) | NEW-v2 (additive) | HR | — | present only while a toolchange or unload on the lane failed and is not finished (`OAMSM_TOOLCHANGE`): `{kind: load\|unload, group, slot, temp, step, reason, panel, fed, since}`. `step` is the plan step that was running (§5.3) or null when it failed before its plan; `fed` is true when the AMS had fed the target group to the extruder gears, so a retry finishes the toolhead part only; `panel` is true when a UI started it outside a print (a fault recorded while a print is printing or paused belongs to that print, whoever ran the attempt, so `RESUME` retries it). Cleared by a retry that finishes it (`OAMSM_RETRY`, or `RESUME` in a print), by a successful unload, or, for a print's fault, when that print ends; `OAMSM_CLEAR_ERRORS` keeps it |
+| `toolchange_fault` | object | — | n/a (absent when not applicable) | NEW-v2 (additive) | HR | — | present only while a toolchange or unload on the lane failed and is not finished (`OAMSM_TOOLCHANGE`): `{kind: load\|unload, group, slot, temp, step, reason, panel, fed, since}`. `step` is the plan step that was running (§5.3) or null when it failed before its plan; `fed` is true when the AMS had fed the target group to the extruder gears, so a retry finishes the toolhead part only; `panel` is true when a UI started it outside a print (a fault recorded while a print is printing or paused belongs to that print, whoever ran the attempt, so `RESUME` retries it). A manual action that starts its plan on a lane holding a print's fault moves `step` and `fed` to where that action left the lane (`fed` only for a load of the fault's group that fed it). Cleared by a retry that finishes it (`OAMSM_RETRY`, or `RESUME` in a print, with the lane then holding the group), by a successful unload, by a manual load of a print's fault's group that finishes with the lane holding it, or, for a print's fault, when that print ends; `OAMSM_CLEAR_ERRORS` keeps it. A print's own `T<n>` that meets a panel fault of its group takes it over: `panel` false and `slot` null |
 | `filament_temp_c` | int | °C | yes | NEW-v2 | SM, via the component | H2 | the loaded bay's `devices.<unit>.bays[i].filament.temp_c` (§4.5.1), so an unload can heat to the temperature of what is actually in the extruder. `null` when the lane holds nothing, or when that bay's temperature is unknown |
 
 Not published, by design: `op_gen`, `op_deadline`, `pause_origin`, `coast_origin`,
@@ -221,7 +221,7 @@ no WP (unchanged):
 | `identity.firmware` | string | yes | FW | H1 | today `capabilities.firmware_version` from the dictionary `MCU_VERSION` (`src/ams_family.py:285`) |
 | `identity.board` | string | yes | FW | H1 | today `capabilities.board_name` (`src/ams_family.py:284`): the dictionary's `BOARD_NAME`, or `"oams-stm32f072"` for the STM32F072 replacement mainboard, which has none (recognized from its `MCU` constant, C1 §1.4) |
 | `calibration.state` | enum `configured`, `calibrating`, `uncalibrated` | no | HC + HR | H1 | D7, derivation §5.4 |
-| `calibration.path_length_mm` | number | no | HC | H1 | the unit's shared `ptfe_length` in mm; `0` when none is configured (the sample config's `ptfe_length: 0`), never `null`: `calibration.state` is `uncalibrated` then |
+| `calibration.path_length_mm` | number | no | HC | H1 | the unit's shared `ptfe_length` in mm; with no shared length but every bay's own `ptfe_length_<i>` set (a config left from per-bay calibration), the longest of those; `0` when neither is configured (the sample config's `ptfe_length: 0`), never `null`: `calibration.state` is `uncalibrated` then |
 | `environment` | `{temp_c, rh_pct, source}` | yes | FW, or a host `[hdc1080]` sensor when the firmware has no environment query (`source: "hdc1080"`) | H1, F3 | §5.9 |
 | `dryer` | `{state, target_c, remaining_s, heater_pct, fan_pct, fault, adapter}` | yes: no dryer | FW | H1, H6, F2, F5 | §5.9 |
 | `faults` | array of §4.8 | no | FW + HR | H1 | ARCHITECTURE §8.1; §5.7 |
@@ -391,7 +391,7 @@ On a unit whose reads the host attributes (§4.6.1) every bay carries:
 | Key | Type | Note |
 |---|---|---|
 | `state` | enum `none`, `unknown`, `candidate`, `attributed`, `conflict` | `none`: no spool (`ready` false, nothing kept). `unknown`: a spool, no tag evidence yet (its tag has not passed the reader). `candidate`: one tag seen with weak evidence only. `attributed`: the tag is the bay's; it is then in `tag`. `conflict`: the evidence contradicts itself |
-| `reason` | `null` or `two_moving`, `claimed_twice`, `changed_in_place`, `ambiguous_pair`, `no_tag_after_turn` | with `conflict`: two keys moved while only this bay turned; the tag is held in place by another bay (`other_bay`); a different spool's tag showed motion on a bay that stayed in place; two bays inserted together share the candidates. `no_tag_after_turn` comes with `unknown`: the bay's spool turned past the reader (30 s of sampled turning in all, §4.6.1) and showed no tag, so there is nothing left to wait for; likewise on a reader that is read only when asked (not while a spool turns), once the bay's insertion read found no tag or for a spool that was there before the host started; it is also what the identify turn (C3) reports |
+| `reason` | `null` or `two_moving`, `claimed_twice`, `changed_in_place`, `ambiguous_pair`, `no_tag_after_turn` | with `conflict`: two keys moved while only this bay turned; the tag is held in place by another bay (`other_bay`); a different spool's tag showed motion on a bay that stayed in place; two bays inserted together share the candidates. `no_tag_after_turn` comes with `unknown`: the bay's spool turned past the reader (30 s of real, sampled turning in all, §4.6.1) and showed no tag, so there is nothing left to wait for; likewise on a reader that is read only when asked (not while a spool turns), once the bay's insertion read found no tag or for a spool that was there before the host started; it is also what the identify turn (C3) reports |
 | `candidates` | array, at most 2, of `{spool_key, uid, material, color_argb}` | what a `candidate` or `conflict` bay saw: spool key (§4.6), UID (lowercase hex), material and colour of its decoded record (`null` while not decoded) |
 | `other_bay` | int or null | the other bay, for `claimed_twice` |
 | `reader` | int or null | the reader (index into `capabilities.rfid_coverage`) that covers the bay |
@@ -400,7 +400,12 @@ A candidate is never published in `tag`, so a consumer that predates
 `tag_state` never acts on one, and `tag` is `null` while the bay is in
 conflict. A conflict that settles back on the same spool publishes the same
 `tag` again, `read_at` included. Conflicts clear by evidence or by `ready`
-falling, never by time.
+falling, never by time (§4.6.1 says which evidence settles each).
+
+A status read always shows the attribution as restored after a restart: once
+the unit's first hardware snapshot is in, the host restores it before it
+answers, so no status shows a ready bay as `unknown` merely because the
+restore has not run yet.
 
 ### 4.6 `devices.<unit>.bays[i].tag` — NEW-v2 (H1)
 
@@ -496,7 +501,8 @@ runout is not removal) and cleared once the runout has ended with `ready`
 still false. A tag attributed to one bay is cleared from another bay that
 held the same spool key (the spool moved), except a bay that got it from its
 own spool's motion (or `ASSERT=1`) and whose `ready` has not fallen since:
-then both keep it (`shared_identity`).
+then both keep it (`shared_identity`). `ASSERT=1` itself is the user's word
+and takes the key from any bay.
 
 #### 4.6.1 Attribution (a reader that covers several bays)
 
@@ -522,16 +528,27 @@ missed sample is not a change.
 | `asserted` | `OAMS_RFID_SCAN BAY=<i> ASSERT=1` with exactly one spool key in the field | attributed |
 | `elimination` | every other covered bay is ready and attributed by `motion`, `single` or `asserted`, and exactly one other spool key is left (in the field or among the bay's candidates) | attributed |
 | `insertion` | a change while exactly one covered bay is handled and none is turning, or a change seen with nothing turning or handled up to 120 s before a covered bay is inserted | candidate; **attributed** when every other covered bay holds a different key, or has been still (not turning, not following the extruder, not handled, no `ready` edge) since the sample before the change |
-| static (negative) | a UID present in every one of 8 samples while one covered bay turns (and no other moves) | not that bay's tag: its candidate goes, the other covered bay gets it as a candidate |
+| static (negative) | a UID present in every one of 8 samples while one covered bay turns for real (and no other moves): at least 3 s, with 630 mm of filament through the unit's encoder (one turn of a full spool) or a tag coming or going on that bay meanwhile | not that bay's tag: its candidate goes, the other covered bay gets it as a candidate. A bay that holds it keeps it: static evidence alone resets no bay (the bay's own motion, or the other bay's, corrects a wrong inference) |
 
 A change of the very UID another covered bay holds by `motion`, `single` or
 `asserted` is that bay's tag missing a sample, not motion of the turning bay.
 A key a covered bay holds only by `insertion` or `elimination` moves to the
-bay whose motion shows it. A ready bay that has turned 30 s in all, sampled
-and undisturbed, with no tag showing, is `unknown` with the reason
-`no_tag_after_turn`. A candidate, like a tag, is kept through a runout.
+bay whose motion shows it. A ready bay that has really turned (each turn
+counted only with the encoder's 630 mm, as for the static rule) 30 s in all,
+sampled and undisturbed, with no tag showing, is `unknown` with the reason
+`no_tag_after_turn`; a bay merely flagged as turning (the positioning window
+after a `ready` edge, an unload whose op is set while the toolhead still
+cuts) counts for neither. A candidate, like a tag, is kept through a runout.
 
-A spool key another bay holds never becomes a candidate here. Two weak keys
+The changes of one sample are all weighed before elimination runs, so two
+tags changing together while one bay turns are `two_moving`, never one bay's
+motion and the other's elimination.
+
+A spool key another bay holds never becomes a candidate here, and neither
+does, by weak evidence (`insertion`, an orphan, a plain re-read), the key of
+a bay restored as a candidate after a restart: that bay most likely still
+holds its spool. Strong evidence still moves it (a spool swapped while the
+host was down shows on the bay that turns it). Two weak keys
 on one bay make an `ambiguous_pair` conflict, which the first motion of
 either bay settles (the moving bay by `motion`, the other by `elimination`).
 A different key showing motion on a bay that holds a key by motion, without
@@ -539,23 +556,55 @@ its `ready` falling, is `changed_in_place`; two keys moving while only one bay
 turns is `two_moving`; inferred evidence (`insertion`, `elimination`) for a
 key another bay holds in place is `claimed_twice`.
 
+Every conflict settles by motion: loading the bay turns it, and its tag
+coming or going attributes it (`motion`). A reader that is read only when
+asked sees no such motion, so there the conflict ends when the unit has
+finished loading or unloading the bay: the key the bay held stands, and a
+claim it only inferred lapses (`unknown`). `OAMS_RFID_SCAN BAY=<i> ASSERT=1`
+settles it with the one spool key in the field, taken from any other bay
+that held it (C3). Its `ready` falling ends it. Otherwise it settles only
+when its contradiction is gone, the moment that happens or at a plain
+re-read: `claimed_twice` once no other bay holds the key (a candidate of
+it); `changed_in_place` once the different key is another bay's by `motion`,
+`single` or `asserted` (attributed again, `read_at` unchanged);
+`two_moving` and `ambiguous_pair` once one of the two keys is another bay's
+by that evidence (the bay's own key attributed again, the other key a
+candidate, or `changed_in_place` on a bay that held a third key). A key
+another bay holds by inference settles nothing: it may come from the very
+motion in question.
+
+A reader that cannot enumerate (it answers one UID per sample and is read
+only when asked, not while a spool turns) cannot show a tag leaving, so what
+it answered is remembered, until the bay holding that tag is emptied (its
+`ready` falls outside a runout). The read after a bay's insertion gives the
+bay only a tag that memory did not hold before the bay's `ready` rose: a tag
+seen before is a neighbour's still spool answering again. That memory is no
+orphan of a later insertion and no input of `elimination`, since a tag it
+holds may have left the unit long ago.
+
 The host samples a covered reader faster while one of its bays turns or is
 handled. A Bambu tag is decoded (9 blocks) only while no bay its reader
 covers is turning; one seen while passing is attributed by UID at once
 (`format: "bambu"`, `bambu: null`) and decoded when it next rests in the
-field. Decoded tags are remembered (a tag cache, persisted next to the
-OpenAMS config file as `openams_tag_cache.json` together with each bay's
-attributed key): a UID decoded once is not read again, block 9 alone
-identifies the other tag of a known spool, and after a restart a bay whose
-`ready` is still true resumes as a candidate of what it held, confirmed
-without a new `read_at` by its first evidence.
+field. Decoded tags are remembered (a tag cache of at most 256 UIDs,
+persisted as `openams_tag_cache.json` next to the OpenAMS config file, or,
+when there is no such file because the `[oams]` sections live in Klipper's
+main config, next to that file; together with each bay's attributed key): a
+UID decoded once is not read again, block 9 alone identifies the other tag
+of a known spool, and after a restart a bay whose `ready` is still true
+resumes as a candidate of what it held, confirmed without a new `read_at` by
+its first evidence. A Bambu tag whose decode failed 3 times is published as
+`unknown`, until a bay's `ready` rises, an explicit read, or the tag coming
+back into the field: then it is pending again (`format: "bambu"`, `bambu:
+null`, in the cache too) and decoded when it rests in the field.
 
-The thresholds (30 s handling window, 120 s orphan memory, 8 samples,
-2-sample debounce, 0.1 s focused sampling, 30 s of turning with no tag) and the default coverage are
-starting values to be measured on the hardware; on an OpenAMS 1 they are
-`[mfrc522]` options (`handling_window`, `orphan_window`, `static_samples`,
-`field_debounce`, `focus_poll_interval`, `no_tag_turn_time`, `bays_a`,
-`bays_b`).
+The thresholds (30 s handling window, 120 s orphan memory, 8 samples, a
+real turn of 3 s and 630 mm, 2-sample debounce, 0.1 s focused sampling, 30 s
+of turning with no tag) and the default coverage are starting values to be
+measured on the hardware; on an OpenAMS 1 they are `[mfrc522]` options
+(`handling_window`, `orphan_window`, `static_samples`, `static_turn_time`,
+`static_turn_length`, `field_debounce`, `focus_poll_interval`,
+`no_tag_turn_time`, `bays_a`, `bays_b`).
 
 ### 4.7 `devices.<unit>.environment` and `.dryer` — NEW-v2
 
@@ -895,7 +944,7 @@ shared `ptfe_length` and optional per-bay `ptfe_length_<n>`,
 | Field | `configured` | `calibrating` | `uncalibrated` |
 |---|---|---|---|
 | `bays[i].calibration_state` | effective length (`ptfe_length_<i>`, else `ptfe_length`) > 0 | a PTFE calibration of this bay is in flight | otherwise |
-| `calibration.state` (unit) | shared `ptfe_length` > 0 | any PTFE calibration on this unit is in flight | otherwise |
+| `calibration.state` (unit) | shared `ptfe_length` > 0, or every bay's own `ptfe_length_<i>` > 0 (2026-11-10: an AMS config upgraded from per-bay calibration; nothing migrates it) | any PTFE calibration on this unit is in flight | otherwise |
 
 `calibrated` is `calibration_state == "configured"`. The lane state does not record
 which kind of calibration is running (the kind rides only on the `StartCalibrate`

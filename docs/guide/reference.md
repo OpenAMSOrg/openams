@@ -147,6 +147,14 @@ One driver owns both readers on one software-SPI bus; needs mainboard firmware
 | `read_block:` | — | Authenticated MIFARE block read |
 | `key:` / `key_b:` | `FFFFFFFFFFFF` / `false` | Per-reader sector key, and whether it is key B |
 | `poll_interval:` | `0.5` | Seconds between polls (minimum 0.1) |
+| `focus_poll_interval:` | `0.1` | Seconds between reads of the reader of a turning or just-inserted bay |
+| `field_debounce:` | `2` | Reads in a row before a tag counts as arrived or gone |
+| `handling_window:` | `30` | Seconds after an insertion during which a tag change is that spool's (weak evidence) |
+| `orphan_window:` | `120` | Seconds a tag change with no bay turning is remembered for the next insertion |
+| `static_samples:` | `8` | Reads through one bay's real turn in which a tag that never changes is not that bay's |
+| `static_turn_time:` | `3` | Seconds a bay must turn before its turn counts as real |
+| `static_turn_length:` | `630` | Millimetres of filament through the unit's encoder (one turn of a full spool) that make a turn real; a tag coming or going on the bay does too |
+| `no_tag_turn_time:` | `30` | Seconds of real turning with no tag seen before a spool counts as having no tag |
 
 Both readers must share one MCU (`both OpenAMS RFID readers must use one MCU`),
 and two drivers cannot claim the same unit (`duplicate MFRC522 driver for

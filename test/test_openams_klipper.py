@@ -187,6 +187,15 @@ class Status:
         return dict(self.values)
 
 
+class PauseFlag(Status):
+    """pause_resume as the manager reads it: Klipper's object has an
+    `is_paused` attribute besides its status."""
+
+    @property
+    def is_paused(self):
+        return self.values["is_paused"]
+
+
 class Printer:
     config_error = ValueError
 
@@ -210,7 +219,7 @@ class Printer:
         self.objects["filament_switch_sensor extruder_in"] = Status(filament_detected=True)
         self.objects["filament_switch_sensor extruder_out"] = Status(filament_detected=False)
         self.objects["extruder"] = Status(can_extrude=True, temperature=220.0, target=220.0)
-        self.objects["pause_resume"] = Status(is_paused=False)
+        self.objects["pause_resume"] = PauseFlag(is_paused=False)
         # A print owns its own temperatures; the macros never change them.
         self.objects["print_stats"] = Status(state="standby")
         # Klipper publishes lowercase section names with their accessed options.
@@ -1925,18 +1934,19 @@ def test_the_working_temperature_is_decided_before_g28_and_read_in_the_helper():
 # continues from there, and pauses again if that fails; Reset clears latched
 # unit faults and keeps an unfinished toolchange for RESUME.
 
-class PauseResume(Status):
-    """pause_resume with Klipper's own resume, which OpenAMS wraps."""
+class PauseResume(PauseFlag):
+    """pause_resume with Klipper's own resume, which OpenAMS wraps. With
+    `refuse` set, Klipper's resume raises that message instead (a move back
+    out of range, say)."""
 
     def __init__(self):
         super().__init__(is_paused=False)
         self.resumed = 0
-
-    @property
-    def is_paused(self):
-        return self.values["is_paused"]
+        self.refuse = None
 
     def cmd_RESUME(self, gcmd):
+        if self.refuse:
+            raise gcmd.error(self.refuse)
         self.resumed += 1
         self.values["is_paused"] = False
 

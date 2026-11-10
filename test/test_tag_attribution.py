@@ -106,9 +106,12 @@ class DesignTests(unittest.TestCase):
         attr = two_readers(static_samples=8)
         settle(attr, [0, 1])
         attr.note_field(0, ["b1000001"], 0.0)   # bay 1's tag at rest
+        attr.note_travel(0.0, 0.0)
         attr.note_turning(0, True, 1.0)         # bay 0 loads
-        for step in range(10):
-            attr.note_field(0, ["b1000001"], 1.0 + 0.1 * step)
+        for step in range(50):                  # 5 s, 200 mm/s of filament
+            now = 1.0 + 0.1 * step
+            attr.note_travel(20.0 * step, now)
+            attr.note_field(0, ["b1000001"], now)
         self.assertEqual(attr.bays[0].state, T.UNKNOWN)
         self.assertEqual(attr.bays[1].state, T.CANDIDATE)
         self.assertEqual(attr.bays[1].candidates[0][0], KEY_B)
@@ -546,8 +549,10 @@ class ReviewTests(unittest.TestCase):
         settle(attr, [0])
         attr.note_field(0, [], 0.0)
         for start in (10.0, 100.0):
+            attr.note_travel(0.0, start)        # each load starts at 0
             attr.note_turning(0, True, start)
             for step in range(8):
+                attr.note_travel(100.0 * step, start + 2.0 * step)
                 attr.note_field(0, [], start + 2.0 * step)
             attr.note_turning(0, False, start + 16.0)
             if start == 10.0:
@@ -582,6 +587,454 @@ class ReviewTests(unittest.TestCase):
         attr.note_turning(0, True, 10.0)
         attr.note_field(0, None, 20.0)             # the reader only errs
         attr.note_turning(0, False, 100.0)
+        self.assertIsNone(attr.tag_state(0)["reason"])
+
+
+def one_reader_insertions():
+    """A reader that answers one UID per scan, read only when asked (the
+    read after an insertion is trusted): bay 0 holds A by its own evidence
+    (a link tag written there), and bay 1's insertion read finds A, which
+    no scan had answered before: claimed_twice."""
+    cache = T.TagCache()
+    for uid, tray in (("a1000001", TRAY_A), ("b1000001", TRAY_B)):
+        cache.put(uid, bambu(tray))
+    attr = T.Attribution(4, [[0, 1, 2, 3]], cache=cache, enumerates=False)
+    attr.init_ready(0, True)
+    attr.note_field(0, [], 0.0)                     # the startup baseline
+    attr.assert_uid(0, "a1000001", 1.0)
+    attr.note_ready(1, True, 4.0)
+    attr.note_field(0, ["a1000001"], 5.0, trigger_bay=1)
+    assert attr.bays[1].reason == T.CLAIMED_TWICE, attr.tag_state(1)
+    return attr
+
+
+class ConflictSettlingTests(unittest.TestCase):
+    """Review 2026-11-10, finding 8: the panel's "Load this spool or press
+    'It is this slot'" for every conflict. Loading settles a conflict by
+    motion; ASSERT=1 settles it with the one key in the field, taking it
+    from any other bay; a plain re-read settles what the evidence allows."""
+
+    def changed_in_place(self):
+        attr = two_readers()
+        settle(attr, [0])
+        attr.note_field(0, [], 0.0)
+        attribute_by_motion(attr, 0, "a1000001", 1.0)
+        attr.note_turning(0, True, 20.0)
+        attr.note_field(0, ["c1000001"], 20.1)
+        attr.note_turning(0, False, 21.0)
+        self.assertEqual(attr.bays[0].reason, T.CHANGED_IN_PLACE)
+        return attr
+
+    def two_moving(self):
+        attr = two_readers()
+        settle(attr, [0, 1])
+        attr.note_field(0, [], 0.0)
+        attr.note_turning(0, True, 1.0)
+        attr.note_field(0, ["a1000001"], 1.1)
+        attr.note_field(0, ["a1000001", "c1000001"], 1.2)
+        attr.note_turning(0, False, 2.0)
+        self.assertEqual(attr.bays[0].reason, T.TWO_MOVING)
+        self.assertEqual(attr.bays[0].key, KEY_A)   # the first to move
+        return attr
+
+    # ------------------------------------------------------- ASSERT=1
+
+    def test_assert_settles_every_conflict(self):
+        cases = {
+            "two_moving": (self.two_moving, 0, "c1000001", KEY_C),
+            "changed_in_place": (self.changed_in_place, 0, "c1000001",
+                                 KEY_C),
+            "claimed_twice": (one_reader_insertions, 1, "a1000001", KEY_A),
+        }
+        for name, (build, bay, uid, key) in sorted(cases.items()):
+            with self.subTest(name):
+                attr = build()
+                outcome = attr.assert_bay(bay, [uid], 30.0)
+                self.assertEqual(outcome["word"], "attributed")
+                self.assertEqual(attr.tag(bay)["spool_key"], key)
+                self.assertEqual(attr.tag(bay)["evidence"], "asserted")
+                self.assertEqual(attr.tag(bay)["read_at"], 30.0)
+                self.assertIsNone(attr.tag_state(bay)["reason"])
+
+    def test_assert_takes_the_key_from_a_bay_holding_it_in_place(self):
+        attr = one_reader_insertions()
+        attr.assert_bay(1, ["a1000001"], 30.0)
+        self.assertEqual(attr.bays[1].key, KEY_A)
+        self.assertEqual(attr.bays[0].state, T.UNKNOWN)
+        self.assertIsNone(attr.tag(0))
+        self.assertEqual(attr.shared_pairs(), [])
+
+    def test_assert_on_a_conflict_still_refuses_two_keys_or_none(self):
+        attr = self.two_moving()
+        self.assertEqual(
+            attr.assert_bay(0, ["a1000001", "c1000001"], 30.0)["word"], "two")
+        self.assertEqual(attr.assert_bay(0, [], 30.0)["word"], "empty")
+        self.assertEqual(attr.bays[0].reason, T.TWO_MOVING)
+
+    # ---------------------------------------------------------- loads
+
+    def test_a_load_settles_changed_in_place_either_way(self):
+        for uid, key in (("a1000001", KEY_A), ("c1000001", KEY_C)):
+            with self.subTest(uid=uid):
+                attr = self.changed_in_place()
+                attribute_by_motion(attr, 0, uid, 40.0)
+                self.assertEqual((attr.bays[0].state, attr.bays[0].key),
+                                 (T.ATTRIBUTED, key))
+
+    def test_a_load_settles_claimed_twice_with_its_own_tag(self):
+        # An enumerating reader: bay 1's own tag passes during its load.
+        attr = two_readers()
+        settle(attr, [0, 1])
+        attr.note_field(0, [], 0.0)
+        attribute_by_motion(attr, 0, "a1000001", 1.0)
+        bay = attr.bays[1]
+        bay.state, bay.reason, bay.other_bay = T.CONFLICT, T.CLAIMED_TWICE, 0
+        bay.candidates = [(KEY_A, "a1000001")]
+        attribute_by_motion(attr, 1, "b1000001", 10.0)
+        self.assertEqual((bay.state, bay.key), (T.ATTRIBUTED, KEY_B))
+        self.assertEqual(attr.bays[0].key, KEY_A)
+
+    # ------------------------------------------------- a plain re-read
+
+    def test_a_reread_settles_claimed_twice_once_the_holder_let_go(self):
+        attr = one_reader_insertions()
+        outcome = attr.explicit_read(1, ["a1000001"], 20.0)
+        self.assertEqual((outcome["word"], outcome["reason"]),
+                         ("conflict", T.CLAIMED_TWICE))
+        self.assertEqual(len(attr.bays[1].candidates), 1)
+        attr.note_ready(0, False, 21.0)        # bay 0's spool came out
+        outcome = attr.explicit_read(1, ["a1000001"], 22.0)
+        self.assertEqual((outcome["word"], outcome["key"]),
+                         ("candidate", KEY_A))
+        self.assertIsNone(attr.tag(1))
+
+    def test_a_reread_never_adds_a_candidate_to_a_conflict(self):
+        attr = one_reader_insertions()
+        attr.explicit_read(1, ["b1000001"], 20.0)
+        self.assertEqual(attr.bays[1].candidates, [(KEY_A, "a1000001")])
+        self.assertEqual(attr.bays[1].reason, T.CLAIMED_TWICE)
+
+    def test_two_moving_settles_when_one_key_is_another_bays(self):
+        attr = self.two_moving()
+        read_at = attr.bays[0].read_at
+        attr.assert_bay(1, ["c1000001"], 10.0)  # the neighbour's tag
+        self.assertEqual((attr.bays[0].state, attr.bays[0].key),
+                         (T.ATTRIBUTED, KEY_A))
+        self.assertEqual(attr.tag(0)["read_at"], read_at)
+        # Inferred holdings settle nothing: they may come from the very
+        # motion in question.
+        attr = self.two_moving()
+        attr.bays[1].state, attr.bays[1].key = T.ATTRIBUTED, KEY_C
+        attr.bays[1].evidence, attr.bays[1].uid = T.ELIMINATION, "c1000001"
+        outcome = attr.explicit_read(0, ["a1000001"], 11.0)
+        self.assertEqual((outcome["word"], outcome["reason"]),
+                         ("conflict", T.TWO_MOVING))
+
+    def test_ambiguous_pair_settles_when_one_key_is_another_bays(self):
+        # Its neighbour asserted: the key left is this bay's candidate,
+        # and the neighbour accounted for by direct evidence, its own by
+        # elimination.
+        attr = two_readers()
+        attr.note_field(0, [], 0.0)
+        attr.note_ready(0, True, 10.0)
+        attr.note_ready(1, True, 12.0)
+        attr.note_field(0, ["a1000001", "b1000001"], 13.0)
+        attr.assert_bay(1, ["b1000001"], 20.0)
+        self.assertEqual((attr.bays[0].state, attr.bays[0].key,
+                          attr.bays[0].evidence),
+                         (T.ATTRIBUTED, KEY_A, T.ELIMINATION))
+
+    def test_changed_in_place_settles_back_when_the_new_tag_is_elsewhere(self):
+        attr = self.changed_in_place()
+        read_at = attr.bays[0].read_at
+        settle(attr, [1])
+        attr.assert_bay(1, ["c1000001"], 50.0)
+        self.assertEqual((attr.bays[0].state, attr.bays[0].key),
+                         (T.ATTRIBUTED, KEY_A))
+        self.assertEqual(attr.tag(0)["read_at"], read_at)
+
+    def test_an_unsettled_conflict_answers_conflict(self):
+        attr = self.two_moving()
+        outcome = attr.explicit_read(0, ["a1000001"], 10.0)
+        self.assertEqual((outcome["word"], outcome["reason"]),
+                         ("conflict", T.TWO_MOVING))
+
+
+class OneUidReaderTests(unittest.TestCase):
+    """A reader that answers one UID per scan and is read only when asked:
+    it cannot show a tag leaving, so what it saw is remembered, and that
+    memory is no evidence for a bay inserted later (review 2026-11-10,
+    findings 7 and 18)."""
+
+    def reader(self, ready=()):
+        cache = T.TagCache()
+        for uid, tray in (("a1000001", TRAY_A), ("b1000001", TRAY_B),
+                          ("c1000001", TRAY_C), ("d1000001", "dd" * 16)):
+            cache.put(uid, bambu(tray))
+        attr = T.Attribution(4, [[0, 1, 2, 3]], cache=cache,
+                             enumerates=False)
+        for bay in ready:
+            attr.init_ready(bay, True)
+        return attr
+
+    def test_the_read_after_an_insertion_skips_tags_seen_before_it(self):
+        # Bay 2's spool was there at startup with its tag in the field;
+        # a spool goes into bay 1 with its tag out of the arc, and the scan
+        # after its insertion answers bay 2's tag again.
+        attr = self.reader(ready=[2])
+        attr.note_field(0, ["b1000001"], 0.0)          # the baseline
+        attr.note_ready(1, True, 10.0)
+        attr.note_field(0, ["b1000001"], 13.0, trigger_bay=1)
+        self.assertEqual(attr.bays[1].state, T.UNKNOWN)
+        self.assertIsNone(attr.tag(1))
+        self.assertEqual(attr.bays[2].state, T.UNKNOWN)
+        # A tag that was not in the field before the rise is the bay's.
+        attr.note_ready(3, True, 20.0)
+        attr.note_field(0, ["c1000001"], 23.0, trigger_bay=3)
+        self.assertEqual((attr.bays[3].key, attr.bays[3].evidence),
+                         (KEY_C, T.INSERTION))
+
+    def test_a_finished_load_settles_a_conflict_on_this_reader(self):
+        # This reader is never sampled while a spool turns, so a load shows
+        # it no motion. The load ending settles the conflict all the same:
+        # the claim the bay only inferred lapses, the holder keeps its tag.
+        attr = self.reader(ready=[0])
+        attr.note_field(0, [], 0.0)
+        self.assertEqual(attr.assert_bay(0, ["a1000001"], 1.0)["word"],
+                         "attributed")
+        attr.note_ready(1, True, 10.0)
+        self.assertEqual(attr.explicit_read(1, ["b1000001"], 11.0)["word"],
+                         "candidate")
+        attr.explicit_read(1, ["c1000001"], 12.0)
+        self.assertEqual((attr.bays[1].state, attr.bays[1].reason),
+                         (T.CONFLICT, T.AMBIGUOUS_PAIR))
+        self.assertTrue(attr.note_operated(1, 60.0))
+        self.assertEqual(attr.bays[1].state, T.UNKNOWN)
+        self.assertEqual(attr.bays[1].candidates, [])
+        self.assertEqual(attr.bays[0].key, KEY_A)
+        self.assertFalse(attr.note_operated(1, 61.0))
+
+    def test_two_tags_changing_in_one_sample_are_weighed_before_elimination(self):
+        # Bay 0 turns; its tag and another one enter in the same sample (the
+        # neighbour was moved by hand). That is two keys moving: the second
+        # must not go to bay 1 by elimination in between.
+        attr = two_readers()
+        settle(attr, [0, 1])
+        attr.note_field(0, [], 0.0)
+        attr.note_turning(0, True, 1.0)
+        attr.note_field(0, ["a1000001", "b1000001"], 1.5)
+        self.assertEqual((attr.bays[0].state, attr.bays[0].reason),
+                         (T.CONFLICT, T.TWO_MOVING))
+        self.assertEqual(attr.bays[1].state, T.UNKNOWN)
+        self.assertIsNone(attr.tag(1))
+
+    def test_a_finished_load_leaves_a_sampled_readers_conflict_to_motion(self):
+        attr = two_readers()
+        settle(attr, [0])
+        attr.note_field(0, [], 0.0)
+        attr.explicit_read(0, ["a1000001", "b1000001"], 1.0)
+        self.assertEqual(attr.bays[0].state, T.CONFLICT)
+        self.assertFalse(attr.note_operated(0, 60.0))
+        self.assertEqual(attr.bays[0].state, T.CONFLICT)
+
+    def test_assert_shows_another_tag_than_the_candidate_before_taking_it(self):
+        # The bay shows spool A as its candidate; the user presses "It is
+        # this slot" while only the neighbour's tag is in the field. The
+        # first press shows that tag instead; the second confirms it.
+        attr = two_readers()
+        settle(attr, [0])
+        attr.note_field(0, [], 0.0)
+        self.assertTrue(attr.restore(0, KEY_A, "a1000001", 7.0))
+        first = attr.assert_bay(0, ["b1000001"], 10.0)
+        self.assertEqual((first["word"], first["key"]), ("candidate", KEY_B))
+        self.assertTrue(first["other_tag"])
+        self.assertIsNone(attr.tag(0))
+        second = attr.assert_bay(0, ["b1000001"], 11.0)
+        self.assertEqual((second["word"], second["key"]),
+                         ("attributed", KEY_B))
+        # The candidate itself in the field is taken at once.
+        attr = two_readers()
+        settle(attr, [0])
+        attr.note_field(0, [], 0.0)
+        attr.restore(0, KEY_A, "a1000001", 7.0)
+        self.assertEqual(attr.assert_bay(0, ["a1000001"], 10.0)["word"],
+                         "attributed")
+
+    def test_a_spool_taken_out_leaves_the_remembered_field(self):
+        attr = self.reader()
+        attr.note_field(0, [], 0.0)
+        attr.note_ready(1, True, 10.0)
+        attr.note_field(0, ["a1000001"], 13.0, trigger_bay=1)
+        self.assertEqual(attr.bays[1].key, KEY_A)
+        attr.note_ready(1, False, 30.0)                # taken out ...
+        attr.note_ready(3, True, 40.0)                 # ... and put here
+        attr.note_field(0, ["a1000001"], 43.0, trigger_bay=3)
+        self.assertEqual((attr.bays[3].state, attr.bays[3].key),
+                         (T.ATTRIBUTED, KEY_A))
+        # The same spool put back where it was is read again too.
+        attr.note_ready(3, False, 50.0)
+        attr.note_ready(3, True, 60.0)
+        attr.note_field(0, ["a1000001"], 63.0, trigger_bay=3)
+        self.assertEqual(attr.bays[3].key, KEY_A)
+
+    def test_a_scan_before_an_insertion_is_no_orphan_for_it(self):
+        attr = self.reader(ready=[0])
+        attr.note_field(0, [], 0.0)
+        attr.note_field(0, ["b1000001"], 5.0)          # a re-read of bay 0
+        attr.note_ready(1, True, 10.0)
+        self.assertEqual(attr.bays[1].state, T.UNKNOWN)
+        self.assertEqual(attr.bays[1].candidates, [])
+
+    def test_elimination_ignores_the_remembered_field(self):
+        # Three bays attributed by direct evidence, the fourth unknown: the
+        # one tag the reader last answered is a spool removed long ago, not
+        # the fourth bay's.
+        attr = self.reader(ready=[0, 1, 2])
+        attr.note_field(0, ["d1000001"], 0.0)
+        for bay, uid in ((0, "a1000001"), (1, "b1000001"),
+                         (2, "c1000001")):
+            self.assertEqual(attr.assert_bay(bay, [uid], 1.0)["word"],
+                             "attributed")
+        attr.note_ready(3, True, 10.0)
+        self.assertEqual(attr.bays[3].state, T.UNKNOWN)
+        self.assertIsNone(attr.tag(3))
+
+
+class RestoredCandidateTests(unittest.TestCase):
+    """Review 2026-11-10, finding 20: a bay restored as a candidate after a
+    restart still holds its spool, so its key is as good as held for weak
+    evidence."""
+
+    def printing_bay_restored(self):
+        # Klipper restarted during a print: bay 0 prints, restored as a
+        # candidate of spool A, and follows the extruder.
+        attr = two_readers()
+        settle(attr, [0])
+        self.assertTrue(attr.restore(0, KEY_A, "a1000001", 5.0))
+        attr.note_following(0, True, 0.0)
+        attr.note_field(0, [], 0.0)
+        return attr
+
+    def test_an_orphan_of_a_restored_key_is_not_the_next_insertion(self):
+        attr = self.printing_bay_restored()
+        attr.note_field(0, ["a1000001"], 50.0)     # bay 0's tag passes
+        attr.note_ready(1, True, 60.0)             # a spool into bay 1
+        self.assertEqual(attr.bays[1].candidates, [])
+        attr.note_field(0, ["a1000001", "b1000001"], 61.0)   # its own tag
+        self.assertEqual([k for k, _ in attr.bays[1].candidates], [KEY_B])
+        self.assertEqual(attr.bays[1].state, T.CANDIDATE)
+        self.assertEqual((attr.bays[0].state, attr.bays[0].candidates[0][0]),
+                         (T.CANDIDATE, KEY_A))
+
+    def test_a_restored_key_moving_beside_a_handled_bay_stays_off_it(self):
+        attr = self.printing_bay_restored()
+        attr.note_ready(1, True, 60.0)
+        attr.note_field(0, ["a1000001"], 61.0)     # bay 0's tag passes
+        self.assertEqual(attr.bays[1].candidates, [])
+        outcome = attr.explicit_read(1, ["a1000001"], 62.0)
+        self.assertEqual(outcome["word"], "no_tag")
+        self.assertEqual(attr.bays[1].candidates, [])
+
+    def test_motion_still_corrects_a_stale_restore(self):
+        # Strong evidence is not weak evidence: a spool swapped while the
+        # host was down shows its tag on the bay that really turns it.
+        attr = self.printing_bay_restored()
+        attr.note_following(0, False, 1.0)
+        settle(attr, [1])
+        attribute_by_motion(attr, 1, "a1000001", 70.0)
+        self.assertEqual((attr.bays[1].state, attr.bays[1].key),
+                         (T.ATTRIBUTED, KEY_A))
+        self.assertEqual(attr.bays[0].state, T.UNKNOWN)
+
+
+class StaticEvidenceTests(unittest.TestCase):
+    """Review 2026-11-10, finding 4: "static" evidence counted samples, not
+    rotation. A bay flagged as turning while its spool stood still (the
+    positioning window after a ready edge, an unload whose op is set while
+    the toolhead still cuts) lost the tag resting in the field after eight
+    samples, under a second at the focused poll."""
+
+    def inserted_with_its_tag(self):
+        # Bay 0 still and unknown; a spool goes into bay 1 with its tag in
+        # the field: attributed by promoted insertion.
+        attr = two_readers(static_samples=8)
+        settle(attr, [0])
+        attr.note_field(0, [], 0.0)
+        attr.note_travel(0.0, 0.0)
+        attr.note_ready(1, True, 60.0)
+        attr.note_field(0, ["a1000001"], 61.0)
+        self.assertEqual((attr.bays[1].state, attr.bays[1].evidence),
+                         (T.ATTRIBUTED, T.INSERTION))
+        return attr
+
+    def test_a_turn_with_no_motion_never_moves_a_resting_tag(self):
+        attr = self.inserted_with_its_tag()
+        attr.note_turning(1, True, 62.0)       # flagged, the spool is still
+        for step in range(30):
+            now = 62.0 + 0.1 * step
+            attr.note_travel(0.0, now)
+            attr.note_field(0, ["a1000001"], now)
+        self.assertEqual((attr.bays[1].state, attr.bays[1].key),
+                         (T.ATTRIBUTED, KEY_A))
+        self.assertEqual(attr.bays[0].state, T.UNKNOWN)
+        self.assertEqual(attr.bays[0].candidates, [])
+
+    def test_static_evidence_alone_never_resets_an_attributed_bay(self):
+        attr = self.inserted_with_its_tag()
+        attr.note_turning(1, True, 62.0)       # a real load of bay 1
+        for step in range(60):
+            now = 62.0 + 0.1 * step
+            attr.note_travel(20.0 * step, now)
+            attr.note_field(0, ["a1000001"], now)
+        self.assertEqual((attr.bays[1].state, attr.bays[1].key),
+                         (T.ATTRIBUTED, KEY_A))
+        self.assertEqual(attr.bays[0].candidates, [])
+
+    def test_a_short_turn_says_nothing_even_with_motion(self):
+        attr = two_readers(static_samples=8, static_turn_s=3.0)
+        settle(attr, [0, 1])
+        attr.note_field(0, ["b1000001"], 0.0)
+        attr.note_travel(0.0, 0.0)
+        attr.note_turning(0, True, 1.0)
+        for step in range(20):                  # 2 s
+            now = 1.0 + 0.1 * step
+            attr.note_travel(100.0 * step, now)
+            attr.note_field(0, ["b1000001"], now)
+        self.assertEqual(attr.bays[1].state, T.UNKNOWN)
+
+    def test_tags_moving_on_the_turning_bay_are_motion_enough(self):
+        # No encoder travel known, but tags came and went while only bay 0
+        # turned (two of them: a conflict, so nothing is eliminated): its
+        # spool turns, so the tag that never changed is not its.
+        for moving in (True, False):
+            with self.subTest(moving=moving):
+                attr = two_readers(static_samples=8, static_turn_s=3.0)
+                settle(attr, [0, 1])
+                attr.note_field(0, ["b1000001"], 0.0)
+                attr.note_turning(0, True, 1.0)
+                for step in range(40):
+                    field = ["b1000001"]
+                    if moving and step == 5:
+                        field += ["a1000001", "c1000001"]
+                    attr.note_field(0, field, 1.0 + 0.1 * step)
+                if moving:
+                    self.assertEqual(attr.bays[0].reason, T.TWO_MOVING)
+                    self.assertEqual(attr.bays[1].state, T.CANDIDATE)
+                    self.assertEqual(attr.bays[1].candidates[0][0], KEY_B)
+                else:
+                    self.assertEqual(attr.bays[1].state, T.UNKNOWN)
+
+    def test_flagged_turns_with_no_motion_never_end_the_wait(self):
+        attr = two_readers(static_samples=4, no_tag_turn_s=30.0)
+        settle(attr, [0])
+        attr.note_field(0, [], 0.0)
+        attr.note_travel(0.0, 0.0)
+        for start in (10.0, 100.0, 200.0):
+            attr.note_turning(0, True, start)
+            for step in range(8):
+                attr.note_travel(0.0, start + 2.0 * step)
+                attr.note_field(0, [], start + 2.0 * step)
+            attr.note_turning(0, False, start + 16.0)
         self.assertIsNone(attr.tag_state(0)["reason"])
 
 
@@ -780,12 +1233,66 @@ class TagReaderTests(unittest.TestCase):
         self.manager.turning = set()
         self.assertEqual(reader.tag_for(0)["read_at"], read_at)
 
+    def test_a_status_read_before_the_deferred_restore_restores_first(self):
+        # Review 2026-11-10, finding 21: the restore runs from a deferred
+        # callback after the unit's first snapshot; a status read in
+        # between showed the bay ready with no attribution at all.
+        self.reader.note_field(0, [])
+        self.load(0, "a1000001", bambu(TRAY_A))
+        oams = FakeOams(self.manager)
+        oams.hardware_snapshot_ready = False
+        reader = T.TagReader(oams)
+        reader.attach_readers(FakeSource(reader), [[0, 1], [2, 3]],
+                              debounce=1)
+        reader.settle()                         # no snapshot yet: nothing
+        self.assertEqual(reader.tag_state_for(0)["state"], "none")
+        oams.f1s_hes_value = [1, 0, 0, 0]       # the serial thread
+        oams.hardware_snapshot_ready = True
+        reader.settle()                         # the status getter
+        self.assertEqual(reader.tag_state_for(0)["state"], "candidate")
+        reader.note_hardware_ready()            # the deferred callback
+        self.assertEqual(reader.tag_state_for(0)["state"], "candidate")
+        self.assertEqual(reader.tag_state_for(1)["state"], "none")
+
     def test_no_cache_file_without_the_openams_config(self):
         oams = FakeOams(FakeManager(os.path.join(self.tmp.name, "none.cfg")))
         reader = T.TagReader(oams)
         reader.attach_readers(FakeSource(reader), [[0, 1], [2, 3]])
         reader.note_field(0, ["a1000001"])
         self.assertEqual(os.listdir(self.tmp.name), ["oams.cfg"])
+
+    def test_the_cache_lives_next_to_printer_cfg_without_an_oams_cfg(self):
+        # Review 2026-11-10, finding 5: [oams] sections in printer.cfg (no
+        # OpenAMS config file) persisted nothing, so every Klipper restart
+        # left the tagged bays unknown and Spoolman unlinked them.
+        folder = os.path.join(self.tmp.name, "config")
+        os.mkdir(folder)
+        main = os.path.join(folder, "printer.cfg")
+        with open(main, "w") as handle:
+            handle.write("[oams oams1]\n")
+        manager = FakeManager(os.path.join(folder, "oams.cfg"))  # absent
+        oams = FakeOams(manager)
+        oams.printer.get_start_args = lambda: {"config_file": main}
+        reader = T.TagReader(oams)
+        reader.attach_readers(FakeSource(reader), [[0, 1], [2, 3]],
+                              debounce=1)
+        reader.note_field(0, [])
+        reader.cache.put("a1000001", bambu(TRAY_A))
+        oams.f1s_hes_value[0] = 1
+        reader.note_ready_rise(0, oams.reactor.now)
+        manager.turning = {0}
+        reader.note_field(0, ["a1000001"])
+        manager.turning = set()
+        path = os.path.join(folder, T.CACHE_FILE)
+        self.assertTrue(os.path.isfile(path))
+        # A restart restores the bay as a candidate from that file.
+        again = FakeOams(manager)
+        again.printer.get_start_args = lambda: {"config_file": main}
+        again.f1s_hes_value = [1, 0, 0, 0]
+        restored = T.TagReader(again)
+        restored.attach_readers(FakeSource(restored), [[0, 1], [2, 3]],
+                                debounce=1)
+        self.assertEqual(restored.tag_state_for(0)["state"], "candidate")
 
     def test_external_removal_never_clears(self):
         self.reader.note_field(0, [])
@@ -816,6 +1323,19 @@ class TagReaderTests(unittest.TestCase):
         self.reader.update_turning()
         self.assertFalse(self.reader.attr.bays[0].following)
 
+    def test_the_units_encoder_is_the_turning_bays_motion(self):
+        self.oams.encoder_clicks = 0
+        self.oams._length_mm = lambda clicks: clicks / 1.14
+        self.reader.update_turning()
+        self.manager.turning = {0}
+        self.reader.update_turning()
+        self.oams.encoder_clicks = 1140
+        self.reader.update_turning()
+        self.oams.encoder_clicks = 0           # the next op's new origin
+        self.reader.update_turning()
+        self.assertAlmostEqual(self.reader.attr.bays[0].turn_travel, 1000.0)
+        self.assertEqual(self.reader.attr.bays[1].turn_travel, 0.0)
+
     def test_a_reconnect_with_the_spool_gone_clears_the_tag(self):
         self.reader.note_field(0, [])
         self.load(0, "a1000001", bambu(TRAY_A))
@@ -825,6 +1345,72 @@ class TagReaderTests(unittest.TestCase):
         self.reader.note_hardware_ready()
         self.assertIsNone(self.oams.tags[0])
         self.assertEqual(self.reader.tag_state_for(0)["state"], T.NONE)
+
+    def give_up(self, uid):
+        """``uid``'s Bambu decode failed DECODE_ATTEMPTS times while it sat
+        in reader 0's field: published as an ``unknown`` tag."""
+        self.reader.note_field(0, [uid], records={
+            uid: self.reader.pending_record(uid)})
+        for _ in range(T.DECODE_ATTEMPTS):
+            self.reader.note_decode_failed(uid)
+        self.assertFalse(self.reader.needs_record(uid))
+        self.reader.note_field(0, [uid], records={
+            uid: self.reader.pending_record(uid)})
+        self.assertEqual(self.reader.cache.record(uid)["format"], "unknown")
+
+    def test_a_ready_rise_retries_a_given_up_decode(self):
+        # Review 2026-11-10, finding 11: given up until Klipper restarted.
+        self.reader.note_field(0, [])
+        self.give_up("e1000001")
+        self.oams.f1s_hes_value[1] = 1
+        self.reader.note_ready_rise(1, self.oams.reactor.now)
+        self.assertTrue(self.reader.needs_record("e1000001"))
+        # Back to a Bambu tag whose content is pending, not a final verdict
+        # (in the cache file too).
+        self.assertEqual(self.reader.cache.record("e1000001")["format"],
+                         "bambu")
+
+    def test_an_explicit_read_retries_a_given_up_decode(self):
+        self.oams.f1s_hes_value = [1, 0, 0, 0]
+        self.reader.attr.init_ready(0, True)
+        self.reader.note_field(0, [])
+        self.give_up("e1000001")
+        seen = []
+        sample = self.source.sample_reader
+        self.source.sample_reader = lambda index: (
+            seen.append(self.reader.needs_record("e1000001"))
+            or sample(index))
+        self.source.fields[0] = ["e1000001"]
+        self.reader.scan_bay(0)
+        self.assertEqual(seen, [True])
+
+    def test_a_tag_back_in_the_field_is_decoded_again(self):
+        self.reader.note_field(0, [])
+        self.give_up("e1000001")
+        self.reader.note_field(0, [])               # it left
+        self.assertFalse(self.reader.needs_record("e1000001"))
+        self.reader.note_field(0, ["e1000001"])     # and came back
+        self.assertTrue(self.reader.needs_record("e1000001"))
+
+    def test_a_load_that_ended_is_seen_from_a_status_read(self):
+        # A reader read only when asked hands in no samples during a load:
+        # the load's end is noticed when the unit's status is read.
+        oams = FakeOams(self.manager)
+        reader = T.TagReader(oams)
+        reader._ensure_attribution([[0, 1, 2, 3]], enumerates=False)
+        reader._restored = True
+        attr = reader.attr
+        attr.init_ready(1, True)
+        attr.explicit_read(1, ["a1000001"], 1.0)
+        attr.explicit_read(1, ["b1000001"], 2.0)
+        self.assertEqual(attr.bays[1].state, T.CONFLICT)
+        self.manager.turning = {1}
+        reader.settle()
+        self.assertEqual(attr.bays[1].state, T.CONFLICT)
+        self.manager.turning = set()
+        reader.settle()
+        self.assertEqual(attr.bays[1].state, T.UNKNOWN)
+        self.assertEqual(oams.tags.get(1), None)
 
     def test_a_pending_bambu_record_until_decoded_or_given_up(self):
         uid = "e1000001"

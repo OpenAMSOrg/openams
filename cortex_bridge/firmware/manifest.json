@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 14,
+   "file": "bridge-14.oac2",
+   "sha256": "2fa388e9b6099f5a0d113581f08add9f76c5ab7104809652bdea28e2b0a84936",
+   "released": "2026-11-10",
+   "notes": "An unload whose filament does not move back (a cut that did not sever it) stops the AMS within seconds and says so, instead of pulling for a minute; an AMS's own jam during a load is reported as a jam."
+  },
+  {
    "version": 12,
    "file": "bridge-12.oac2",
    "sha256": "823c35acfa560c65e68551e74e596e55f35739344698de2ee9bcdccbc5fd7156",

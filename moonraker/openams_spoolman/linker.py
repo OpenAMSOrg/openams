@@ -51,7 +51,7 @@ class _Bay(object):
                  "tag_key", "read_uid", "awaiting_decode", "link_sent_at",
                  "mirror_queued", "filament_sent", "suggestions",
                  "suggestion_key", "suggestion_kind", "suggested_tag",
-                 "seen", "limbo_key")
+                 "seen", "startup", "limbo_key", "startup_manual")
 
     def __init__(self):
         self.state = "unlinked"
@@ -62,10 +62,19 @@ class _Bay(object):
         # changes, so a sibling UID of the same spool is not (C4 §4.3).
         self.last_tag = None
         self.tag_key = None        # the spool key the current link came from
-        # After a restart of both the host and this component, a linked bay
-        # is first seen with its tag only a candidate (C2 tag_state): the key
-        # it then waits for. That tag confirmed is no new read.
-        self.seen = False
+        self.seen = False          # no status pass has reached the bay yet
+        # The startup window (C4 §3): from this machine's start, or the
+        # host's restart, until the bay first shows a tag or an empty bay.
+        # Meanwhile a tag that is not there yet is no removal, and the key
+        # the bay waits for (``limbo_key``: the read remembered from before
+        # a host restart, or the bay's one restored candidate) confirmed is
+        # no new read, so a manual link the host kept stands.
+        self.startup = True
+        # The manual link the host already held on the first pass of that
+        # window (a spool id; False: none; None: no pass yet). The first tag
+        # the bay then shows was there all along, read again only because
+        # of the restart: no new read, so that manual link stands.
+        self.startup_manual = None
         self.limbo_key = None
         self.read_uid = None       # the UID read on the bay, last status
         # A tag attributed by its UID but not decoded yet that no spool lists
@@ -113,6 +122,7 @@ class Linker(object):
         self._host_links = {}
         self._host_sources = {}
         self._last_replay = None
+        self._pending_pruned = False
         self.spoolman_online = True
 
     async def _reachable(self):
@@ -467,6 +477,9 @@ class Linker(object):
         settings = status.get("settings") or {}
         auto_create = bool(settings.get("auto_create_spoolman_spools"))
         sync_tray = bool(settings.get("sync_unit_tray_info", True))
+        if not self._pending_pruned:
+            self._pending_pruned = True
+            self._prune_pending_bays(status)
         self._host_links = {}
         self._host_sources = {}
         for unit, device in (status.get("devices") or {}).items():
@@ -486,28 +499,61 @@ class Linker(object):
                 # The same link decides a unit's stored setting (C4 §7.5).
                 await self._tray.on_bay(key, unit, device, bay, sync_tray)
 
+    def _prune_pending_bays(self, status):
+        """The first pass after this component started: a confirmation kept
+        for a bay the host no longer reports is dropped (C4 §5.8)."""
+        keys = set("%s-%s" % (unit, bay.get("index"))
+                   for unit, device in (status.get("devices") or {}).items()
+                   for bay in device.get("bays") or [])
+        for key in self._cache.pending_bays():
+            if key not in keys:
+                self._cache.clear_pending(key)
+
     async def _bay_status(self, key, unit, bay, auto_create, status):
         machine = self._bay(key)
         tag = bay.get("tag")
         previous = machine.last_tag
         previous_uid = machine.read_uid
+        tag_state = bay.get("tag_state") or {}
+        ready = bay.get("ready", True)
         # A two-tag host publishes only an attributed tag (C2). A bay whose
         # tag is a candidate (restored after a host restart) or in conflict
         # still holds its spool: that is no removal, and when the tag comes
         # back it is no new read either (C4 §3, §4.3).
-        limbo = tag is None and (bay.get("tag_state") or {}).get("state") \
-            in ("candidate", "conflict")
-        first_pass, machine.seen = not machine.seen, True
+        limbo = tag is None and tag_state.get("state") in ("candidate",
+                                                           "conflict")
+        if not machine.seen:
+            machine.seen = True
+            pending = self._cache.pending_spool(key)
+            if pending is not None and not (
+                    bay.get("spool_id") == pending
+                    and bay.get("link_source") == "tag"):
+                # The bay changed while this component was away: the
+                # confirmation it kept is for a link the host no longer
+                # holds (C4 §5.8).
+                self._cache.clear_pending(key)
+        startup = machine.startup
+        if startup and machine.startup_manual is None:
+            machine.startup_manual = bay.get("spool_id") \
+                if bay.get("link_source") == "manual" \
+                and bay.get("spool_id") is not None else False
+        if tag is not None or not ready:
+            machine.startup = False
         if limbo:
-            candidates = (bay.get("tag_state") or {}).get("candidates") or []
-            if first_pass and bay.get("spool_id") is not None \
+            candidates = tag_state.get("candidates") or []
+            if startup and previous is None and machine.limbo_key is None \
+                    and bay.get("spool_id") is not None \
                     and len(candidates) == 1 \
                     and isinstance(candidates[0], dict):
+                # No read remembered (a power cycle): the bay's one
+                # restored candidate is the tag it waits for, on whichever
+                # pass of the startup window it first shows.
                 machine.limbo_key = candidates[0].get("spool_key")
         elif tag is None:
             machine.last_tag = None
             machine.read_uid = None
-            machine.limbo_key = None
+            if not machine.startup:
+                machine.limbo_key = None
         else:
             # Keyed by the spool, not the UID: the host adds a sibling UID to
             # ``uids`` without a new ``read_at`` (C4 §4.3), so it is no new
@@ -525,6 +571,15 @@ class Linker(object):
                             "linked", "pending_confirmation"):
                         machine.tag_key = machine.last_tag[0]
                 machine.limbo_key = None
+            elif startup and previous is None and machine.last_tag[0] \
+                    and machine.startup_manual \
+                    and bay.get("link_source") == "manual" \
+                    and bay.get("spool_id") == machine.startup_manual:
+                # No read remembered and no candidate restored (a power
+                # cycle with no tag cache): the first tag of the window on
+                # a bay the host kept manually linked is no new read. (A
+                # unit-decoded summary has no spool key and decides anew.)
+                previous = machine.last_tag
         if machine.suggestion_key is not None and not limbo and (
                 machine.last_tag is None
                 or machine.last_tag[0] != machine.suggestion_key):
@@ -600,6 +655,19 @@ class Linker(object):
         knows the temperature it has to heat to.
         """
         await self._push_filament(key, unit, {"index": bay, "spool_id": spool_id})
+
+    def host_restarted(self):
+        """Klipper came back (C4 §3): each bay starts its startup window
+        again. A tag read remembered from before is what the bay waits for,
+        not a read the host still shows, so the bay is not unlinked while
+        the host restores its attribution, and that tag confirmed is no new
+        read. A unit-decoded summary has no spool key: unchanged."""
+        for machine in self._bays.values():
+            machine.startup = True
+            machine.startup_manual = None
+            if machine.last_tag is not None and machine.last_tag[0]:
+                machine.limbo_key = machine.limbo_key or machine.last_tag[0]
+                machine.last_tag = None
 
     def forget_filament(self):
         """Klipper came back and forgot what it was told (C4 §7.4).
@@ -1334,18 +1402,29 @@ class Linker(object):
             await self._replay_create_summary(key, unit, bay, tag, machine)
             return
         spools = await self._api.request("GET", "/v1/spool") or []
-        verdict, payload = await self._tag_decide(key, tag, spools, True)
-        still_resolving = machine.state == "resolving" and \
-            machine.last_tag is not None and \
-            machine.last_tag[0] == ops.tag_key(tag)
-        if not still_resolving:
+        # Only a bay that still resolves this key gets a new spool: one made
+        # for a bay that moved on would name, as its location, a bay it is not
+        # in.
+        verdict, payload = await self._tag_decide(
+            key, tag, spools, self._resolving(machine, tag))
+        if not self._resolving(machine, tag):
             # The bay moved on or the spool was removed while this waited
             # (C4 §6); remember the spool for later lookups but do not link.
             if verdict in ("found", "created"):
                 self._cache.remember(tag, payload)
+            if verdict == "created":
+                # ... even while the spool was being made
+                await ops.set_location(self._api, payload["id"], "")
             return
         await self._apply_tag(key, unit, bay, tag, machine, verdict, payload,
                               spools, self._snapshot(machine))
+
+    @staticmethod
+    def _resolving(machine, tag):
+        """The bay still waits for this tag's spool."""
+        return machine.state == "resolving" and \
+            machine.last_tag is not None and \
+            machine.last_tag[0] == ops.tag_key(tag)
 
     async def _replay_create_summary(self, key, unit, bay, tag, machine):
         """Replay a queued unit-decoded creation (C4 §4.1, §6): the whole

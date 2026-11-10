@@ -243,17 +243,25 @@ bay's spool. OpenAMS decides by motion: a tag that comes or goes while only
 one of the reader's bays is turning (positioning after you insert a spool, a
 load, an unload) is that bay's. A spool whose tag did not pass the reader yet
 shows no tag until its first load; a tag seen without motion shows as "not
-confirmed", and `OAMS_RFID_SCAN OAMS=<n> BAY=<bay> ASSERT=1` confirms it.
+confirmed", and `OAMS_RFID_SCAN OAMS=<n> BAY=<bay> ASSERT=1` confirms it (on a
+bay in conflict too: it takes the tag in the field from any other bay).
 Turning a spool by hand, or a tag leaving the field, never removes a bay's
 tag; taking the spool out does. The two tags of one Bambu spool count as one
-spool. Decoded tags are remembered in `openams_tag_cache.json` next to
-`oams.cfg`. These options tune the attribution (the defaults are starting
-values): `focus_poll_interval:` (default `0.1` s, how often the reader of a
-turning bay is read), `field_debounce:` (default `2` reads before a tag counts
-as arrived or gone), `handling_window:` (default `30` s after an insertion),
-`orphan_window:` (default `120` s), `static_samples:` (default `8`) and
-`no_tag_turn_time:` (default `30` s of turning with no tag seen before a spool
-counts as having none).
+spool. Decoded tags, and each bay's tag, are remembered in
+`openams_tag_cache.json` next to `oams.cfg`, or next to `printer.cfg` when
+your `[oams]` sections live there; after a Klipper restart a bay shows its
+tag as not confirmed, with its Spoolman link kept, until its spool turns
+past the reader. These options tune the attribution (the defaults are
+starting values): `focus_poll_interval:` (default `0.1` s, how often the
+reader of a turning bay is read), `field_debounce:` (default `2` reads before
+a tag counts as arrived or gone), `handling_window:` (default `30` s after an
+insertion), `orphan_window:` (default `120` s), `static_samples:` (default
+`8`), `static_turn_time:` (default `3` s) and `static_turn_length:` (default
+`630` mm of filament through the unit, one turn of a full spool: a bay
+counts as really turning only after both, or once a tag came or went while
+it turned; a tag that stays in the field through such a turn is not that
+bay's), and `no_tag_turn_time:` (default `30` s of real turning with no tag
+seen before a spool counts as having none).
 
 `key:` is the Bambu Lab master key, exactly 32 hex characters; it derives each
 tag's MIFARE sector keys. Anything else fails with
@@ -263,7 +271,13 @@ repository ships a placeholder, never a key; keep yours in your own config.
 ## `[oams_manager]`
 
 The manager owns topology validation, the runout monitor and the load callbacks.
-Nothing here is required. `pause_idle_timeout:` (default `172800`, 48 hours)
+Nothing here is required, but Klipper's own `[pause_resume]` is: a failed
+toolchange pauses the print through it, and the shipped macros read it.
+Mainsail's `mainsail.cfg` includes it. Klipper and OpenAMS still start
+without it, with a configuration warning (`OpenAMS: this printer has no
+[pause_resume] section, so a failed toolchange cannot pause a print and its
+error ends the print instead`); a failed toolchange then ends the print, which
+beats printing on without the filament it asked for. `pause_idle_timeout:` (default `172800`, 48 hours)
 is how long a print paused by a failed toolchange keeps its heaters and motors
 on: OpenAMS raises Klipper's idle timeout to it at the pause and puts it back
 when the print resumes, is cancelled or ends. A RESUME that OpenAMS refuses
