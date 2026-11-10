@@ -567,6 +567,24 @@ class OAMS(oams_ext.UnitHooks):
         self.bay_filaments[bay] = {"material": material,
                                    "temp_c": temp_c, "source": source}
 
+    # Families whose bays all leave through one outlet, past the unit's own
+    # hub: a bay's path to the toolhead is the unit's path, so one
+    # calibration and one ptfe_length serve every bay. An OpenAMS 1 is an
+    # AMS 1 with another mainboard and counts too; a unit of no known family
+    # keeps ptfe_length_<bay>.
+    SHARED_PATH_FAMILIES = ("ams1", "ams2")
+
+    def _bays_share_path(self):
+        """True when every bay of this unit has the same path to the
+        toolhead: a single-bay unit, or an AMS 1 or AMS 2 Pro."""
+        caps = getattr(self, "capabilities", None) or {}
+        return (getattr(self, "bay_count", 1) == 1
+                or caps.get("family") in self.SHARED_PATH_FAMILIES)
+
+    def _ptfe_option(self, bay):
+        """The option a measured path for `bay` is saved as."""
+        return "ptfe_length" if self._bays_share_path() else "ptfe_length_%d" % bay
+
     def _ptfe_length_for_bay(self, bay):
         """The effective PTFE length (encoder clicks) for a bay: its own
         ptfe_length_<bay> override when set, else the shared ptfe_length. None
@@ -2809,6 +2827,14 @@ class OAMS(oams_ext.UnitHooks):
         configfile.set(self.name, option, value)
         return "run SAVE_CONFIG to persist"
 
+    def _remove_option(self, option):
+        """Remove one option from this [oams ...] section of the OpenAMS
+        config file (the inverse of _persist_option). Without a manager there
+        is nothing that can edit the included file; the option then stays."""
+        mgr = self.printer.lookup_object("oams_manager", None)
+        if mgr is not None and hasattr(mgr, "remove_config_option"):
+            mgr.remove_config_option(self.name, option)
+
     cmd_OAMS_CALIBRATE_HUB_HES_help = "Calibrate the range of a single hub HES"
 
     def cmd_OAMS_CALIBRATE_HUB_HES(self, gcmd):
@@ -2953,20 +2979,32 @@ class OAMS(oams_ext.UnitHooks):
             self.ptfe_calibrating = False
         if not ok:
             raise gcmd.error(self._ptfe_calibration_error_message(bay))
-        option = "ptfe_length" if self.bay_count == 1 else "ptfe_length_%d" % bay
+        shared = self._bays_share_path()
+        option = self._ptfe_option(bay)
         how = self._persist_option(option, "%d" % (value,), gcmd)
-        if self.bay_count == 1:
+        if shared:
             self.filament_path_length = value
+            # One path for the whole unit: a bay's own length left from an
+            # older calibration would override it, so it goes.
+            lengths = getattr(self, "ptfe_lengths", None) or []
+            for other, old in enumerate(lengths):
+                if old is not None:
+                    self._remove_option("ptfe_length_%d" % other)
+                    lengths[other] = None
+            self._selected_path_length = value
         else:
             self.ptfe_lengths[bay] = value
-        if getattr(self, "_selected_ptfe_bay", None) in (None, bay):
-            self._selected_path_length = value
+            if getattr(self, "_selected_ptfe_bay", None) in (None, bay):
+                self._selected_path_length = value
         if self._ptfe_calibration_max_clicks:
             self.measured_path_mm[bay] = value / FILAMENT_PATH_LENGTH_FACTOR
             gcmd.respond_info(
-                "Calibrated %s: %.0f mm of filament path, %s: %d (%s)."
+                "Calibrated %s: %.0f mm of filament path, %s: %d (%s).%s"
                 % (self.spool_label(bay), value / FILAMENT_PATH_LENGTH_FACTOR,
-                   option, value, how))
+                   option, value, how,
+                   " Every bay of %s uses it: they share the path."
+                   % self.name.split()[-1]
+                   if shared and self.bay_count > 1 else ""))
         else:
             gcmd.respond_info("Calibrated PTFE length to %d (%s)." % (value, how))
 
@@ -3008,8 +3046,7 @@ class OAMS(oams_ext.UnitHooks):
                    " (ptfe_length: %.0f mm)."
                    % (self.spool_label(bay), mm, configured_mm))
         if far:
-            option = ("ptfe_length" if self.bay_count == 1
-                      else "ptfe_length_%d" % bay)
+            option = self._ptfe_option(bay)
             message += (" To use the measured length, run"
                         " OAMS_CALIBRATE_PTFE_LENGTH OAMS=%d SPOOL=%d, or set"
                         " %s: %d under [%s]."

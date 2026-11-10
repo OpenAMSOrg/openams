@@ -339,8 +339,8 @@ OAMS_CALIBRATE_PTFE_LENGTH OAMS=1 SPOOL=0
 ```
 
 Put filament in the bay you name. The unit feeds and measures when the filament
-reaches the expected sensor state, then writes `ptfe_length` (or
-`ptfe_length_<bay>` on a four-bay unit) back into `oams.cfg` for you:
+reaches the expected sensor state, then writes the unit's `ptfe_length` back into `oams.cfg` for you: every bay of
+an AMS shares the path, so one calibration covers them all:
 
 ```
 Calibrated PTFE length to <n> (saved to <path>).

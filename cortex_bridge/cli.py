@@ -535,8 +535,9 @@ def next_step_after_config(described: list) -> str:
     if any(unit.get("ptfe_calibration") for unit in described):
         return ("Next: once Klipper is ready, let each AMS measure its "
                 "filament path, with someone watching: "
-                "`OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` for each "
-                "bay you use (oams_idx is in oams.cfg, bays count from 0).")
+                "`OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` once per "
+                "AMS, on any bay with filament: every bay shares the AMS's "
+                "path (oams_idx is in oams.cfg, bays count from 0).")
     return ("Next: measure each AMS's filament path and set ptfe_length "
             "(`cortex-bridge.py ptfe <millimetres>`), or update the bridge "
             "firmware (`cortex-bridge.py update`) and let the AMS measure it.")

@@ -302,7 +302,9 @@ class CalibrationBusyRetryTests(unittest.TestCase):
         gcmd = self._gcmd()
         unit.cmd_OAMS_CALIBRATE_PTFE_LENGTH(gcmd)
         self.assertEqual(len(calls), 3)
-        self.assertEqual(unit.ptfe_lengths[3], 2573)
+        # an AMS 1: one path for the unit
+        self.assertEqual(unit.filament_path_length, 2573)
+        self.assertEqual(unit.ptfe_lengths, [None] * 4)
 
     def test_busy_for_too_long_fails_with_the_busy_message(self):
         unit, calls, clock = self._unit([(False, S.OAMS_OP_CODE_ERROR_BUSY)])
@@ -311,6 +313,67 @@ class CalibrationBusyRetryTests(unittest.TestCase):
         self.assertIn("busy", str(caught.exception))
         self.assertLessEqual(clock[0], unit.CALIBRATION_BUSY_RETRY_S + 1.0)
         self.assertGreater(len(calls), 5)
+
+
+class SharedPathTests(unittest.TestCase):
+    """Every bay of an AMS 1 or AMS 2 Pro leaves through one outlet, so one
+    calibration is the unit's path: it saves ptfe_length and drops the bays'
+    own lengths. A unit of no known family keeps ptfe_length_<bay>."""
+
+    def _unit(self, family, stale):
+        caps = dict(bridge_capabilities(), host_arrival_confirm=False)
+        if family is None:
+            caps.pop("family", None)
+        else:
+            caps["family"] = family
+        unit = make_unit(capabilities=caps)
+        unit.ptfe_lengths = list(stale)
+        unit.reactor = None
+        unit._calibrate = lambda kind, bay: (True, 2600)
+        unit.capabilities["ptfe_calibration"] = True
+        saved, removed = [], []
+        unit._persist_option = lambda option, value, gcmd: saved.append((option, value)) or "saved"
+        manager = types.SimpleNamespace(remove_config_option=lambda section, option: removed.append((section, option)))
+        gcode = unit.gcode
+        unit.printer = types.SimpleNamespace(
+            lookup_object=lambda name, default=None: {"gcode": gcode, "oams_manager": manager}.get(name, default))
+        return unit, saved, removed
+
+    def _calibrate(self, unit, bay):
+        out = []
+        gcmd = types.SimpleNamespace(get_int=lambda *args, **kwargs: bay,
+                                     respond_info=out.append, error=RuntimeError)
+        unit.cmd_OAMS_CALIBRATE_PTFE_LENGTH(gcmd)
+        return out
+
+    def test_one_calibration_sets_the_path_of_every_bay_of_an_ams(self):
+        for family in ("ams1", "ams2"):
+            unit, saved, removed = self._unit(family, [2775, None, 2666, None])
+            self._calibrate(unit, 3)
+            self.assertEqual(saved, [("ptfe_length", "2600")])
+            self.assertEqual(removed, [("oams ams1", "ptfe_length_0"), ("oams ams1", "ptfe_length_2")])
+            self.assertEqual([unit._ptfe_length_for_bay(b) for b in range(4)], [2600] * 4)
+
+    def test_the_result_says_every_bay_uses_it(self):
+        unit, _, _ = self._unit("ams2", [None] * 4)
+        unit.capabilities["host_arrival_confirm"] = True   # measures to the buffer
+        unit.fps_name = "fps1"
+        manager = unit.printer.lookup_object("oams_manager")
+        manager._arrival_block_reason = lambda oam, fps: None
+        out = []
+        gcmd = types.SimpleNamespace(get_int=lambda *args, **kwargs: 0,
+                                     get_float=lambda name, default, **kwargs: default,
+                                     respond_info=out.append, error=RuntimeError)
+        unit.cmd_OAMS_CALIBRATE_PTFE_LENGTH(gcmd)
+        self.assertIn("ptfe_length: 2600 (saved). Every bay of ams1 uses it:"
+                      " they share the path.", out[-1])
+
+    def test_a_unit_of_no_known_family_keeps_each_bays_own_length(self):
+        unit, saved, removed = self._unit(None, [2775, None, None, None])
+        self._calibrate(unit, 2)
+        self.assertEqual(saved, [("ptfe_length_2", "2600")])
+        self.assertEqual(removed, [])
+        self.assertEqual(unit.ptfe_lengths, [2775, None, 2600, None])
 
 
 class SnapshotTests(unittest.TestCase):
@@ -340,7 +403,8 @@ class MeasuredPathTests(unittest.TestCase):
         message = unit.gcode.messages[-1]
         self.assertIn("(ptfe_length: 2500 mm)", message)
         self.assertIn("OAMS_CALIBRATE_PTFE_LENGTH OAMS=1 SPOOL=1", message)
-        self.assertIn("ptfe_length_1: 2314 under [oams ams1]", message)
+        # every bay of an AMS 1 shares the path: the unit's length
+        self.assertIn("set ptfe_length: 2314 under [oams ams1]", message)
 
     def test_nothing_without_the_capability(self):
         unit = make_unit(capabilities={})

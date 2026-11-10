@@ -27,7 +27,7 @@ One section per unit. Required unless marked otherwise.
 | `kp:` / `ki:` / `kd:` | no | `6.0` / `0.0` / `0.0` | Hub motor PID |
 | `current_target:` | no | `0.3` | Rewind current target, 0.1 to 0.4 |
 | `current_kp:` / `current_ki:` / `current_kd:` | no | `0.375` / `0.0` / `0.0` | Rewind current PID |
-| `ptfe_length_<bay>:` | no | shared `ptfe_length` | Per-bay path length override |
+| `ptfe_length_<bay>:` | no | shared `ptfe_length` | Per-bay path length override, set by hand; every bay of an AMS shares one path, so a calibration of an AMS writes `ptfe_length` and removes these |
 | `spool_id_<bay>:` | no | — | Spoolman spool linked to that bay |
 | `link_source_<bay>:` | no | `manual` | `tag` or `manual`; written by the plugin |
 | `dryer_vent_rise:` / `dryer_vent_flat:` / `dryer_vent_hold:` / `dryer_vent_min_open:` / `dryer_vent_max_open:` / `dryer_vent_min_interval:` / `dryer_vent_max_interval:` | no | unit's own | Cortex Bridge firmware 10 only: the moisture loop's thresholds and timings (rise and flat in g/m³ and g/m³ per minute, the others in seconds; open 30 to 1800, intervals 300 to 14400). Firmware 11 follows a Bambu printer's schedule and ignores them |

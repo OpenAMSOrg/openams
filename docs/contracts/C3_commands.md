@@ -323,7 +323,9 @@ units are not lane-tracked).
 `capabilities.ptfe_calibration` (`"PTFE calibration is unsupported by this
 unit"`). Runs a firmware calibration op via the store's `Calibrate` action
 (lane `op -> CALIBRATING`, then back to `prior_op`); persists the result to
-`ptfe_length` (single-bay units) or `ptfe_length_<bay>` via
+`ptfe_length` (single-bay units, and the AMS 1 and AMS 2 Pro families, whose
+bays share one outlet: their `ptfe_length_<bay>` options are removed) or
+`ptfe_length_<bay>` (a unit of no known family) via
 `persist_config_option` (`oams.py:2234-2245`, reusing
 `oams_config_io.set_option`). Error: `"Calibration of PTFE length failed"`.
 This is the D7 calibration action C2 must expose per-bay state for.

@@ -88,9 +88,11 @@ Klipper with `f1s_hes_on requires one value (single-bay AMS HT) or four
 comma-separated values`.
 
 `ptfe_length: 0` is correct for a fresh machine. Run
-`OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` and OpenAMS writes the result
-back as `ptfe_length_<bay>`: an OpenAMS 1 unit and a Cortex Bridge AMS on
-bridge firmware 8 or later both measure it. With older bridge firmware you
+`OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` once per AMS, on any bay with
+filament, and OpenAMS writes the result back as that AMS's `ptfe_length`: every
+bay of an AMS leaves through the same outlet, so they all share the path, and
+any `ptfe_length_<bay>` left from an older calibration is removed. An OpenAMS 1
+unit and a Cortex Bridge AMS on bridge firmware 8 or later both measure it. With older bridge firmware you
 measure the path and set it
 ([how](cortex-bridge-setup.md#filament-path-length)); a Cortex Bridge AMS
 refuses to load until it is set. Until it is set, a runout pauses the print instead of reloading the next

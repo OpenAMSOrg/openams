@@ -209,7 +209,7 @@ Cortex Bridge relay installed [OK]
 Looking for AMS units behind the bridge (up to 45 s)...
   0a1b2c3d4e5f  AMS 2 Pro, 4 bays
 Added ams2 to /home/pi/printer_data/config/oams.cfg.
-Next: once Klipper is ready, let each AMS measure its filament path, with someone watching: `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` for each bay you use (oams_idx is in oams.cfg, bays count from 0).
+Next: once Klipper is ready, let each AMS measure its filament path, with someone watching: `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` once per AMS, on any bay with filament: every bay shares the AMS's path (oams_idx is in oams.cfg, bays count from 0).
 ...
 Starting Klipper... [OK]
 Waiting for Klipper (up to 60 s)...
@@ -326,10 +326,13 @@ takes the distance there, and rewinds it to the bay:
 
 ```text
 Calibrating ams1 Spool 1: the AMS feeds the filament to the toolhead (at most 4000 mm), measures the path at the buffer, and rewinds it. Stay with the printer.
-Calibrated ams1 Spool 1: 2034 mm of filament path, ptfe_length_0: 2319 (saved to /home/pi/printer_data/config/oams.cfg).
+Calibrated ams1 Spool 1: 2034 mm of filament path, ptfe_length: 2319 (saved to /home/pi/printer_data/config/oams.cfg). Every bay of ams1 uses it: they share the path.
 ```
 
-The result is saved as that bay's `ptfe_length_<bay>` and used at once. The
+Every bay of an AMS leaves through the same outlet, so one calibration is the
+whole AMS's path: the result is saved as that AMS's `ptfe_length` and used at
+once for every bay, and any `ptfe_length_<bay>` left from an older calibration
+is removed. The
 feed stops after at most 4 m (plus 200 mm), so a disconnected tube never gets
 more than that; for a longer path, add `MAX_LENGTH=<millimetres>`.
 
@@ -338,7 +341,7 @@ console, the first time for a bay and whenever it differs from `ptfe_length`
 by more than 100 mm, with the command that updates it:
 
 ```text
-ams1 Spool 2 reached the toolhead after 2030 mm of filament path (ptfe_length: 2500 mm). To use the measured length, run OAMS_CALIBRATE_PTFE_LENGTH OAMS=1 SPOOL=1, or set ptfe_length_1: 2314 under [oams ams1].
+ams1 Spool 2 reached the toolhead after 2030 mm of filament path (ptfe_length: 2500 mm). To use the measured length, run OAMS_CALIBRATE_PTFE_LENGTH OAMS=1 SPOOL=1, or set ptfe_length: 2314 under [oams ams1].
 ```
 
 **Measure it by hand (older firmware).** Measure the filament path from the
