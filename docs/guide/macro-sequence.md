@@ -2,7 +2,7 @@
 
 Every filament move OpenAMS makes at your printer is a chain of macros from `oams_macros.cfg`. This page shows that chain in the order it runs. First comes a state machine, then the exact commands, then which value moves what, and what your printer has to provide. The chain comes from a traced run of the shipped macros.
 
-![The OpenAMS macros as a state machine: a toolchange from T<n> to Done, the panel's Unload, the loads without the cutter; each failed check pauses the print, and RESUME re-enters at A, B or C](../images/macro-sequence.svg)
+![The OpenAMS macros as a state machine: a toolchange from T<n> to Done, the panel's Unload, the loads without the cutter; each failed check pauses the print, and RESUME re-enters at A, B, C or D](../images/macro-sequence.svg)
 
 **How to read it.**
 
@@ -10,7 +10,7 @@ Every filament move OpenAMS makes at your printer is a chain of macros from `oam
 - **Grey frames** are macros. The boxes inside one run from top to bottom, and when a macro ends it hands over to the next frame.
 - **Colours** say what moves: blue the AMS, orange the extruder, purple the toolhead.
 - **Green boxes** are your own macros. Dashed ones are optional.
-- **Yellow hexagons** are checks. A failed check goes to a red **fail**, which stops the sequence and goes to **When a step fails**: `OAMSM_TOOLCHANGE` catches it and, in a print, runs `PAUSE`. After you fix the cause, `RESUME` resets the AMS, works out where the lane stopped and re-enters the sequence at a purple letter: **A** runs `_TX` again (the feed, the whole swap, or a rewind of that bay first), **B** runs only the toolhead part, **C** runs the unload again. From there the sequence runs on as drawn, to **Done** or to another pause. [When something fails](#when-something-fails) has the detail.
+- **Yellow hexagons** are checks. A failed check goes to a red **fail**, which stops the sequence and goes to **When a step fails**: `OAMSM_TOOLCHANGE` catches it and, in a print, runs `PAUSE`. After you fix the cause, `RESUME` resets the AMS, works out where the lane stopped and re-enters the sequence at a purple letter: **A** runs `_TX` again (the feed, the whole swap, or a rewind of that bay first), **B** runs only the toolhead part, **C** runs the unload again, **D** runs only what follows a reload that had already passed the outlet check. A printer that lost its position is refused before any of it, and the print goes on only with its group loaded. From there the sequence runs on as drawn, to **Done** or to another pause. [When something fails](#when-something-fails) has the detail.
 - **Red words** (home, heat, cut, retract, feed) are the steps the panel and the screen show while it runs.
 
 ## Who starts what
@@ -105,7 +105,7 @@ Starting values for your toolhead: `python3 ~/openams/tools/toolhead_defaults.py
 
 ## When something fails
 
-![Toolchange failure and recovery: a failure pauses the print, RESUME resets, works out where the lane is and continues from there, or pauses again](../images/toolchange-recovery.svg)
+![Toolchange failure and recovery: a failure pauses the print and keeps the motors on; RESUME refuses a printer that lost its position, resets, works out where the lane is and continues from there, refuses to go on without the print's group, or pauses again](../images/toolchange-recovery.svg)
 
 **During a print, a failed toolchange pauses the print; it never ends it.** Every toolchange and unload runs inside `OAMSM_TOOLCHANGE`, which catches any error in the chain: a failed check, the AMS refusing or failing, a hook or `CLEAN_NOZZLE` error, homing, a cold extrusion, the Stop button. It has to be a Python command: Klipper macros cannot catch an error, and an error that reaches an SD print makes Klipper run `on_error_gcode` (Mainsail: `CANCEL_PRINT`). With gco-routines, `OAMSM_TOOLCHANGE` runs the chain, and then its own recovery, in gco-routines' *handled regions*; without them gco-routines would fault the print's run at the failing line, whatever OpenAMS did next. An older gco-routines without regions still ends the print on a failure, and Klipper's log says so. On a failure `OAMSM_TOOLCHANGE`:
 

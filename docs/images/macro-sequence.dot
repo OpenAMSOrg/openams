@@ -114,6 +114,7 @@ digraph macros {
   subgraph cluster_finish {
     label=<<font face="Courier"><b>_OAMS_FINISH_TOOLCHANGE</b></font>>; labeljust=l;
     style="rounded,filled"; fillcolor="#f7f8fa"; color="#b9bfc8";
+    e_d     [shape=circle, style="filled,bold", fillcolor="#7a2bd0", color="#7a2bd0", fontcolor="white", fontsize=14, width=0.42, fixedsize=true, margin=0, label=<<b>D</b>>];
     clean   [fillcolor="#e2f5e7", color="#2e8b4e",
              label=<<font face="Courier"><b>CLEAN_NOZZLE</b></font><br/><font point-size="10">yours, required: wipe or purge</font>>];
     h_feed  [fillcolor="#e2f5e7", color="#2e8b4e", style="rounded,filled,dashed",
@@ -189,30 +190,39 @@ digraph macros {
     inprint [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a", fontcolor="#2b2f36",
              label=<In a print?>];
     pause   [style="rounded,filled,bold", fillcolor="#fff0c2", color="#b8900a", fontcolor="#2b2f36",
-             label=<<font face="Courier"><b>PAUSE</b></font><br/><font point-size="10">the print pauses and the reason is in the console:<br/><font face="Courier">the toolchange to T1 failed at the &lt;step&gt; step: &lt;reason&gt;</font></font>>];
+             label=<<font face="Courier"><b>PAUSE</b></font><br/><font point-size="10">the print pauses and the reason is in the console:<br/><font face="Courier">the toolchange to T1 failed at the &lt;step&gt; step: &lt;reason&gt;</font><br/>and the idle timeout goes to <font face="Courier">pause_idle_timeout</font> (48 h),<br/>so the heaters and motors stay on and the printer keeps its position</font>>];
     perr    [style="rounded,filled", fillcolor="#fde2e2", color="#c62828", fontcolor="#2b2f36",
              label=<<b>An error on the panel</b><br/><font point-size="10">no print: Retry, Unload or Reset</font>>];
     resume  [style="filled,bold", fillcolor="#ffffff", color="#2b2f36", fontcolor="#2b2f36",
              label=<<font face="Courier"><b>RESUME</b></font><br/><font point-size="10">once you have fixed the cause</font>>];
+    homed   [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a", fontcolor="#2b2f36",
+             label=<Still homed?>];
+    lost    [style="rounded,filled,bold", fillcolor="#fde2e2", color="#c62828", fontcolor="#2b2f36",
+             label=<<b>Refused</b>: <font face="Courier">the printer lost its position</font><br/><font point-size="10">the motors went off while it waited; nothing moves,<br/>the print stays paused: cancel it</font>>];
     reset   [style="rounded,filled", fillcolor="#dceafe", color="#2f6fd0", fontcolor="#2b2f36",
              label=<<b>Reset</b><br/><font point-size="10">clears the AMS's faults, re-reads the lanes</font>>];
     diag    [shape=hexagon, style="filled", fillcolor="#fff6cc", color="#b8900a", fontcolor="#2b2f36",
              label=<<b>Diagnose</b>: where did it stop?<br/><font point-size="10">the lane and its sensors</font>>];
     again   [shape=note, style="filled", fillcolor="#ffffff", color="#b9bfc8", fontcolor="#2b2f36", fontsize=10,
-             label=<Re-entered, the chain runs on as drawn:<br/>it ends at <b>Done</b> (Klipper's resume takes the<br/>toolhead back to the pause position), or a<br/>check fails again and the print pauses again.<br/>OpenAMS never retries on its own.>];
+             label=<Re-entered, the chain runs on as drawn:<br/>it ends at <b>Done</b>, or a check fails again and<br/>the print pauses again. Before Klipper's resume<br/>takes the toolhead back to the pause position,<br/>RESUME checks that the toolhead holds the<br/>print's group; if not it refuses (<font face="Courier">the print needs</font><br/><font face="Courier">&lt;group&gt; loaded</font>) and the print stays paused.<br/>An Unload or Load during the pause keeps the<br/>failed toolchange; a later T&lt;n&gt; of the same<br/>macro moves nothing and becomes the target.<br/>OpenAMS never retries on its own.>];
     fault -> inprint;
     inprint -> pause [label=" yes"];
     inprint -> perr [label=" no"];
     pause -> resume [label=" you fix the cause"];
-    resume -> reset -> diag;
+    resume -> homed;
+    homed -> reset [label=" yes"];
+    homed -> lost [label=" no", color="#c62828", fontcolor="#c62828"];
+    reset -> diag;
     perr -> reset [label=" Retry", style=dashed];
     {rank=same; pause; perr;}
     node [shape=box, style="rounded,filled", fillcolor="#f3e8ff", color="#7a2bd0", fontcolor="#2b2f36",
           fontsize=11, margin="0.14,0.06"];
+    r_fin   [label=<<font color="#7a2bd0"><b>→ D</b></font>  <b>what follows the reload</b><br/><font point-size="10"><font face="Courier">_OAMS_RESUME_TOOLHEAD RELOADED=1</font> heats, turns<br/>the follower on, then goes on from D: no second reload</font>>];
     r_tool  [label=<<font color="#7a2bd0"><b>→ B</b></font>  <b>the toolhead part</b><br/><font point-size="10"><font face="Courier">_OAMS_RESUME_TOOLHEAD</font> heats, turns the<br/>follower on, then goes on from B</font>>];
-    r_tx    [label=<<font color="#7a2bd0"><b>→ A</b></font>  <b><font face="Courier">_TX</font> again</b><br/><font point-size="10">the feed when nothing is loaded, the whole swap<br/>when another group is, a rewind of that bay first<br/>when it left its bay but was never fed</font>>];
+    r_tx    [label=<<font color="#7a2bd0"><b>→ A</b></font>  <b><font face="Courier">_TX</font> again</b><br/><font point-size="10">the feed when nothing is loaded, the whole swap<br/>when another group is, a rewind of that bay first<br/>when its feed stopped short; all of it when the<br/>toolchange never started</font>>];
     r_unl   [label=<<font color="#7a2bd0"><b>→ C</b></font>  <b>the unload again</b><br/><font point-size="10"><font face="Courier">SAFE_UNLOAD_FILAMENT</font></font>>];
-    diag -> r_tool [label=" the group is\n at the gears", color="#7a2bd0", fontcolor="#5a1fa0"];
+    diag -> r_fin [label=" the reload passed\n the outlet check", color="#7a2bd0", fontcolor="#5a1fa0"];
+    diag -> r_tool [label=" the group is at the\n gears, not reloaded", color="#7a2bd0", fontcolor="#5a1fa0"];
     diag -> r_tx [label=" anything\n else", color="#7a2bd0", fontcolor="#5a1fa0"];
     diag -> r_unl [label=" an unload\n failed", color="#7a2bd0", fontcolor="#5a1fa0"];
     r_tx -> again [style=invis];
@@ -255,7 +265,7 @@ digraph macros {
       <tr><td bgcolor="#fff6cc" color="#b8900a">a check</td>
           <td bgcolor="#ffffff" color="#8a919b"><font color="#c0392b"><b>heat</b></font>: the step the displays show</td></tr>
       <tr><td bgcolor="#fde2e2" color="#c62828">a failure: PAUSE</td>
-          <td bgcolor="#f3e8ff" color="#7a2bd0"><font color="#7a2bd0"><b>A B C</b></font>: where RESUME re-enters</td></tr>
+          <td bgcolor="#f3e8ff" color="#7a2bd0"><font color="#7a2bd0"><b>A B C D</b></font>: where RESUME re-enters</td></tr>
     </table>>];
 
   // Park the side panels top right, above the first check that can fail, so
@@ -277,7 +287,9 @@ digraph macros {
   e_a -> plan [label=" RESUME"];
   e_b -> did_load [label=" RESUME"];
   e_c -> hb_u [label=" RESUME"];
+  e_d -> clean [label=" RESUME"];
   {rank=same; e_a; plan;}
   {rank=same; e_b; did_load;}
   {rank=same; e_c; hb_u;}
+  {rank=same; e_d; clean;}
 }
