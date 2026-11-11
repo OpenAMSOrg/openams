@@ -248,6 +248,11 @@ and says so.
   one bay each, so set up any spare-spool groups again afterwards. If the old
   FPS board is still connected, for example as the USB-to-CAN bridge for your
   toolhead board, keep its `[mcu]`; if it's gone, comment that out too.
+  The bridge's AMS get new names (`ams1`, `ams2`, `ams_ht`), so a touchscreen
+  display bound to the old one (`unit oams1`) no longer finds it under that
+  name. With one AMS, display firmware from 2026-11-11 on shows it anyway;
+  older firmware, or several AMS, needs the display bound again
+  ([openams-ui: Bind the display to one unit](https://github.com/OpenAMSOrg/openams-ui/blob/main/docs/guide/flash-and-setup.md#bind-the-display-to-one-unit)).
 
 > [!IMPORTANT]
 > **Update the bridge firmware now, before anything else.** A bridge can

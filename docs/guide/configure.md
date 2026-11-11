@@ -60,7 +60,12 @@ flaky bus is a CAN problem, not an OpenAMS one; the optional
 
 ## `[oams <name>]`
 
-One section per unit, named `oams1`, `oams2` and so on. A minimal one:
+One section per unit. The name after `oams` is a label you choose, used by the
+commands that take a unit's name, by `[filament_group]` and by the display; it
+never says what the unit is. This guide uses `oams1`, `oams2`; the Cortex
+Bridge setup writes `ams1`, `ams2` and `ams_ht`, and `ams1_2` for a second AMS
+of one kind. What the unit is comes from `device_kind:`
+([Hardware families](#hardware-families)) and from its firmware. A minimal one:
 
 ```ini
 [oams oams1]
@@ -101,7 +106,7 @@ spool.
 ### Hardware families
 
 `device_kind:` is `auto` by default and resolves from what the unit's firmware
-publishes. Set it explicitly during bring-up to fix the topology; the host warns
+publishes. It is what tells OpenAMS the kind of AMS; the section's name does not. Set it explicitly during bring-up to fix the topology; the host warns
 when the firmware disagrees. The values are `ams1` (4 bays, no active dryer),
 `ams_ht` (1 bay, autonomous follower, one dryer channel, two vents) and `ams2`
 (AMS 2 Pro, 4 bays, two heating zones). One installation can mix all three.
