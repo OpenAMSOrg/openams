@@ -31,6 +31,7 @@ from . import oams_config_io
 from . import oams_ext
 from .oams_runtime import Runtime
 from .openams_ui import OpenAMSUIProjection
+from .openams_screen import OpenAMSScreen
 
 # A managed follower may acknowledge command admission before its service has
 # physically applied the direction. Keep toolhead motion behind a finite gate.
@@ -66,6 +67,33 @@ GENERIC_FILAMENT_CODES = {
     "PLA": "GFL99", "PLA-CF": "GFL98", "PETG": "GFG99", "ABS": "GFB99",
     "ASA": "GFB98", "TPU": "GFU99", "PA": "GFN99", "PC": "GFC99",
     "PVA": "GFS99"}
+
+
+def report_gcode_errors_once(gcode):
+    """Klipper reports a gcode error at every nested script it passes
+    through: each run_script_from_command reports it, then raises it on. An
+    unload failure raised under OPENAMS_UNLOAD, OAMSM_TOOLCHANGE,
+    SAFE_UNLOAD_FILAMENT and _OAMS_FINISH_UNLOAD showed five times. Each
+    error is reported once, where it is first caught; the levels it is
+    raised through stay quiet. A new error, even with the same text, is
+    reported, and so is anything reported outside an except block."""
+    original = getattr(gcode, "_respond_error", None)
+    if not callable(original) or getattr(original, "_oams_once", False):
+        return False
+    last = [None]
+
+    def respond_error(msg):
+        exc = sys.exc_info()[1]
+        # The last error itself is kept, not its id: a freed error's id can
+        # come back on the next one, which would then go unreported.
+        if exc is not None and exc is last[0]:
+            return
+        last[0] = exc
+        return original(msg)
+
+    respond_error._oams_once = True
+    gcode._respond_error = respond_error
+    return True
 
 
 def generic_filament_code(material):
@@ -145,10 +173,22 @@ TRAY_WRITE_REMOTE_METHOD = "openams_spoolman_tray_write"
 TRAY_TEMP_MIN_C = 150
 TRAY_TEMP_MAX_C = 400
 
-# The Stop entry of the printer's LCD menu (oams_menu.cfg). Klipper's menu sends
-# this event when the entry is opened, from the reactor like a webhook, so it
-# can stop a running sequence that a G-code command would wait behind.
+# The Stop entries of the printer's LCD menu (oams_menu.cfg): OpenAMS › Stop,
+# and the "Stop OpenAMS" row at the top of the main menu while a sequence
+# runs. Klipper's menu sends this event when an entry is opened, from the
+# reactor like a webhook, so it can stop a running sequence that a G-code
+# command would wait behind.
 MENU_STOP_EVENT = "menu:__main __openams __stop:populate"
+MENU_STOP_EVENTS = (MENU_STOP_EVENT, "menu:__main __oams_stop:populate")
+# Stock LCD menu entries that move the extruder by a raw distance, outside
+# OpenAMS: the Filament list ("Load Fil." is G1 E50, "Unload Fil." G1 E-50)
+# and Move E. Where OpenAMS runs they are taken out of the menu at ready,
+# unless the owner's config defines the entry or adds entries under it.
+STOCK_RAW_EXTRUDE_MENU = (
+    "__main __filament",
+    "__main __control __move_10mm __axis_e",
+    "__main __control __move_1mm __axis_e",
+    "__main __control __move_01mm __axis_e")
 
 # HelixScreen UI API v1 (docs/UI_API.md): a small, versioned status/command
 # contract for native UIs, independent of AFC and of any particular OAMS
@@ -229,6 +269,9 @@ class OAMSManager(oams_ext.ManagerHooks):
         # and re-checked at ready, once family discovery has settled bays.
         self._ui_projections = {}
         self._register_ui_projections()
+        # The LCD "AMS status" screen's object (C2 §6a): one for the printer.
+        self.screen = OpenAMSScreen(self)
+        self._register_screen()
 
         self.idle_timeout = None
         self.monitor_timer = None
@@ -287,7 +330,8 @@ class OAMSManager(oams_ext.ManagerHooks):
                                             self._handle_disconnect)
         self.printer.register_event_handler("gcode:command_error",
                                             self._handle_command_error)
-        self.printer.register_event_handler(MENU_STOP_EVENT, self._menu_stop)
+        for event in MENU_STOP_EVENTS:
+            self.printer.register_event_handler(event, self._menu_stop)
         # A newly loaded print file starts with no remembered group.
         self.printer.register_event_handler(
             "virtual_sdcard:reset_file",
@@ -497,6 +541,25 @@ class OAMSManager(oams_ext.ManagerHooks):
                               name, e)
                 continue
             self._ui_projections[name] = True
+
+    def _screen_object(self):
+        """The openams_screen object, made on first use by a manager built
+        without __init__ (status fixtures, tests)."""
+        screen = getattr(self, "screen", None)
+        if screen is None:
+            screen = self.screen = OpenAMSScreen(self)
+        return screen
+
+    def _register_screen(self):
+        """Publish the "openams_screen" object (C2 §6a). A printer without
+        add_object (unit tests) gets none."""
+        add = getattr(self.printer, "add_object", None)
+        if add is None:
+            return
+        try:
+            add("openams_screen", self.screen)
+        except Exception as e:
+            logging.debug("OAMS: openams_screen not registered: %s", e)
 
     # ------------------------------------------------------------- world build
 
@@ -804,7 +867,37 @@ class OAMSManager(oams_ext.ManagerHooks):
             self._warn_no_pause_resume()
         elif not self.__dict__.get("_resume_wrapped"):
             self._warn_resume_not_wrapped()
+        try:
+            self._retire_stock_menu_entries()
+        except Exception:
+            logging.exception("OpenAMS: could not adjust the LCD menu")
         self.start_monitor()
+
+    def _retire_stock_menu_entries(self):
+        """Take the stock LCD menu entries that move the extruder by a raw
+        distance (STOCK_RAW_EXTRUDE_MENU) out of the menu: on an OpenAMS
+        printer loading and unloading are OpenAMS's, and a raw unload leaves
+        the tip in the gears with the lane still loaded. Only stock entries:
+        one the owner's config defines, or a list the owner added entries to,
+        stays as the owner made it. Done on the menu object, not with a
+        [menu] section in oams_menu.cfg, because Klipper merges two sections
+        of one name, and a merge with an owner's own entry of another type
+        would keep Klipper from starting."""
+        menu = self.printer.lookup_object("menu", None)
+        if menu is None:
+            return
+        owned = [section.get_name()
+                 for section in self.config.get_prefix_sections("menu ")]
+        for name in STOCK_RAW_EXTRUDE_MENU:
+            section = "menu " + name
+            if any(own == section or own.startswith(section + " ")
+                   for own in owned):
+                logging.info("OpenAMS: the LCD menu keeps %s: the printer's"
+                             " config defines it or adds to it", name)
+                continue
+            if menu.lookup_menuitem(name, None) is None:
+                continue
+            menu.add_menuitem(name, menu.menuitem_from("disabled"))
 
     def _finish_startup_resync_if_ready(self):
         if not self._startup_resync_pending:
@@ -1293,6 +1386,34 @@ class OAMSManager(oams_ext.ManagerHooks):
                 # to it (C2 §4.2). null when the lane holds nothing, or when
                 # the component has not pushed one for that bay.
                 "filament_temp_c": self._bay_filament_temp_c(lane.unit)}
+
+    def _heat_for_unload(self, fps, unit):
+        """Bring the lane's extruder to the loaded bay's working temperature
+        (within 5 C, the threshold _OAMS_TOOLHEAD_EJECT uses) when it is
+        colder. Nothing to do without a pushed temperature or a heater."""
+        if not hasattr(self, "oam_by_idx"):
+            return
+        temp = self._bay_filament_temp_c(unit)
+        if not temp or temp <= 0:
+            return
+        lane_fps = getattr(self, "fpss", {}).get(fps)
+        name = getattr(lane_fps, "extruder_name", None)
+        if not name:
+            return
+        heater = self.printer.lookup_object(name, None)
+        if heater is None or not hasattr(heater, "get_status"):
+            return
+        current = heater.get_status(self.reactor.monotonic()).get(
+            "temperature")
+        if current is not None and current >= temp - 5:
+            return
+        gcode = self.printer.lookup_object("gcode")
+        gcode.respond_info("Heating %s to %d before the reverse follower"
+                           % (name, temp))
+        gcode.run_script_from_command(
+            "SET_HEATER_TEMPERATURE HEATER=%s TARGET=%d\n"
+            "TEMPERATURE_WAIT SENSOR=%s MINIMUM=%d" % (name, temp, name,
+                                                       temp - 5))
 
     def _bay_filament_temp_c(self, unit):
         """The temp_c pushed for one [unit_idx, bay] pair, or None (C2 §4.5)."""
@@ -2017,11 +2138,33 @@ class OAMSManager(oams_ext.ManagerHooks):
 
     def cmd_CHECK_STOP(self, gcmd):
         """C3: a macro calls this right before each step and hook. Does
-        nothing unless openams/stop flagged the lane."""
+        nothing unless openams/stop flagged the lane, or a reverse follower
+        that was acknowledged has since stopped (the unload must not go on
+        retracting against a unit that no longer pulls back)."""
         fps = self._stop_lane(gcmd)
         if fps is not None and fps in self._stop_requested:
             self._apply_stop(fps)
             raise gcmd.error(STOPPED_TEXT)
+        self._raise_follower_failure(fps, gcmd)
+
+    def _raise_follower_failure(self, fps, gcmd):
+        """Raise (once) the failure of a lane's running reverse follower,
+        after stopping the lane's followers. Nothing when none failed."""
+        for oam in self._lane_oams_for(fps):
+            reason = getattr(oam, "follower_failed", None)
+            if reason:
+                oam.follower_failed = None
+                self._stop_followers([fps] if fps is not None else self.fpss)
+                raise gcmd.error("OpenAMS stopped the unload: %s. Inspect"
+                                 " the filament path before retrying"
+                                 % reason)
+
+    def _lane_oams_for(self, fps):
+        """The units of `fps`, or every unit when the lane is unknown."""
+        lane_oams = getattr(self, "lane_oams", {})
+        if fps is not None and fps in lane_oams:
+            return list(lane_oams[fps])
+        return list(getattr(self, "oams", {}).values())
 
     cmd_HEAT_WAIT_help = ("Wait for a heater to reach a minimum, like"
                           " TEMPERATURE_WAIT, but stoppable by the user")
@@ -2055,6 +2198,7 @@ class OAMSManager(oams_ext.ManagerHooks):
 
     def register_commands(self):
         gcode = self.printer.lookup_object("gcode")
+        report_gcode_errors_once(gcode)
         for name, handler, desc in (
             ("OAMSM_UNLOAD_FROM_TOOLHEAD", self.cmd_UNLOAD_FROM_TOOLHEAD,
              self.cmd_UNLOAD_FROM_TOOLHEAD_help),
@@ -2091,6 +2235,7 @@ class OAMSManager(oams_ext.ManagerHooks):
              self.cmd_CLEAR_BAY_SPOOL_help),
             ("OAMSM_SET_BAY_FILAMENT", self.cmd_SET_BAY_FILAMENT,
              self.cmd_SET_BAY_FILAMENT_help),
+            ("OAMSM_SCREEN", self.cmd_SCREEN, self.cmd_SCREEN_help),
             ("OAMSM_SET_TRAY_INFO", self.cmd_SET_TRAY_INFO,
              self.cmd_SET_TRAY_INFO_help),
             ("OAMSM_UNASSIGN_BAY", self.cmd_UNASSIGN_BAY,
@@ -2836,7 +2981,48 @@ class OAMSManager(oams_ext.ManagerHooks):
             return False
         self._raise_idle_timeout(gcode)
         gcode.respond_raw("!! " + self._fault_message(fps, resuming=False))
+        self._show_fault_on_display(gcode, fps)
         return True
+
+    def _show_fault_on_display(self, gcode, fps):
+        """The printer's display never shows the console, so a print paused
+        for a failed toolchange also gets a short status-line notice
+        ("T4 failed: feed"). The RESUME that finishes it clears it."""
+        if self.printer.lookup_object("display_status", None) is None:
+            return
+        fault = self._tc_faults().get(fps)
+        if fault is None:
+            return
+        name = ("Unload" if fault["kind"] == "unload"
+                else str(fault["group"]))
+        text = "%s failed" % name
+        if fault["step"]:
+            text += ": %s" % fault["step"]
+        text = text.replace('"', "")
+        try:
+            gcode.run_script_from_command('SET_DISPLAY_TEXT MSG="%s"' % text)
+        except self.printer.command_error:
+            logging.exception("OpenAMS: could not show the failed toolchange"
+                              " on the display")
+            return
+        self._display_notice = text
+
+    def _clear_display_notice(self, run_script):
+        """Clear the status-line notice of a failed toolchange, unless
+        something else has put its own message there since."""
+        notice = self.__dict__.get("_display_notice")
+        if notice is None:
+            return
+        self._display_notice = None
+        status = self.printer.lookup_object("display_status", None)
+        if status is None:
+            return
+        try:
+            shown = status.get_status(self.reactor.monotonic()).get("message")
+            if shown == notice:
+                run_script("SET_DISPLAY_TEXT")
+        except Exception:
+            logging.exception("OpenAMS: could not clear the display notice")
 
     def _pause_directly(self, gcode):
         pause_resume = self.printer.lookup_object("pause_resume", None)
@@ -3155,6 +3341,9 @@ class OAMSManager(oams_ext.ManagerHooks):
         paused, it is dropped. A fault from the panel stays for its Retry."""
         faults = self._tc_faults()
         if not any(not fault["panel"] for fault in faults.values()):
+            # No print fault is left (OAMSM_RETRY finished it, whatever
+            # came after): its notice goes too.
+            self._schedule_notice_clear()
             return
         stats = self.printer.lookup_object("print_stats", None)
         try:
@@ -3167,6 +3356,22 @@ class OAMSManager(oams_ext.ManagerHooks):
                     if not fault["panel"]]:
             del faults[fps]
             self._tc_notes().pop(fps, None)
+        self._schedule_notice_clear()
+
+    def _schedule_notice_clear(self):
+        """Clear the status-line notice of a failed toolchange once no print
+        fault is left, still only when it is the message shown. From the
+        monitor timer, so the G-code runs in a callback of its own, once."""
+        if (self.__dict__.get("_display_notice") is None
+                or self.__dict__.get("_notice_clear_pending")):
+            return
+        self._notice_clear_pending = True
+        gcode = self.printer.lookup_object("gcode")
+
+        def clear(eventtime):
+            self._notice_clear_pending = False
+            self._clear_display_notice(gcode.run_script)
+        self.reactor.register_callback(clear)
 
     cmd_RETRY_help = ("Retry the failed toolchange or unload on a lane from"
                       " where it stopped (RESUME does this in a print)")
@@ -3379,8 +3584,10 @@ class OAMSManager(oams_ext.ManagerHooks):
                 self._keep_pause_timeout()
             raise
         if not self._print_is_paused():
-            self._restore_idle_timeout(
-                self.printer.lookup_object("gcode").run_script_from_command)
+            run_script = self.printer.lookup_object(
+                "gcode").run_script_from_command
+            self._restore_idle_timeout(run_script)
+            self._clear_display_notice(run_script)
 
     def _keep_pause_timeout(self):
         """A RESUME that leaves the print paused: the idle timeout back at
@@ -3421,7 +3628,8 @@ class OAMSManager(oams_ext.ManagerHooks):
         stray = ()
         if problem is None:
             action, problem, stray = self._stage_action(
-                fps, lane, plan, name, failed, done, labels, detail)
+                fps, lane, plan, name, failed, done, labels, detail,
+                group=gcmd.get("GROUP", None))
         if problem is not None:
             gcmd.respond_info("OAMSM_STAGE: %s; ignored" % problem)
             return
@@ -3442,6 +3650,15 @@ class OAMSManager(oams_ext.ManagerHooks):
         for step in stray:
             gcmd.respond_info("OAMSM_STAGE: no step '%s' in the plan;"
                              " its label was dropped" % step)
+
+    def _plan_group(self, fps, group):
+        """The group a PLAN= brings in (its GROUP=), kept only when it is a
+        group on that lane: the LCD names the tool and shows its unit from
+        the plan's first step. Display only, so a wrong one is dropped."""
+        topo = getattr(self, "topo", None)
+        if not group or topo is None or group not in topo.groups:
+            return None
+        return group if topo.lane_of_group(group) in (None, fps) else None
 
     def _stage_labels(self, gcmd):
         """The ``LABEL_<STEP>="text"`` display labels of one OAMSM_STAGE
@@ -3485,7 +3702,7 @@ class OAMSManager(oams_ext.ManagerHooks):
         return None, "no single lane with a stage or operation; specify FPS="
 
     def _stage_action(self, fps, lane, plan, name, failed, done, labels,
-                      detail):
+                      detail, group=None):
         """The reducer action for one valid-looking request, or ``(None, why)``
         when the lane's current state forbids it (the reducer would ignore it
         silently, so the manager warns instead). `stray` names the labels the
@@ -3507,7 +3724,8 @@ class OAMSManager(oams_ext.ManagerHooks):
             stray = tuple(step for step in sorted(labels) if step not in names)
             return (S.StagePlan(fps, names,
                                 tuple((step, labels[step])
-                                      for step in names if step in labels)),
+                                      for step in names if step in labels),
+                                group=self._plan_group(fps, group)),
                     None, stray)
         if name is not None:
             if not S.stage_name_ok(name):
@@ -3599,12 +3817,46 @@ class OAMSManager(oams_ext.ManagerHooks):
 
     cmd_UNLOAD_FILAMENT_help = "Unload the spool loaded on a lane"
 
+    def _send_unload_clear(self, fps):
+        """The filament of the unload just started on `fps` is clear of the
+        toolhead (the macro cut it above the extruder, or ejected it past the
+        gears): tell the unit, so it rewinds with its first stage instead of
+        pulling with the hub alone (C1 §4.1). Nothing for a unit without
+        the capability."""
+        lane = self.runtime.get_state().lanes.get(fps)
+        if lane is None or lane.op != S.OP_UNLOADING:
+            return
+        unit = lane.unit
+        if unit is None:
+            return
+        oam = getattr(self, "oam_by_idx", {}).get(unit[0])
+        confirm = getattr(oam, "confirm_unload_clear", None)
+        if not callable(confirm):
+            return
+        name = self.unit_name_by_idx.get(unit[0], unit[0])
+        if confirm(lane.op_gen):
+            logging.info("OpenAMS: lane %s: told %s the filament is clear of"
+                         " the toolhead", fps, name)
+        elif getattr(oam, "oams_unload_clear_cmd", None) is not None:
+            # The unit wants it but it did not go out (its unload not in
+            # flight on the driver yet): the unit falls back to its own
+            # timing. Never silent, so a bench log shows it.
+            logging.warning("OpenAMS: lane %s: could not tell %s the filament"
+                            " is clear of the toolhead; it uses its own"
+                            " timing", fps, name)
+
     def cmd_UNLOAD_FILAMENT(self, gcmd):
+        # The toolhead unload's eject left the filament clear of the gears
+        # (set just before it calls us; taken here whatever happens next).
+        toolhead_clear = self.__dict__.pop("_toolhead_clear_once", False)
         # SAFE_UNLOAD_FILAMENT enables the follower (rewind) before calling us,
         # so every path below that does not unload MUST stop followers — this
         # is the runaway-rewind case this command exists to prevent.
         self._require_motion_available(gcmd, self._command_unit_names(gcmd),
                                        stop_followers=True)
+        self._raise_follower_failure(
+            self._resolve_fps(gcmd, prefer_op=S.OP_LOADED, required=False),
+            gcmd)
         if any(not getattr(oam, "hardware_snapshot_ready", True)
                for oam in getattr(self, "oams", {}).values()):
             self._stop_followers(self.fpss)
@@ -3646,7 +3898,10 @@ class OAMSManager(oams_ext.ManagerHooks):
             return
         if fed is not None:
             self._wait_for_positioning(fps, gcmd)
-            result = self.runtime.request(fps, S.Unload(fps)).wait()
+            # The filament stopped short of the toolhead: nothing holds it.
+            completion = self.runtime.request(fps, S.Unload(fps))
+            self._send_unload_clear(fps)
+            result = completion.wait()
             if not result.ok:
                 raise gcmd.error(result.message)
             gcmd.respond_info("Rewound %s: %s" % (
@@ -3663,7 +3918,15 @@ class OAMSManager(oams_ext.ManagerHooks):
         if reason is not None:
             raise gcmd.error(reason)
         self._wait_for_positioning(fps, gcmd)
-        result = self.runtime.request(fps, S.Unload(fps)).wait()
+        # CLEAR=1: the caller (SAFE_UNLOAD_FILAMENT after its cut, or the
+        # toolhead unload after its eject) knows the filament is out of the
+        # extruder, so the unit may rewind with its first stage at once.
+        if not toolhead_clear:
+            toolhead_clear = bool(gcmd.get_int("CLEAR", 0, minval=0, maxval=1))
+        completion = self.runtime.request(fps, S.Unload(fps))
+        if toolhead_clear:
+            self._send_unload_clear(fps)
+        result = completion.wait()
         if not result.ok:
             # Raise so SAFE_UNLOAD-style macros stop instead of carrying on
             # with a spool still (partially) loaded.
@@ -3857,14 +4120,21 @@ class OAMSManager(oams_ext.ManagerHooks):
             # extruder retracts; the unit's own unload retracts after the
             # host's cut. No follower request and no confirmation wait.
             self._run_toolhead_macro(self.toolhead_unload_macro)
+            self._toolhead_clear_once = True
             self.cmd_UNLOAD_FILAMENT(gcmd)
             return
+        # Heat first: the unload macro heats too, but inside the reverse
+        # window, and a heat-up from cold can outlast what the unit keeps
+        # the follower for, leaving the extruder to retract against a
+        # stopped follower. With the nozzle hot the macro skips its own.
+        self._heat_for_unload(fps, lane.unit)
         previous_lane = self.runtime.get_state().lanes.get(fps)
         self.runtime.dispatch(S.Follow(fps, 1, S.FOLLOWER_REVERSE))
         try:
             self._wait_for_follower(fps, lane.unit, S.FOLLOWER_REVERSE,
                                     previous_lane, gcmd)
             self._run_toolhead_macro(self.toolhead_unload_macro)
+            self._toolhead_clear_once = True
             self.cmd_UNLOAD_FILAMENT(gcmd)
         except Exception:
             self._stop_followers([fps])
@@ -4127,7 +4397,8 @@ class OAMSManager(oams_ext.ManagerHooks):
 
     cmd_SET_BAY_FILAMENT_help = (
         "Set what an OAMS bay holds of filament, in memory only "
-        "(MATERIAL=<text> TEMP=<150-400> SOURCE=spool|table)")
+        "(MATERIAL=<text> TEMP=<150-400> SOURCE=spool|table "
+        "REMAINING=<0-100>)")
 
     def cmd_SET_BAY_FILAMENT(self, gcmd):
         # The working copy openams_spoolman pushes (C3 §4). Metadata, not
@@ -4139,21 +4410,75 @@ class OAMSManager(oams_ext.ManagerHooks):
         bay = gcmd.get_int(
             "BAY", minval=0, maxval=self.topo.bays_of(name) - 1)
         temp = self._bay_filament_temp(gcmd)
+        remaining = self._bay_filament_remaining(gcmd)
         material = gcmd.get("MATERIAL", None)
         if material is not None:
             material = material.strip() or None
         source = gcmd.get("SOURCE", "spool").lower()
         if source not in ("spool", "table"):
             raise gcmd.error("SOURCE must be 'spool' or 'table'.")
-        if temp is None and material is None:
+        if temp is None and material is None and remaining is None:
             self.oams[name].set_bay_filament(bay, None, None, None)
             gcmd.respond_info("Cleared the filament of %s."
                               % S.spool_name(name, bay))
             return
-        self.oams[name].set_bay_filament(bay, material, temp, source)
-        gcmd.respond_info("Set %s to %s at %s C (%s)." % (
+        # A component that predates REMAINING sends none: unknown (None).
+        self.oams[name].set_bay_filament(bay, material, temp, source,
+                                         remaining_pct=remaining)
+        if temp is None and material is None:
+            gcmd.respond_info("Set %s to %d%% left." % (
+                S.spool_name(name, bay), remaining))
+            return
+        gcmd.respond_info("Set %s to %s at %s C (%s)%s." % (
             S.spool_name(name, bay), material or "unknown material",
-            "?" if temp is None else temp, source))
+            "?" if temp is None else temp, source,
+            "" if remaining is None else ", %d%% left" % remaining))
+
+    @staticmethod
+    def _bay_filament_remaining(gcmd):
+        """REMAINING= as an int 0-100, None when absent or empty (unknown).
+
+        The spool's remaining weight over its initial weight, as the
+        component works it out (C4 §7.4); only the LCD screen shows it
+        (C2 §6a)."""
+        raw = gcmd.get("REMAINING", None)
+        if raw is None or not str(raw).strip():
+            return None
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            raise gcmd.error("REMAINING must be an integer, got '%s'." % raw)
+        if not 0 <= value <= 100:
+            raise gcmd.error("REMAINING must be between 0 and 100, got %d."
+                             % value)
+        return value
+
+    cmd_SCREEN_help = (
+        "Choose the unit the LCD AMS status screen shows "
+        "(UNIT=<unit>, or UNIT=AUTO to follow the active unit)")
+
+    def cmd_SCREEN(self, gcmd):
+        # Memory only: a restart follows the active unit again (C3 §4).
+        screen = self._screen_object()
+        units = screen.units()
+        unit = gcmd.get("UNIT", None)
+        if unit is not None:
+            unit = unit.strip()
+            if unit.lower() in ("", "auto"):
+                screen.set_pin(None)
+            elif unit in units:
+                screen.set_pin(unit)
+            else:
+                raise gcmd.error("Unknown unit '%s' for the AMS status "
+                                 "screen; units: %s." % (
+                                     unit, ", ".join(units) or "none"))
+        active = screen.get_status(self.reactor.monotonic())["active"]
+        if screen.pin is not None:
+            gcmd.respond_info("AMS status screen: shows %s (pinned)."
+                              % screen.pin)
+        else:
+            gcmd.respond_info("AMS status screen: follows the active unit "
+                              "(now %s)." % (active or "none"))
 
     @staticmethod
     def _bay_filament_temp(gcmd):

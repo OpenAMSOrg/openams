@@ -187,6 +187,15 @@ because the odometer stood still) and `ams_state` at the failure. Production
 firmware shows its odometer nowhere else, so this row is how a report shows
 the rewind profile of, say, an AMS 1 whose load failed.
 
+**Motor samples** (section 0x14, bridge firmware 15, 23 bytes a row, present only
+when the bridge sent some): the AMS's motor readings during a reverse follower or an unload,
+the latest few per unit, as many as fit; take the report right after the motion of interest.
+`slot`, `age_ms`, `primitive` (the command streamed: 0x02 stop, 0x03 pull back or feed, 0x07
+follower or hold, 0x09 hub servo), `reference` (its reference byte; 0x09's servo setpoint),
+`odo_mm` and `buffer` (signed), and the 0x04 reply offsets 22-33 as `m22`..`m32` (signed). On the
+AMS 2 Pro 22-27 follow the hub motor and 28/30/32 are 0 unless the per-slot first stage runs;
+the reading adds one sentence per sample, flagging "first stage running".
+
 **Dryers** (section 0x13, one row per unit asked to dry, or drying, since it
 was bound; 77 bytes from bridge firmware 12, 73 before, read by length).
 Firmware 12 appends how the last start went: `start` (`none`, `confirmed`,

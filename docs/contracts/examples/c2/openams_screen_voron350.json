@@ -1,0 +1,5 @@
+{"v": 1, "units": ["ams1", "ams2"], "active": "ams2", "pin": null, "tool": null,
+ "bays": {"ams1": [{"m": "PLA", "r": 78}, {"m": "ABS", "r": 45},
+                   {"m": "PETG", "r": 12}, {"m": null, "r": null}],
+          "ams2": [{"m": "PLA", "r": 100}, {"m": "PETG", "r": 62},
+                   {"m": "ASA", "r": 30}, {"m": "PLA", "r": 8}]}}

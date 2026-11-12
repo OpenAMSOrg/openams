@@ -215,6 +215,17 @@ def extruder_temp_of(value):
     return temp
 
 
+def remaining_pct_of(value):
+    """A spool's remaining percent as the host keeps it: an int 0-100, or
+    None for anything that is not a number (C4 §7.4). A spool used past its
+    initial weight reads 0, one refilled past it 100."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value != value:            # NaN
+        return None
+    return max(0, min(100, int(round(value))))
+
+
 def material_name_of(value):
     """A filament's material as the host stores it, or None (C4 §7.4)."""
     name = str(value or "").strip()

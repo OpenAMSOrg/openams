@@ -278,6 +278,11 @@ def project(status, unit_name):
         else:
             groups.append({"n": name})
     lane_faults = []
+    # The lane's own fault (a failed load or unload): every unit of a shared
+    # lane carries a copy, and only the unit owning the failed bay names it.
+    # It is one fault, carried as the owner's copy; taking the first copy
+    # would blame the lane's first unit for another unit's failure.
+    lane_fault = None
     for name, info in status["topology"]["oams"].items():
         if info["lane"] != lane_id:
             continue
@@ -285,10 +290,17 @@ def project(status, unit_name):
             text = fault["text"]
             if len(text) > 48:
                 text = text[:47] + "\u2026"
-            lane_faults.append({"sev": fault["severity"],
-                                "code": fault["code"], "text": text,
-                                "unit": name, "bay": fault["bay"],
-                                "act": list(fault["actions"])})
+            entry = {"sev": fault["severity"], "code": fault["code"],
+                     "text": text, "unit": name, "bay": fault["bay"],
+                     "act": list(fault["actions"])}
+            if fault.get("source") == "lane":
+                if lane_fault is None or (lane_fault["bay"] is None
+                                          and entry["bay"] is not None):
+                    lane_fault = entry
+                continue
+            lane_faults.append(entry)
+    if lane_fault is not None:
+        lane_faults.append(lane_fault)
     # nf counts every fault on the lane; only the most severe one is carried.
     nf = len(lane_faults)
     lane_faults.sort(key=lambda f: _FAULT_RANK.get(f["sev"], 3))

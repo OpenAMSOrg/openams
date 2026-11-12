@@ -368,7 +368,8 @@ class Unit:
         value = self.bay_filaments[bay]
         return dict(value) if value is not None else None
 
-    def set_bay_filament(self, bay, material, temp_c, source):
+    def set_bay_filament(self, bay, material, temp_c, source,
+                         remaining_pct=None):
         if material is None and temp_c is None:
             self.bay_filaments[bay] = None
             return

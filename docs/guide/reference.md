@@ -225,6 +225,7 @@ the unit's `oams_idx`, except in the four group and spool-link commands and
 | `OAMSM_CLEAR_BAY_SPOOL` | `OAMS=<unit name> BAY=<0-3>` |
 | `OAMSM_SET_TRAY_INFO` | `OAMS=<unit name> BAY=<0-3>`, then `SPOOL=<id>` (optional, default the linked spool) or `MATERIAL=<text> MIN=<C> MAX=<C>` with optional `CODE=<code>` (default: the material's generic code) and `COLOR=<RRGGBB[AA]>`; units with a stored per-bay filament setting only |
 | `OAMSM_SET_OPTION` | `NAME=<setting> VALUE=<value>` |
+| `OAMSM_SCREEN` | `UNIT=<unit name>` keeps the LCD's AMS status screen on that unit, `UNIT=AUTO` lets it follow the active unit; none: says which it shows |
 
 ### Per unit, `OAMS=<index>`
 

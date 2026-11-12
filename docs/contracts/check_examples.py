@@ -28,6 +28,7 @@ UI_MAX_BYTES = 1024
 RULES = (
     ("c2", "oams_manager_", "oams_manager_status_v2.schema.json"),
     ("c2", "openams_ui_", "openams_ui_v1.schema.json"),
+    ("c2", "openams_screen_", "openams_screen_v1.schema.json"),
     ("c4", "openams_spoolman_", "openams_spoolman_status_v1.schema.json"),
 )
 

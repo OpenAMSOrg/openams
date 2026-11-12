@@ -26,7 +26,8 @@ except ImportError:
 
 from test_openams_klipper import (  # noqa: F401  (klipper is a fixture)
     KLIPPER_REV, ROOT, S, Config, Fps, Printer, Status, Unit, committed_source,
-    klipper, load_macros, module_from_source, oams_manager)
+    inlet_sensor, klipper, load_macros, module_from_source, oams_manager,
+    printing_with_resume)
 
 MENU_FILE = ROOT / "oams_menu.cfg"
 COLS = 16
@@ -229,7 +230,8 @@ class Bench:
     loaded from oams_menu.cfg next to a [display] section."""
 
     def __init__(self, kmenu, klipper, tmp_path, units, groups,
-                 lanes=("fps",), user_cfg=None, display=True):
+                 lanes=("fps",), user_cfg=None, display=True,
+                 stock_menu=None):
         self.kmenu = kmenu
         printer = self.printer = MenuPrinter(klipper)
         names = []
@@ -252,24 +254,6 @@ class Bench:
             printer.objects["filament_group " + group] = types.SimpleNamespace(
                 bay_specs=list(bays))
             names.append("filament_group " + group)
-        printer.section_names = names + ["oams_manager"]
-        self.manager = oams_manager.OAMSManager(Config(printer, "oams_manager"))
-        printer.objects["oams_manager"] = self.manager
-        load_macros(printer, klipper)
-        printer.objects["configfile"] = ConfigFile(
-            kmenu, printer, printer.objects["configfile"].values)
-        # Klipper publishes each group's section; _TX looks a group up there.
-        settings = printer.objects["configfile"].values["settings"]
-        for group, bays in groups:
-            settings["filament_group " + group.lower()] = {
-                "group": ", ".join("%s-%d" % bay for bay in bays)}
-        printer.objects["buttons"] = object()
-        # Klipper's own main menu reads it.
-        printer.objects["idle_timeout"] = Status(state="Idle")
-        printer.send_event("klippy:ready")
-        self.manager._monitor(printer.reactor.monotonic())
-        printer.trace.clear()
-
         # The config as Klipper reads it: printer.cfg with the include.
         shutil.copy(MENU_FILE, tmp_path / "oams_menu.cfg")
         text = ""
@@ -291,6 +275,24 @@ class Bench:
             reader.build_fileconfig("", "autosave"))
         self.config = kmenu.configfile.ConfigWrapper(
             printer, self.fileconfig, self.access, "printer")
+
+        # The manager sees every section of the printer's config, the menu
+        # sections included.
+        printer.section_names = (names + ["oams_manager"]
+                                 + list(self.fileconfig.sections()))
+        self.manager = oams_manager.OAMSManager(Config(printer, "oams_manager"))
+        printer.objects["oams_manager"] = self.manager
+        load_macros(printer, klipper)
+        printer.objects["configfile"] = ConfigFile(
+            kmenu, printer, printer.objects["configfile"].values)
+        # Klipper publishes each group's section; _TX looks a group up there.
+        settings = printer.objects["configfile"].values["settings"]
+        for group, bays in groups:
+            settings["filament_group " + group.lower()] = {
+                "group": ", ".join("%s-%d" % bay for bay in bays)}
+        printer.objects["buttons"] = object()
+        # Klipper's own main menu reads it.
+        printer.objects["idle_timeout"] = Status(state="Idle")
         macro = "gcode_macro _OAMS_MENU"
         printer.objects[macro] = klipper.gcode_macro.GCodeMacro(
             self.config.getsection(macro))
@@ -299,8 +301,22 @@ class Bench:
             section = self.config.getsection("display")
             section.get("lcd_type")         # read by the LCD driver
             self.display = Display()
-            self.menu = kmenu.menu.MenuManager(section, self.display)
+            # Klipper loads its own menu.cfg from the folder menu.py is in.
+            module_file = kmenu.menu.__dict__["__file__"]
+            if stock_menu is not None:
+                (tmp_path / "stock").mkdir()
+                (tmp_path / "stock" / "menu.cfg").write_text(stock_menu)
+                kmenu.menu.__dict__["__file__"] = str(
+                    tmp_path / "stock" / "menu.py")
+            try:
+                self.menu = kmenu.menu.MenuManager(section, self.display)
+            finally:
+                kmenu.menu.__dict__["__file__"] = module_file
             self.lcd = Lcd(printer, self.menu, self.display)
+        # Klipper is ready once every object is loaded, the menu included.
+        printer.send_event("klippy:ready")
+        self.manager._monitor(printer.reactor.monotonic())
+        printer.trace.clear()
 
     def check_unused(self):
         """Klipper's own startup check of the whole config."""
@@ -323,12 +339,14 @@ ONE_UNIT_GROUPS = [("T0", [("unit1", 0), ("unit1", 1)]),
 # Two units on one lane through a joiner, a tool per bay; unit2 has a dryer.
 DRYER = {"state": "off", "target_c": None, "remaining_s": None,
          "heater_pct": None, "fan_pct": None, "fault": "none", "adapter": True}
-TWO_UNITS = [("unit1", 1, "fps", {}),
-             ("unit2", 2, "fps", {
-                 "actions": AMS_ACTIONS + ("dryer_start", "dryer_stop"),
-                 "dryer": DRYER,
-                 "capabilities": {"dryer_target_min_c": 45.0,
-                                  "dryer_target_max_c": 65.0}})]
+AMS2_PRO = {"actions": AMS_ACTIONS + ("dryer_start", "dryer_stop"),
+            "dryer": DRYER, "family": "ams2",
+            "capabilities": {"dryer_target_min_c": 45.0,
+                             "dryer_target_max_c": 65.0}}
+AMS_HT = dict(AMS2_PRO, family="ams_ht",
+              capabilities={"dryer_target_min_c": 45.0,
+                            "dryer_target_max_c": 85.0})
+TWO_UNITS = [("unit1", 1, "fps", {}), ("unit2", 2, "fps", AMS2_PRO)]
 TWO_UNIT_GROUPS = [("T%d" % (unit * 4 + bay), [("unit%d" % (unit + 1), bay)])
                    for unit in range(2) for bay in range(4)]
 
@@ -360,13 +378,17 @@ def menu_sections():
 def test_the_file_loads_through_klippers_menu_and_klipper_accepts_it(bench):
     b = bench()
     sections = menu_sections()
-    assert sections and all(s.startswith("menu __main __openams")
+    assert sections and all(s.startswith(("menu __main __openams",
+                                          "menu __main __oams_stop"))
                             for s in sections)
     for section in sections:
         assert b.menu.lookup_menuitem(section[len("menu "):]) is not None
-    # OpenAMS is added at the end of Klipper's own main menu.
+    # OpenAMS is fourth among Klipper's own main entries (after Tune,
+    # OctoPrint and SD Card), and its Stop row is first.
     children = b.menu.lookup_children("__main")
-    assert children[-1] == "__main __openams"
+    assert children[:5] == ["__main __oams_stop", "__main __tune",
+                            "__main __octoprint", "__main __sdcard",
+                            "__main __openams"]
     assert "__main __control" in children and "__main __setup" in children
     # Every option of the file is read, so Klipper's unused-option check passes.
     for section in b.fileconfig.sections():
@@ -422,7 +444,7 @@ def test_a_users_own_menu_file_keeps_working_beside_it(bench):
     b.lcd.key("click")
     main = b.lcd.entries()
     assert "OctoPrint" not in main
-    assert main[-2:] == ["OpenAMS", "My macro"]
+    assert main[1] == "OpenAMS" and main[-1] == "My macro"
     # The user hid the dryer list from their own file.
     assert "Dryer" not in b.lcd.open("OpenAMS")
 
@@ -444,11 +466,12 @@ def test_a_single_picker_cannot_be_disabled_that_way(bench):
         b.check_unused()
 
 
-def test_the_stop_entry_is_the_one_the_host_listens_for(bench):
+def test_the_stop_entries_are_the_ones_the_host_listens_for(bench):
     b = bench()
-    assert oams_manager.MENU_STOP_EVENT == (
-        "menu:%s:populate" % b.menu.lookup_menuitem(
-            "__main __openams __stop").get_ns())
+    assert oams_manager.MENU_STOP_EVENTS == tuple(
+        "menu:%s:populate" % b.menu.lookup_menuitem(name).get_ns()
+        for name in ("__main __openams __stop", "__main __oams_stop"))
+    assert oams_manager.MENU_STOP_EVENT == oams_manager.MENU_STOP_EVENTS[0]
 
 
 def test_no_option_value_carries_a_hash_klipper_would_cut(bench):
@@ -467,8 +490,9 @@ def test_no_option_value_carries_a_hash_klipper_would_cut(bench):
 
 def test_idle_and_unloaded_shows_what_can_run(bench):
     b = bench()
-    assert b.lcd.home() == ["..", "Stop", "Load", "Reset errors", "Calibrate",
-                            "Follower", "Settings", "Status"]
+    assert b.lcd.home() == ["..", "Stop", "Load", "Extrude 10mm",
+                            "Reset errors", "Calibrate", "Follower",
+                            "Settings", "Status"]
     assert b.lcd.open("Load") == ["..", "Load tool", "Load spool",
                                   "Load, no cut"]
 
@@ -477,8 +501,9 @@ def test_a_loaded_lane_adds_unload(bench):
     b = bench()
     run(b, ["OAMSM_TOOLCHANGE GROUP=T1"])
     assert b.units["unit1"].current_spool == 2
-    assert b.lcd.home() == ["..", "Stop", "Load", "Unload", "Reset errors",
-                            "Calibrate", "Follower", "Settings", "Status"]
+    assert b.lcd.home() == ["..", "Stop", "Load", "Unload", "Extrude 10mm",
+                            "Reset errors", "Calibrate", "Follower",
+                            "Settings", "Status"]
     assert b.lcd.open("Unload") == ["..", "Unload", "Unload, no cut", "Rewind"]
 
 
@@ -494,8 +519,9 @@ def test_a_paused_print_allows_manual_recovery(bench):
     b = bench()
     run(b, ["OAMSM_TOOLCHANGE GROUP=T1"])
     b.printing("paused")
-    assert b.lcd.home() == ["..", "Stop", "Load", "Unload", "Reset errors",
-                            "Calibrate", "Follower", "Settings", "Status"]
+    assert b.lcd.home() == ["..", "Stop", "Load", "Unload", "Extrude 10mm",
+                            "Reset errors", "Calibrate", "Follower",
+                            "Settings", "Status"]
 
 
 def test_without_openams_the_entry_is_hidden(bench):
@@ -726,14 +752,111 @@ def test_calibration_of_the_path_and_the_hub_sensor(bench):
     assert b.lcd.pick("Calibrate path", 2) == ("unit1 3 in use", [])
 
 
-def test_the_dryer_keeps_its_temperature_and_time_and_clamps_per_unit(bench):
+# Bambu Lab's AMS presets as oams_menu.cfg carries them: (row, C, hours)
+# idle, and the C while a print runs (None: not offered then). The AMS 2 Pro
+# rows from ABS on are OpenAMS's own: 65 C for twice the AMS HT time.
+AMS2_PRO_PRESETS = [("PLA", 45, 12, 45), ("PETG", 65, 12, 55),
+                    ("TPU", 65, 12, 45), ("ABS", 65, 16, 65),
+                    ("PC", 65, 16, 65), ("PETCF", 65, 24, 65),
+                    ("PA", 65, 24, 65), ("PVA", 65, 36, 65),
+                    ("PLA-S", 60, 12, 50)]
+AMS_HT_PRESETS = [("PLA", 45, 12, 45), ("PETG", 65, 12, 55),
+                  ("TPU", 75, 18, 45), ("ABS", 80, 8, 75), ("PC", 80, 8, 80),
+                  ("PETCF", 80, 12, None), ("PA", 85, 12, None),
+                  ("PVA", 85, 18, 70), ("PLA-S", 60, 12, 50)]
+
+
+def test_start_dryer_offers_the_ams_2_pro_presets_and_starts_in_one_go(bench):
     b = bench(units=TWO_UNITS, groups=TWO_UNIT_GROUPS)
     b.lcd.home()
-    assert b.lcd.open("Dryer") == ["..", "Dry temp: 55C", "Dry time: 4h",
-                                   "Start dryer", "Stop dryer"]
-    # Only the dryer units are targets.
+    assert b.lcd.open("Dryer") == ["..", "Start dryer", "Stop dryer", "Custom"]
+    assert b.lcd.labels("Start dryer") == [("Start dryer", [])] + [
+        ("%s %dC %dh?" % (name, temp, hours),
+         ["OAMS_DRYER_START OAMS=2 TARGET=%d DURATION=%d"
+          % (temp, hours * 3600)])
+        for name, temp, hours, _ in AMS2_PRO_PRESETS]
+    b.units["unit2"].dryer = dict(DRYER, state="timed_dry", target_c=65.0)
+    assert b.lcd.pick("Start dryer", 0) == ("PLA drying", [])
+    assert b.lcd.pick("Stop dryer", 0) == (
+        "Stop unit2 65C?", ["OAMS_DRYER_STOP OAMS=2"])
+    b.units["unit2"].dryer = dict(DRYER, adapter=False)
+    assert b.lcd.pick("Start dryer", 1) == ("PETG no power", [])
+
+
+def test_each_unit_type_offers_its_own_list_clamped_to_its_limits(bench):
+    units = [("pro", 1, "fps", AMS2_PRO), ("ht", 2, "fps", AMS_HT),
+             ("ams1", 3, "fps", {})]
+    groups = [("T0", [("pro", 0)]), ("T1", [("ht", 0)])]
+    b = bench(units=units, groups=groups)
+    b.lcd.home()
+    b.lcd.open("Dryer")
+    labels = b.lcd.labels("Start dryer")
+    expected = [("Start dryer", [])]
+    for unit, idx, presets, high in (("pro", 1, AMS2_PRO_PRESETS, 65),
+                                     ("ht", 2, AMS_HT_PRESETS, 85)):
+        for name, temp, hours, _ in presets:
+            assert 45 <= temp <= high and 1 <= hours <= 72
+            expected.append(("%s %s %dC?" % (unit, name, temp),
+                             ["OAMS_DRYER_START OAMS=%d TARGET=%d DURATION=%d"
+                              % (idx, temp, hours * 3600)]))
+    # The AMS 1 has no dryer and offers nothing.
+    assert labels == expected
+
+
+def test_during_a_print_a_preset_runs_at_its_print_temperature(bench):
+    units = [("pro", 1, "fps", AMS2_PRO), ("ht", 2, "fps", AMS_HT)]
+    b = bench(units=units, groups=[("T0", [("pro", 0)])])
+    b.printing()
+    b.lcd.home()
+    b.lcd.open("Dryer")
+    labels = b.lcd.labels("Start dryer")
+    expected = [("Start dryer", [])]
+    for unit, idx, presets in (("pro", 1, AMS2_PRO_PRESETS),
+                               ("ht", 2, AMS_HT_PRESETS)):
+        for name, temp, hours, printing in presets:
+            if printing is None:
+                expected.append(("%s %s idle only" % (unit, name), []))
+            else:
+                expected.append(("%s %s %dC?" % (unit, name, printing),
+                                 ["OAMS_DRYER_START OAMS=%d TARGET=%d"
+                                  " DURATION=%d"
+                                  % (idx, printing, hours * 3600)]))
+    assert labels == expected
+
+
+def test_a_unit_types_presets_are_the_owners_to_change(bench):
+    b = bench(units=TWO_UNITS, groups=TWO_UNIT_GROUPS, user_cfg=(
+        "[gcode_macro _OAMS_MENU]\n"
+        "variable_dryer_presets_ams2: [[\"PLA\", 50, 8, 45]]\n"))
+    b.check_unused()
+    b.lcd.home()
+    b.lcd.open("Dryer")
     assert b.lcd.labels("Start dryer") == [
         ("Start dryer", []),
+        ("PLA 50C 8h?", ["OAMS_DRYER_START OAMS=2 TARGET=50 DURATION=28800"])]
+
+
+def test_one_unit_can_have_presets_of_its_own(bench):
+    b = bench(units=TWO_UNITS, groups=TWO_UNIT_GROUPS, user_cfg=(
+        "[gcode_macro _OAMS_MENU]\n"
+        "variable_dryer_presets_unit2: [[\"PA\", 80, 12, None]]\n"))
+    b.check_unused()
+    b.lcd.home()
+    b.lcd.open("Dryer")
+    # Clamped to the unit's 65 C.
+    assert b.lcd.labels("Start dryer") == [
+        ("Start dryer", []),
+        ("PA 65C 12h?", ["OAMS_DRYER_START OAMS=2 TARGET=65 DURATION=43200"])]
+
+
+def test_custom_dryer_keeps_its_temperature_and_time(bench):
+    b = bench(units=TWO_UNITS, groups=TWO_UNIT_GROUPS)
+    b.lcd.home()
+    b.lcd.open("Dryer")
+    assert b.lcd.open("Custom") == ["..", "Dry temp: 55C", "Dry time: 4h",
+                                    "Start custom"]
+    assert b.lcd.labels("Start custom") == [
+        ("Start custom", []),
         ("unit2 55C 4h?",
          ["OAMS_DRYER_START OAMS=2 TARGET=55 DURATION=14400"])]
     # The temperature input runs from the lowest to the highest unit limit.
@@ -753,27 +876,20 @@ def test_the_dryer_keeps_its_temperature_and_time_and_clamps_per_unit(bench):
     b.lcd.key("click")
     run(b, b.lcd.scripts[-1:])
     assert b.lcd.entries()[1:3] == ["Dry temp: 65C", "Dry time: 8h"]
-    assert b.lcd.pick("Start dryer", 0) == (
+    assert b.lcd.pick("Start custom", 0) == (
         "unit2 65C 8h?", ["OAMS_DRYER_START OAMS=2 TARGET=65 DURATION=28800"])
-    assert b.lcd.pick("Stop dryer", 0) == ("unit2 is off", [])
-    b.units["unit2"].dryer = dict(DRYER, state="timed_dry", target_c=65.0)
-    assert b.lcd.pick("Stop dryer", 0) == (
-        "Stop unit2 65C?", ["OAMS_DRYER_STOP OAMS=2"])
-    assert b.lcd.pick("Start dryer", 0) == ("unit2 drying", [])
-    b.units["unit2"].dryer = dict(DRYER, adapter=False)
-    assert b.lcd.pick("Start dryer", 0) == ("unit2 no power", [])
 
 
 def test_a_temperature_below_the_units_floor_is_raised_to_it(bench):
     b = bench(units=TWO_UNITS, groups=TWO_UNIT_GROUPS)
     run(b, ["SET_GCODE_VARIABLE MACRO=_OAMS_MENU VARIABLE=dryer_temp VALUE=30"])
     b.lcd.home()
-    b.lcd.open("Dryer")
-    assert b.lcd.pick("Start dryer", 0)[1] == [
+    b.lcd.open("Dryer", "Custom")
+    assert b.lcd.pick("Start custom", 0)[1] == [
         "OAMS_DRYER_START OAMS=2 TARGET=45 DURATION=14400"]
 
 
-def test_settings_switch_only_when_changed(bench):
+def test_a_setting_switches_with_one_click(bench):
     b = bench()
     b.lcd.home()
     assert b.lcd.open("Settings") == [
@@ -781,17 +897,11 @@ def test_settings_switch_only_when_changed(bench):
         "New spools: on", "Apply PA: off", "Sync trays: on"]
     b.lcd.select("Autoreload: on")
     b.lcd.key("click")
-    b.lcd.key("click")              # unchanged: nothing runs
-    assert b.lcd.scripts == []
-    b.lcd.key("click")
-    b.lcd.key("up")
-    assert b.lcd.label() == "Autoreload: off"
-    b.lcd.key("click")
     assert b.lcd.scripts == [
         "OAMSM_SET_OPTION NAME=auto_reload_on_runout VALUE=0"]
+    b.manager.settings["auto_reload_on_runout"] = False
+    assert b.lcd.entries()[1] == "Autoreload: off"
     b.lcd.select("Apply PA: off")
-    b.lcd.key("click")
-    b.lcd.key("down")
     b.lcd.key("click")
     assert b.lcd.scripts[-1] == "OAMSM_SET_OPTION NAME=apply_pa_on_load VALUE=1"
 
@@ -808,6 +918,96 @@ def test_status_commands_answer_on_the_console(bench):
     b.printer.gcode.register_output_handler(lines.append)
     run(b, ["OAMSM_CURRENT_LOADED_GROUP"])
     assert any("No group is currently loaded" in line for line in lines)
+
+
+# ---------------------------------------------------------------------------
+# The AMS status screen (oams_screen.cfg)
+# ---------------------------------------------------------------------------
+
+def with_screen(b, lcd_type="uc1701", group="_default_16x4", loaded=True):
+    """Klipper's published config for a 128x64 display, with oams_screen.cfg
+    loaded (or not): the entries read both."""
+    values = b.printer.objects["configfile"].values
+    values["settings"]["display"] = {"lcd_type": lcd_type,
+                                     "display_group": group}
+    values["config"] = ({"display_data oams_tiles head": {}} if loaded
+                        else {})
+    return b
+
+
+def lines(script):
+    return [line.strip() for line in script.splitlines() if line.strip()]
+
+
+def test_ams_status_shows_the_screen_and_printer_status_goes_back(bench):
+    b = with_screen(bench(units=TWO_UNITS, groups=TWO_UNIT_GROUPS))
+    entries = b.lcd.home()
+    assert entries[:4] == ["..", "Stop", "AMS status", "Screen: auto"]
+    assert "Printer status" not in entries
+    b.lcd.select("AMS status")
+    b.lcd.key("click")
+    assert lines(b.lcd.scripts[-1]) == [
+        "SET_DISPLAY_GROUP GROUP=oams_tiles",
+        "SET_GCODE_VARIABLE MACRO=_OAMS_MENU VARIABLE=screen VALUE=1"]
+    assert not b.menu.is_running()
+    # Klipper runs both; the variable is what the entries read back.
+    run(b, lines(b.lcd.scripts[-1])[1:])
+    entries = b.lcd.home()
+    assert entries[:4] == ["..", "Stop", "Printer status", "Screen: auto"]
+    assert "AMS status" not in entries
+    b.lcd.select("Printer status")
+    b.lcd.key("click")
+    assert lines(b.lcd.scripts[-1]) == [
+        "SET_DISPLAY_GROUP GROUP=_default_16x4",
+        "SET_GCODE_VARIABLE MACRO=_OAMS_MENU VARIABLE=screen VALUE=0"]
+    assert not b.menu.is_running()
+
+
+def test_a_screen_made_the_default_starts_on_printer_status(bench):
+    """[display] display_group: oams_tiles shows the AMS screen from the
+    start, so the entry that applies is Printer status, back to Klipper's."""
+    b = with_screen(bench(units=TWO_UNITS, groups=TWO_UNIT_GROUPS),
+                    group="oams_tiles")
+    assert "Printer status" in b.lcd.home()
+    b.lcd.select("Printer status")
+    b.lcd.key("click")
+    assert lines(b.lcd.scripts[-1])[0] == \
+        "SET_DISPLAY_GROUP GROUP=_default_16x4"
+
+
+def test_the_screen_entries_need_a_128x64_display_and_the_screen(bench):
+    for options in ({"lcd_type": "hd44780"}, {"loaded": False}):
+        b = with_screen(bench(units=TWO_UNITS, groups=TWO_UNIT_GROUPS),
+                        **options)
+        entries = b.lcd.home()
+        assert not {"AMS status", "Printer status", "Screen: auto"} & \
+            set(entries), options
+    # The stock published config (no display settings) shows none either.
+    b = bench(units=TWO_UNITS, groups=TWO_UNIT_GROUPS)
+    assert "AMS status" not in b.lcd.home()
+
+
+def test_one_unit_has_no_unit_picker(bench):
+    b = with_screen(bench())
+    entries = b.lcd.home()
+    assert "AMS status" in entries
+    assert not [e for e in entries if e.startswith("Screen:")]
+
+
+def test_the_unit_picker_pins_through_oamsm_screen(bench):
+    b = with_screen(bench(units=TWO_UNITS, groups=TWO_UNIT_GROUPS))
+    b.lcd.home()
+    picks = b.lcd.labels("Screen: auto")
+    assert [label for label, _ in picks] == [
+        "Screen: auto", "Show auto?", "Show unit1?", "Show unit2?"]
+    assert [scripts for _, scripts in picks] == [
+        [], ["OAMSM_SCREEN UNIT=AUTO"], ["OAMSM_SCREEN UNIT=unit1"],
+        ["OAMSM_SCREEN UNIT=unit2"]]
+    run(b, ["OAMSM_SCREEN UNIT=unit2"])
+    assert b.manager.screen.pin == "unit2"
+    assert "Screen: unit2" in b.lcd.entries()
+    run(b, ["OAMSM_SCREEN UNIT=AUTO"])
+    assert b.manager.screen.pin is None
 
 
 # ---------------------------------------------------------------------------
@@ -857,8 +1057,16 @@ def test_the_menu_stop_never_raises_into_klippers_menu(bench):
 COMMAND_RE = re.compile(r"^([A-Z_]+)((?: [A-Z_]+=\S+)*)$")
 
 
+# The hand purge (OpenAMS › Extrude 10mm), the one entry that is not an
+# OpenAMS command: forward only, relative, with the G-code state put back.
+EXTRUDE_LINES = ("SAVE_GCODE_STATE NAME=_oams_menu_extrude", "M83",
+                 "G1 E10 F240", "RESTORE_GCODE_STATE NAME=_oams_menu_extrude")
+
+
 def check_command(bench, line):
     """`line` is one OpenAMS command with arguments the live topology accepts."""
+    if line in EXTRUDE_LINES:
+        return
     match = COMMAND_RE.match(line)
     assert match, line
     command = match.group(1)
@@ -925,20 +1133,22 @@ def check_command(bench, line):
         assert params["ASSERT"] == "1"
 
 
-def every_script(bench):
-    """Every picker value and command of every OpenAMS list now shown."""
+def every_script(bench, path=()):
+    """Every picker value and command of every OpenAMS list now shown, the
+    nested lists (Dryer › Custom) included. The Stop lists are left alone:
+    opening one is the stop."""
     lcd = bench.lcd
     scripts = []
-    for entry in lcd.home()[1:]:
+    rows = (lcd.home() if not path else (lcd.home(), lcd.open(*path))[1])[1:]
+    for entry in rows:
         lcd.home()
+        if path:
+            lcd.open(*path)
         lcd.select(entry)
         item = lcd.container().selected_item()
         if isinstance(item, bench.kmenu.menu.MenuList):
-            if entry == "Stop":
-                continue
-            for child in lcd.open(entry)[1:]:
-                lcd.select(child)
-                scripts += entry_scripts(bench, child)
+            if entry not in ("Stop", "Stop OpenAMS"):
+                scripts += every_script(bench, path + (entry,))
         else:
             scripts += entry_scripts(bench, entry)
     return scripts
@@ -1017,3 +1227,291 @@ def test_every_rest_name_fits_a_16_column_display(bench):
         name = item.render_name()
         limit = WIDTH - 1 if isinstance(item, b.kmenu.menu.MenuList) else WIDTH
         assert len(name) <= limit, (section, name)
+
+
+# ---------------------------------------------------------------------------
+# Where OpenAMS sits in the main menu, and the Stop at its top
+# ---------------------------------------------------------------------------
+
+# Our fork's main menu (OpenAMSOrg/klipper-optional-improvements): Pause
+# print, Resume print and Cancel print come before Klipper's own entries.
+FORK_PRINT_ROWS = """
+[menu __main __pause]
+type: command
+enable: {'print_stats' in printer and printer.print_stats.state == 'printing'}
+name: Pause print
+gcode: PAUSE
+
+[menu __main __resume]
+type: command
+enable: {'print_stats' in printer and printer.print_stats.state == 'paused'}
+name: Resume print
+gcode: RESUME
+
+[menu __main __cancel]
+type: list
+enable: {'print_stats' in printer and printer.print_stats.state in ['printing', 'paused']}
+name: Cancel print
+
+[menu __main __cancel __yes]
+type: command
+name: Yes, cancel it
+gcode: CANCEL_PRINT
+"""
+
+
+def fork_like_menu():
+    stock = committed_source(os.environ["OPENAMS_KLIPPER_DIR"], KLIPPER_REV,
+                             "klippy/extras/display/menu.cfg")
+    anchor = "[menu __main]\ntype: list\nname: Main\n"
+    assert anchor in stock
+    return stock.replace(anchor, anchor + FORK_PRINT_ROWS)
+
+
+def main_rows(bench):
+    if bench.menu.is_running():
+        bench.menu.exit(force=True)
+    bench.lcd.key("click")
+    return bench.lcd.entries()
+
+
+def test_openams_sits_below_sd_card_on_stock_klipper(bench):
+    b = bench()
+    # SD Card is hidden here (no virtual_sdcard); Filament is taken out.
+    assert main_rows(b) == ["..", "OctoPrint", "OpenAMS", "Control",
+                            "Temperature", "Setup"]
+
+
+@pytest.mark.parametrize("state, expected", [
+    ("standby", ["..", "OpenAMS", "OctoPrint", "Control", "Temperature",
+                 "Setup"]),
+    ("printing", ["..", "Pause print", "Cancel print", "OpenAMS", "Tune",
+                  "OctoPrint", "Control", "Temperature"]),
+    ("paused", ["..", "Resume print", "Cancel print", "OpenAMS", "OctoPrint",
+                "Control", "Temperature", "Setup"]),
+])
+def test_with_the_forks_print_rows_openams_never_lands_between_them(
+        bench, state, expected):
+    b = bench(stock_menu=fork_like_menu())
+    b.printing(state)
+    b.printer.objects["idle_timeout"].values["state"] = (
+        "Printing" if state == "printing" else "Idle")
+    assert main_rows(b) == expected
+
+
+def test_with_the_forks_own_menu_cfg(bench):
+    """The same, against the fork's menu.cfg itself (set
+    OPENAMS_KLIPPER_FORK_DIR to a checkout of it)."""
+    fork = os.environ.get("OPENAMS_KLIPPER_FORK_DIR")
+    if not fork:
+        pytest.skip("set OPENAMS_KLIPPER_FORK_DIR to check the fork's menu.cfg")
+    text = open(os.path.join(fork, "klippy/extras/display/menu.cfg")).read()
+    b = bench(stock_menu=text)
+    b.printer.objects["print_stats"].values["state"] = "paused"
+    rows = main_rows(b)
+    assert rows[:4] == ["..", "Resume print", "Cancel print", "OpenAMS"]
+    b.check_unused()
+
+
+def test_stop_openams_leads_the_main_menu_while_a_sequence_runs(bench):
+    b = bench()
+    assert "Stop OpenAMS" not in main_rows(b)
+    run(b, ["OAMSM_STAGE PLAN=heat,feed FPS=fps", "OAMSM_STAGE NAME=heat FPS=fps"])
+    # Open the menu, turn once, click: three actions.
+    b.menu.exit(force=True)
+    b.lcd.key("click")
+    assert b.lcd.entries()[1] == "Stop OpenAMS"
+    b.lcd.key("down")
+    b.lcd.key("click")
+    assert b.lcd.entries() == ["..", "Stop sent"]
+    assert "fps" in b.manager._stop_requested
+    with pytest.raises(b.printer.command_error, match="Stopped by the user"):
+        b.printer.gcode.run_script("OAMSM_CHECK_STOP FPS=fps")
+
+
+def test_a_failed_plan_is_not_a_running_one(bench):
+    b = bench()
+    run(b, ["OAMSM_STAGE PLAN=heat,feed FPS=fps", "OAMSM_STAGE NAME=heat FPS=fps",
+            "OAMSM_STAGE FAILED=1 FPS=fps"])
+    assert "Stop OpenAMS" not in main_rows(b)
+
+
+# ---------------------------------------------------------------------------
+# The stock raw-extrude entries, where OpenAMS runs
+# ---------------------------------------------------------------------------
+
+def test_the_stock_filament_list_and_move_e_are_taken_out(bench):
+    b = bench()
+    disabled = b.kmenu.menu.MenuDisabled
+    for name in oams_manager.STOCK_RAW_EXTRUDE_MENU:
+        assert isinstance(b.menu.lookup_menuitem(name), disabled), name
+    assert "Filament" not in main_rows(b)
+    b.check_unused()
+
+
+def test_an_owners_own_filament_entry_stays_and_klipper_starts(bench):
+    """Klipper merges two sections of one name: had oams_menu.cfg disabled
+    the list, this owner's command would end up with type disabled and a
+    gcode option nothing reads, and Klipper would refuse to start."""
+    b = bench(user_cfg=("[menu __main __filament]\ntype: command\n"
+                        "name: Load filament\ngcode: M117 load\n"))
+    b.check_unused()
+    item = b.menu.lookup_menuitem("__main __filament")
+    assert isinstance(item, b.kmenu.menu.MenuCommand)
+    assert "Load filament" in main_rows(b)
+
+
+def test_entries_the_owner_added_under_filament_keep_the_list(bench):
+    b = bench(user_cfg=("[menu __main __filament __mine]\ntype: command\n"
+                        "name: Mine\ngcode: M117 mine\n"))
+    b.check_unused()
+    assert "Filament" in main_rows(b)
+    assert "Mine" in b.lcd.open("Filament")
+
+
+def test_without_a_display_nothing_is_adjusted(bench):
+    b = bench(display=False)
+    assert b.printer.lookup_object("menu", None) is None
+
+
+def test_extrude_is_hot_only_and_forward(bench):
+    b = bench()
+    b.lcd.home()
+    b.lcd.select("Extrude 10mm")
+    b.lcd.key("click")
+    assert b.lcd.scripts == ["\n".join(EXTRUDE_LINES)]
+    b.printer.objects["extruder"].values["can_extrude"] = False
+    assert "Extrude (cold)" in b.lcd.entries()
+    b.lcd.select("Extrude (cold)")
+    b.lcd.key("click")
+    assert len(b.lcd.scripts) == 1
+    b.printing()
+    assert not [row for row in b.lcd.home() if row.startswith("Extrude")]
+
+
+# ---------------------------------------------------------------------------
+# A failed toolchange in a print, on the status screen
+# ---------------------------------------------------------------------------
+
+def with_display_status(bench):
+    printer = bench.printer
+    printer.objects["display_status"] = Status(message=None, progress=0.)
+    lines = []
+
+    def set_text(gcmd):
+        lines.append(gcmd.get_commandline())
+        printer.objects["display_status"].values["message"] = gcmd.get(
+            "MSG", None)
+    printer.gcode.register_command("SET_DISPLAY_TEXT", set_text)
+    return lines
+
+
+def shown(bench):
+    return bench.printer.objects["display_status"].values["message"]
+
+
+def test_a_failed_toolchange_shows_on_the_status_screen_until_resume(bench):
+    b = bench()
+    run(b, ["OAMSM_TOOLCHANGE GROUP=T0"])
+    lines = with_display_status(b)
+    printing_with_resume(b.printer, b.manager)
+    inlet_sensor(b.printer, False)
+    b.printer.gcode.run_script("T1")
+    assert b.printer.objects["pause_resume"].is_paused
+    assert shown(b) == "T1 failed: feed"
+    assert lines == ['SET_DISPLAY_TEXT MSG="T1 failed: feed"']
+    inlet_sensor(b.printer, True)
+    b.printer.gcode.run_script("RESUME")
+    assert not b.printer.objects["pause_resume"].is_paused
+    assert shown(b) is None
+
+
+def test_a_newer_message_is_left_alone(bench):
+    b = bench()
+    run(b, ["OAMSM_TOOLCHANGE GROUP=T0"])
+    with_display_status(b)
+    printing_with_resume(b.printer, b.manager)
+    inlet_sensor(b.printer, False)
+    b.printer.gcode.run_script("T1")
+    b.printer.gcode.run_script('SET_DISPLAY_TEXT MSG="layer 12"')
+    inlet_sensor(b.printer, True)
+    b.printer.gcode.run_script("RESUME")
+    assert shown(b) == "layer 12"
+
+
+def test_a_cancelled_print_takes_its_notice_with_it(bench):
+    b = bench()
+    run(b, ["OAMSM_TOOLCHANGE GROUP=T0"])
+    with_display_status(b)
+    printing_with_resume(b.printer, b.manager)
+    inlet_sensor(b.printer, False)
+    b.printer.gcode.run_script("T1")
+    assert shown(b) == "T1 failed: feed"
+    callbacks = []
+    b.printer.reactor.register_callback = callbacks.append
+    b.printing("cancelled")
+    b.manager._monitor(b.printer.reactor.monotonic())
+    for callback in callbacks:
+        callback(b.printer.reactor.monotonic())
+    assert shown(b) is None
+
+
+def fail_t1_in_a_print(bench):
+    """T1 fails in a print without RESUME wrapped (OpenAMS warns about that
+    configuration), and the print pauses as Klipper's PAUSE leaves it."""
+    run(bench, ["OAMSM_TOOLCHANGE GROUP=T0"])
+    with_display_status(bench)
+    bench.printing()
+    inlet_sensor(bench.printer, False)
+    bench.printer.gcode.run_script("T1")
+    assert bench.printer.objects["pause_resume"].is_paused
+    bench.printing("paused")
+    assert shown(bench) == "T1 failed: feed"
+
+
+def monitor_tick(bench):
+    callbacks = []
+    bench.printer.reactor.register_callback = callbacks.append
+    bench.manager._monitor(bench.printer.reactor.monotonic())
+    for callback in callbacks:
+        callback(bench.printer.reactor.monotonic())
+
+
+def test_the_notice_stays_while_the_print_fault_does(bench):
+    b = bench()
+    fail_t1_in_a_print(b)
+    monitor_tick(b)
+    assert shown(b) == "T1 failed: feed"
+
+
+def test_a_retry_then_an_unwrapped_resume_clears_the_notice(bench):
+    b = bench()
+    fail_t1_in_a_print(b)
+    inlet_sensor(b.printer, True)
+    b.printer.gcode.run_script("OAMSM_RETRY")
+    assert "toolchange_fault" not in b.lane()
+    # Klipper's own RESUME, not wrapped by OpenAMS: nothing of OpenAMS runs.
+    b.printer.objects["pause_resume"].values["is_paused"] = False
+    b.printing("printing")
+    monitor_tick(b)
+    assert shown(b) is None
+
+
+def test_a_retry_then_a_cancel_clears_the_notice(bench):
+    b = bench()
+    fail_t1_in_a_print(b)
+    inlet_sensor(b.printer, True)
+    b.printer.gcode.run_script("OAMSM_RETRY")
+    b.printing("cancelled")
+    monitor_tick(b)
+    assert shown(b) is None
+
+
+def test_a_cleared_fault_never_wipes_a_newer_message(bench):
+    b = bench()
+    fail_t1_in_a_print(b)
+    inlet_sensor(b.printer, True)
+    b.printer.gcode.run_script("OAMSM_RETRY")
+    b.printer.gcode.run_script('SET_DISPLAY_TEXT MSG="layer 40"')
+    monitor_tick(b)
+    assert shown(b) == "layer 40"

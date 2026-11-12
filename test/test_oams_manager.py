@@ -76,9 +76,15 @@ class FakeOam:
             return None
         return dict(values[bay]) if values[bay] else None
 
-    def set_bay_filament(self, bay, material, temp_c, source):
+    def bay_remaining_pct(self, bay):
+        return (getattr(self, "_bay_remaining", None) or [None] * 4)[bay]
+
+    def set_bay_filament(self, bay, material, temp_c, source,
+                         remaining_pct=None):
         if not hasattr(self, "_bay_filaments"):
             self._bay_filaments = [None] * len(self.hub_hes_value)
+            self._bay_remaining = [None] * len(self.hub_hes_value)
+        self._bay_remaining[bay] = remaining_pct
         if material is None and temp_c is None:
             self._bay_filaments[bay] = None
             return

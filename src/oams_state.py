@@ -192,6 +192,10 @@ class LaneState:
     stage_since: float = 0.0
     stage_labels: Tuple[Tuple[str, str], ...] = ()
     stage_detail: Optional[str] = None
+    # The group a load or swap plan brings in (OAMSM_STAGE PLAN= GROUP=), so
+    # the LCD can name the tool and its unit before the AMS moves. Internal:
+    # not part of the C2 lane status.
+    stage_group: Optional[str] = None
     # C2 §5.2/§5.3 rule 5: the loaded bay a runout started from, kept for the UI
     # after the reload succeeds or fails; cleared only by the next user-initiated
     # load/unload on this lane or by CLEAR_ERRORS.
@@ -355,6 +359,7 @@ class StagePlan:
     fps: str = ""
     plan: Tuple[str, ...] = ()
     labels: Tuple[Tuple[str, str], ...] = ()
+    group: Optional[str] = None
 
 @dataclass(frozen=True)
 class StageEnter:
@@ -828,7 +833,7 @@ def _stage_clear(lane):
     """Reset every stage field to its default (C2 §5.3 rules 3-4)."""
     return replace(lane, stage_plan=(), stage_index=None, stage_failed=None,
                    stage_auto=False, stage_since=0.0, stage_labels=(),
-                   stage_detail=None)
+                   stage_detail=None, stage_group=None)
 
 
 def _stage_plan_ok(plan):
@@ -869,7 +874,7 @@ def _stage_step(lane, name, now):
             return lane
     return replace(lane, stage_plan=(name,), stage_index=0, stage_failed=None,
                    stage_auto=True, stage_since=now, stage_labels=(),
-                   stage_detail=None)
+                   stage_detail=None, stage_group=None)
 
 
 def _stage_fail_current(lane, now):
@@ -920,7 +925,7 @@ def _reduce_lane(lane, action, lw, now, fps, deadline):
         return replace(lane, stage_plan=tuple(action.plan), stage_index=None,
                        stage_failed=None, stage_auto=False,
                        stage_since=now, stage_labels=tuple(labels),
-                       stage_detail=None), []
+                       stage_detail=None, stage_group=action.group), []
 
     if isinstance(action, StageEnter):
         if not lane.stage_plan or action.name not in lane.stage_plan:

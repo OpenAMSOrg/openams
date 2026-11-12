@@ -144,6 +144,14 @@ class ReasonTests(unittest.TestCase):
         self.assertIn("jam", text)
         self.assertIn("0x17", text)
 
+    def test_an_ams_motor_fault_says_the_filament_may_be_held(self):
+        # 0x12: the AMS 2 Pro's feeder pulled against held filament on
+        # voron350 (2026-11-11) and could not turn.
+        text = make_unit()._failure_reason(S.OAMS_OP_CODE_ERROR_UNSPECIFIED,
+                                           512 + 0x12)
+        self.assertIn("feeder motor fault (error 0x12)", text)
+        self.assertIn("held", text)
+
     def test_a_retract_stall_names_the_cut(self):
         # Bridge 14: the pull back stopped because the odometer stood still.
         unit = make_unit(bridge_capabilities(AMS_REASON_RETRACT_STALLED=34))

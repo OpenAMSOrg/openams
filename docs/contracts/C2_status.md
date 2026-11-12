@@ -55,6 +55,7 @@ follow; the display's own work packages are written "display WP D4".
 |---|---|---|
 | `oams_manager` | full system status: lanes, topology, every unit's driver status | EXISTS-v1 (`src/oams_manager.py:394-407`); v2 below |
 | `openams_ui <unit>` | compact per-unit projection for small clients | NEW-v2 (H5), §6 |
+| `openams_screen` | what the printer LCD's "AMS status" screen reads: per bay the material and the spool's remaining percent, the units it pages through, the unit it shows | NEW (2026-11-11), §6a |
 | `oams <name>` | one OAMS unit's driver status, identical to `oams_manager.devices[<name>]` (`src/oams.py:280-281`) | EXISTS-v1 |
 | `follower <name>` | one inline follower's status (`src/follower.py:483-496`) | EXISTS-v1 |
 | `fps` / `fps <name>` | `{fps_value}` (`src/fps.py:109-116`) | EXISTS-v1 |
@@ -376,6 +377,11 @@ Klipper comes back. Spoolman stays the store (C4 §8).
 spool link changed (the values described the old spool; C3), or after a Klipper
 restart until the component pushes again. A bay with no temperature is
 **unknown**, not wrong: the macros then use their own default.
+
+The same command's `REMAINING=` (the spool's remaining percent, C3) is kept
+beside this entry but **not** published in it: it goes out only in
+`openams_screen` (§6a), so spool data stays off this status and off
+`openams_ui` (§6.2 `sp`).
 
 #### 4.5.2 `devices.<unit>.bays[i].tag_state` — additive (two tags)
 
@@ -1327,6 +1333,65 @@ separately:**
 | `nozzle_min_c`/`nozzle_max_c` and `k_value_x1000` | from Spoolman: either the C4 summary (if H4/C4 extend it) or the display's own Spoolman-proxy fetch by `bays[i].sp.id` |
 | the full step list (`steps[]` needs every planned name; `stage` gives only the current one) | H2 publishes the planned stage names when an op starts (§5.3) |
 | `latest` firmware | out of scope: an update check is not part of this contract |
+
+## 6a. `openams_screen` — the LCD status screen's object (2026-11-11)
+
+One Klipper object for the printer, named `openams_screen`, registered by
+`oams_manager` (`src/openams_screen.py`). It carries what the printer LCD's
+"AMS status" screen shows and Klipper's other objects do not: each bay's
+material and the spool's remaining percent, the units the screen pages
+through, and the unit it shows now. It exists for that screen only; spool
+data stays off `openams_ui` (§6.2 `sp`, the owner's decision 2026-11-11). A
+display template reads it as `printer.openams_screen` together with the
+shown unit's `openams_ui <unit>` (bay states, lane, groups, env, dryer,
+fault): the shipped screen is `oams_screen.cfg` (display group
+`oams_tiles`, `docs/guide/lcd-menu.md`). Schema
+`schemas/openams_screen_v1.schema.json`, example
+`examples/c2/openams_screen_voron350.json`.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `v` | 1 | object version |
+| `units` | array of unit names | every unit with spool bays, in the manager's order (by index, then name); an inline follower is left out |
+| `active` | unit name or null | the unit the screen shows now (below); null with no units |
+| `pin` | unit name or null | the unit `OAMSM_SCREEN UNIT=` pinned (C3), null when following |
+| `tool` | group name or null | the tool a running step plan works on in the shown unit's lane: the loaded group, else the group a load brings in (`OAMSM_STAGE PLAN= GROUP=`, C3), so the header can name it from the plan's first step (homing, heating); null with no plan running (2026-11-12) |
+| `bays.<unit>[i].m` | string or null, at most 16 characters | the bay's material: the pushed `filament.material` (§4.5.1), else its tag's (`summary.material`, `bambu.type`, `openspool.type`, §4.6), else null |
+| `bays.<unit>[i].r` | int 0-100 or null | the spool's remaining percent, from `OAMSM_SET_BAY_FILAMENT REMAINING=` (C3, C4 §7.4); null when unknown, when the component predates it, after a clear and after a restart until the component pushes again |
+
+**Which unit is `active`** (the owner's rules, 2026-11-11), first match:
+
+1. a pinned unit (`OAMSM_SCREEN UNIT=<unit>`);
+2. while a print runs (`print_stats.state` `printing` or `paused`): the unit
+   holding the loaded bay; with none loaded (mid toolchange) a unit with a
+   `stop` or `pause` fault, then one loading or unloading (or the target of a
+   runout reload); else the unit shown before: **no paging during a print**;
+3. otherwise: a unit with a `stop` or `pause` fault, then one loading or
+   unloading; else **each unit for 5 s in turn** (reactor time).
+
+A lane running a step plan counts as loading or unloading from the plan's
+first step (home, heat and the cut come before the AMS moves, 2026-11-12):
+the unit holding its loaded bay, or for a load into an empty lane the unit
+holding the group the plan brings in.
+
+A lane's failed load is carried by every unit of the lane (§4.8); the unit
+whose bay failed (the one the fault names a bay on) is the one that holds the
+screen. An `info` fault never does.
+
+**Rate.** The object rebuilds at most every 0.25 s, from the units' in-memory
+values and the reducer state, never from the full `oams_manager` status, and
+returns the same object while nothing in it changed, so the poller has
+nothing to resend. `active` changes every 5 s while it pages; `bays` only when
+a push or a tag changes it.
+
+```json
+{"v": 1, "units": ["ams1", "ams2"], "active": "ams2", "pin": null,
+ "tool": null,
+ "bays": {"ams1": [{"m": "PLA", "r": 78}, {"m": "ABS", "r": 45},
+                   {"m": "PETG", "r": 12}, {"m": null, "r": null}],
+          "ams2": [{"m": "PLA", "r": 100}, {"m": "PETG", "r": 62},
+                   {"m": "ASA", "r": 30}, {"m": "PLA", "r": 8}]}}
+```
 
 ## 7. What HelixScreen reads
 

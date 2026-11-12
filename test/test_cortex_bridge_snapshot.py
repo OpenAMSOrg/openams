@@ -201,8 +201,41 @@ class DecodeTests(unittest.TestCase):
         self.assertEqual(sizes, {"system": 25, "line": 48, "master": 28,
                                  "discovery": 51, "host": 22, "units": 56,
                                  "candidates": 29, "feed_failures": 24,
-                                 "dryers": 77, "refusals": 13})
+                                 "dryers": 77, "motor_samples": 23,
+                                 "refusals": 13})
         self.assertEqual(len(body()), len(SILENT_LINE_BODY))
+
+    def test_motor_samples_decode_and_read(self):
+        # Bridge firmware 15, section 0x14: the hub servo at setpoint 0x00,
+        # with the first stage idle, then a pull back with it running.
+        def sample(primitive, reference, odo, buffer, motors, age=500):
+            return (bytes([1]) + age.to_bytes(4, "big")
+                    + bytes([primitive, reference])
+                    + odo.to_bytes(2, "big", signed=True)
+                    + buffer.to_bytes(2, "big", signed=True)
+                    + b"".join(v.to_bytes(2, "big", signed=True)
+                               for v in motors))
+        first = sample(0x09, 0x00, 2251, -1200, (-7, -8, 120, 0, 0, 0))
+        second = sample(0x03, 0xFF, 2230, -5400, (-7, -8, 300, 40, 12,
+                                                  -16384), age=100)
+        # one row per section, the id repeated
+        raw = (bytes([1, 0x14, len(first)]) + first
+               + bytes([0x14, len(second)]) + second)
+        decoded = snap.decode_body(raw)
+        self.assertEqual(len(decoded["motor_samples"]), 2)
+        self.assertEqual(decoded["motor_samples"][0]["buffer"], -1200)
+        self.assertEqual(decoded["motor_samples"][1]["m32"], -16384)
+        self.assertEqual(snap.allowlisted(decoded)["motor_samples"],
+                         decoded["motor_samples"])
+        lines = snap.motor_sample_lines(decoded)
+        self.assertIn("hub servo (09), setpoint 0x00", lines[0])
+        self.assertNotIn("first stage running", lines[0])
+        self.assertIn("first stage running", lines[1])
+
+    def test_no_motor_samples_key_without_samples(self):
+        decoded = snap.decode_body(body())
+        self.assertNotIn("motor_samples", decoded)
+        self.assertNotIn("motor_samples", snap.allowlisted(decoded))
 
     def test_rows_decode(self):
         decoded = snap.decode_body(body(

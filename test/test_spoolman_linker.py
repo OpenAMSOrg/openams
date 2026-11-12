@@ -123,8 +123,10 @@ class Harness(object):
         return [s for s in self.sent
                 if s.startswith("OAMSM_SET_BAY_FILAMENT")]
 
-    def make_spool(self, extra=None, material="PETG", extruder_temp=None):
-        """A spool already in Spoolman, with optional decoded-extra values."""
+    def make_spool(self, extra=None, material="PETG", extruder_temp=None,
+                   initial_weight=1000, remaining_weight=1000):
+        """A spool already in Spoolman, with optional decoded-extra values
+        (full by default; a weight given as None is left out)."""
         async def build():
             vendor = await self.api.request("POST", "/v1/vendor",
                                             body={"name": "Test"})
@@ -133,10 +135,12 @@ class Harness(object):
                 body={"name": "Test", "vendor_id": vendor["id"],
                       "material": material,
                       "settings_extruder_temp": extruder_temp})
-            spool = await self.api.request(
-                "POST", "/v1/spool", body={"filament_id": filament["id"],
-                                           "initial_weight": 1000,
-                                           "remaining_weight": 1000})
+            body = {"filament_id": filament["id"]}
+            if initial_weight is not None:
+                body["initial_weight"] = initial_weight
+            if remaining_weight is not None:
+                body["remaining_weight"] = remaining_weight
+            spool = await self.api.request("POST", "/v1/spool", body=body)
             if not extra:
                 return spool
             return await self.api.request(
@@ -507,8 +511,9 @@ class OfflineTest(unittest.TestCase):
 
 
 class BayFilamentPushTest(unittest.TestCase):
-    """What the component tells the host a bay holds (C4 §7.4): the material
-    and working temperature, pushed on change and after a Klipper restart."""
+    """What the component tells the host a bay holds (C4 §7.4): the material,
+    the working temperature and the spool's remaining percent, pushed on
+    change and after a Klipper restart."""
 
     def test_a_linked_bay_pushes_the_table_temperature_once(self):
         h = Harness().start()
@@ -516,7 +521,7 @@ class BayFilamentPushTest(unittest.TestCase):
         h.send([bay(spool_id=spool["id"], link_source="manual")])
         self.assertEqual(h.filaments(), [
             'OAMSM_SET_BAY_FILAMENT OAMS=oams1 BAY=0 MATERIAL="PETG" '
-            'TEMP=240 SOURCE=table'])
+            'TEMP=240 SOURCE=table REMAINING=100'])
         # Unchanged passes cost nothing.
         for _ in range(3):
             h.send([bay(spool_id=spool["id"], link_source="manual")])
@@ -528,7 +533,7 @@ class BayFilamentPushTest(unittest.TestCase):
         h.send([bay(spool_id=spool["id"], link_source="manual")])
         self.assertEqual(h.filaments(), [
             'OAMSM_SET_BAY_FILAMENT OAMS=oams1 BAY=0 MATERIAL="PETG" '
-            'TEMP=232 SOURCE=spool'])
+            'TEMP=232 SOURCE=spool REMAINING=100'])
 
     def test_a_spool_temperature_the_host_could_not_use_falls_back(self):
         h = Harness().start()
@@ -536,7 +541,7 @@ class BayFilamentPushTest(unittest.TestCase):
         h.send([bay(spool_id=spool["id"], link_source="manual")])
         self.assertEqual(h.filaments(), [
             'OAMSM_SET_BAY_FILAMENT OAMS=oams1 BAY=0 MATERIAL="PLA" '
-            'TEMP=210 SOURCE=table'])
+            'TEMP=210 SOURCE=table REMAINING=100'])
 
     def test_a_material_variant_falls_back_to_its_base(self):
         h = Harness().start()
@@ -545,11 +550,64 @@ class BayFilamentPushTest(unittest.TestCase):
         self.assertIn('MATERIAL="PLA+" TEMP=210 SOURCE=table',
                       h.filaments()[0])
 
-    def test_an_unknown_material_pushes_nothing(self):
+    def test_an_unknown_material_goes_without_a_temperature(self):
+        # No temperature to heat to: the host keeps its own default, and the
+        # LCD screen still gets the material and what is left (C2 §6a).
         h = Harness().start()
-        spool = h.make_spool(material="Unobtanium")
+        spool = h.make_spool(material="Unobtanium", remaining_weight=250)
+        h.send([bay(spool_id=spool["id"], link_source="manual")])
+        self.assertEqual(h.filaments(), [
+            'OAMSM_SET_BAY_FILAMENT OAMS=oams1 BAY=0 MATERIAL="Unobtanium" '
+            'SOURCE=spool REMAINING=25'])
+
+    def test_a_spool_with_nothing_known_pushes_nothing(self):
+        h = Harness().start()
+        spool = h.make_spool(material=None, initial_weight=None,
+                             remaining_weight=None)
         h.send([bay(spool_id=spool["id"], link_source="manual")])
         self.assertEqual(h.filaments(), [])
+
+    def test_the_remaining_percent_is_remaining_over_initial(self):
+        h = Harness().start()
+        spool = h.make_spool(initial_weight=900, remaining_weight=556)
+        h.send([bay(spool_id=spool["id"], link_source="manual")])
+        self.assertTrue(h.filaments()[0].endswith(" REMAINING=62"))
+
+    def test_a_spool_without_weights_sends_no_remaining(self):
+        # The command an older component sent: the host reads no REMAINING
+        # as unknown (C3 §4).
+        h = Harness().start()
+        spool = h.make_spool(initial_weight=None, remaining_weight=None)
+        h.send([bay(spool_id=spool["id"], link_source="manual")])
+        self.assertEqual(h.filaments(), [
+            'OAMSM_SET_BAY_FILAMENT OAMS=oams1 BAY=0 MATERIAL="PETG" '
+            'TEMP=240 SOURCE=table'])
+
+    def test_a_new_remaining_percent_is_pushed_again(self):
+        # Spoolman's weight goes down as the printer reports usage; the
+        # refresh of the linked spools (C4 §6) carries it to the host, one
+        # push per whole percent.
+        h = Harness().start()
+        spool = h.make_spool(initial_weight=1000, remaining_weight=800)
+        h.send([bay(spool_id=spool["id"], link_source="manual")])
+        stored = [s for s in h.api.spools if s["id"] == spool["id"]][0]
+        stored["remaining_weight"] = 797          # still 80 %
+        run(h.linker.refresh_linked())
+        h.send([bay(spool_id=spool["id"], link_source="manual")])
+        self.assertEqual(len(h.filaments()), 1)
+        stored["remaining_weight"] = 790          # 79 %
+        run(h.linker.refresh_linked())
+        h.send([bay(spool_id=spool["id"], link_source="manual")])
+        self.assertEqual(len(h.filaments()), 2)
+        self.assertTrue(h.filaments()[-1].endswith(" REMAINING=79"))
+
+    def test_odd_remaining_values_are_clamped_or_unknown(self):
+        self.assertEqual(ops.remaining_pct_of(62.4), 62)
+        self.assertEqual(ops.remaining_pct_of(-3), 0)
+        self.assertEqual(ops.remaining_pct_of(104), 100)
+        for value in (None, "50", True, float("nan")):
+            self.assertIsNone(ops.remaining_pct_of(value))
+
 
     def test_material_temps_from_the_option_win(self):
         h = Harness(material_temps={"PETG": 235, "PCTG": 250}).start()
@@ -582,7 +640,7 @@ class BayFilamentPushTest(unittest.TestCase):
         h.send([bay(spool_id=second["id"], link_source="manual")])
         self.assertEqual(h.filaments()[-1],
                          'OAMSM_SET_BAY_FILAMENT OAMS=oams1 BAY=0 '
-                         'MATERIAL="ABS" TEMP=250 SOURCE=spool')
+                         'MATERIAL="ABS" TEMP=250 SOURCE=spool REMAINING=100')
 
     def test_a_klipper_restart_pushes_every_bay_again(self):
         h = Harness().start()

@@ -144,6 +144,8 @@ def snapshot_text(result: dict, redactor: redact.Redactor) -> str:
         lines.extend(reading.get("feed_failures") or [])
         # The dryer vent loop (bridge firmware 10).
         lines.extend(reading.get("dryers") or [])
+        # The AMS's motor readings around an unload (bridge firmware 15).
+        lines.extend(reading.get("motor_samples") or [])
     else:
         lines.append(result.get("text") or "unavailable")
     lines.append("")

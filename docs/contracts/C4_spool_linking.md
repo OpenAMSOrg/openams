@@ -542,7 +542,7 @@ blocks printing.
 | `OAMSM_CLEAR_BAY_SPOOL OAMS=<unit> BAY=<n>` | removal (§3), or the "move" case (§3 last row) clearing the old bay | **EXISTS (H3, 2026-09-28):** `src/oams_manager.py:1824` |
 | a spool-summary and hint command | **RESOLVED (C2 4/7): removed.** The host no longer carries the Spoolman summary at all (it lives only in the component's own status, §8), so no command needs to push it into `oams_manager`. `spool_hint` (D6, §7.3) is the one Spoolman-derived value the host still needs, and it travels on its own (below) |
 | a `spool_hint` command (name TBD) | after a link, and whenever the spool's remaining weight changes | **FUTURE (not in v1):** D6 geometry reserved; C3 §6 |
-| `OAMSM_SET_BAY_FILAMENT OAMS=<unit> BAY=<n> [MATERIAL=<text>] TEMP=<int> SOURCE=spool\|table` | when a bay's material or working temperature changes (§7.4) | **EXISTS (H2):** `src/oams_manager.py` `cmd_SET_BAY_FILAMENT`; memory only, never persisted |
+| `OAMSM_SET_BAY_FILAMENT OAMS=<unit> BAY=<n> [MATERIAL=<text>] [TEMP=<int>] SOURCE=spool\|table [REMAINING=<0-100>]` | when a bay's material, working temperature or remaining percent changes (§7.4) | **EXISTS (H2; `REMAINING` 2026-11-11):** `src/oams_manager.py` `cmd_SET_BAY_FILAMENT`; memory only, never persisted |
 | `OAMSM_SET_TRAY_INFO OAMS=<unit> BAY=<n> [CODE=<code>] MATERIAL=<text> COLOR=<RRGGBBAA> MIN=<C> MAX=<C>` | when a bay's unit should store the linked spool's filament (§7.5), or on request through the remote method below | **EXISTS:** `src/oams_manager.py` `cmd_SET_TRAY_INFO`; the unit keeps it |
 
 Manual links reach the host from UIs directly (`OAMSM_SET_BAY_SPOOL … SOURCE=manual`);
@@ -630,14 +630,26 @@ C2 §4.5.1), pushed here with `OAMSM_SET_BAY_FILAMENT` (C3).
    An entry that does not parse (not an integer, or outside 150-400) is
    **logged and skipped** — one typo never stops the component. The option is
    read once, in the component's constructor.
-3. **Unknown otherwise** — an unlinked bay, a spool with no material, or a
-   material not in the table. The component then sends the bare command, which
-   clears the bay, and the macros use their own default. A spool's own value
-   that the host could not hold (outside 150-400, not a number) is treated the
-   same way and falls through to the table.
+3. **Unknown otherwise** — a spool with no material, or a material not in
+   the table. The command then carries no `TEMP` (`SOURCE=spool`), the host
+   keeps `temp_c` `null`, and the macros use their own default; the material
+   and the remaining percent still go, for the LCD screen (changed
+   2026-11-11: before, such a bay was cleared). A spool's own value that the
+   host could not hold (outside 150-400, not a number) is treated the same way
+   and falls through to the table. An unlinked bay, a spool Spoolman has not
+   told us about, and a spool with no material, no temperature and no weights
+   send the bare command, which clears the bay.
 
 The material pushed is the filament's `material` as Spoolman has it (trimmed,
 at most 16 characters), or none.
+
+**The remaining percent** (`REMAINING=`, added 2026-11-11) is the spool's
+`remaining_weight` over its `initial_weight`, rounded to a whole percent and
+kept within 0-100 (the §8 `remaining_pct`); it goes only when both weights
+are known. It changes the command, so it is pushed like a new material: once
+per whole percent, as the refresh of the linked spools (§6) brings Spoolman's
+new weight. Only the printer LCD's "AMS status" screen shows it (C2 §6a); a
+host that predates it ignores the argument.
 
 **When it is pushed.** On every status pass the component works out each bay's
 `(material, temp_c, source)` from the bay's link and the cached spool summary

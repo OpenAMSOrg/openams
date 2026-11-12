@@ -205,10 +205,23 @@ class OAMS(oams_ext.UnitHooks):
     oams_unload_spool4_cmd = None
     # Host-confirmed toolhead arrival (C1 AMS_CAP_HOST_ARRIVAL_CONFIRM).
     oams_load_arrived_cmd = None
+    # Host "toolhead clear" for an unload (C1 AMS_CAP_HOST_UNLOAD_CLEAR).
+    oams_unload_clear_cmd = None
+    _unload_clear_sent_gen = None
     _arrival_sent_gen = None
     # The firmware's last follower refusal (C1 §4.2) as a readable reason.
     follower_refusal = None
     _follower_reply = None
+    # Whether this firmware has answered a follower request (a C1 firmware,
+    # protocol_version set, always does, C1 §4.2).
+    _follower_replies_seen = False
+    # True while set_oams_follower waits for its reply; a reverse follower
+    # failure that arrives outside that wait is the running follower failing.
+    _follower_waiting = False
+    # The running reverse follower failed after it was acknowledged (the unit
+    # stopped pulling back): the reason, until the next follower request or
+    # until the manager has raised it (OAMSM_CHECK_STOP, OAMSM_UNLOAD_FILAMENT).
+    follower_failed = None
     # Link status of a device a relaying firmware serves (C1
     # AMS_CAP_LINK_STATUS). None until the firmware has said; only an explicit
     # False means the device is unreachable.
@@ -561,19 +574,38 @@ class OAMS(oams_ext.UnitHooks):
             return None
         return dict(values[bay])
 
-    def set_bay_filament(self, bay, material, temp_c, source):
-        """Set what a bay holds (material and/or temp_c), or clear it.
+    def bay_remaining_pct(self, bay):
+        """The spool's remaining percent (0-100) pushed with the bay's
+        filament, or None. Memory only, like ``bay_filament``; published
+        only in ``openams_screen`` (C2 §6a), never in this unit's status."""
+        values = getattr(self, "bay_remaining", None)
+        if values is None or not 0 <= bay < len(values):
+            return None
+        return values[bay]
+
+    def set_bay_filament(self, bay, material, temp_c, source,
+                         remaining_pct=None):
+        """Set what a bay holds (material, temp_c and/or the spool's
+        remaining percent), or clear it.
 
         Never persisted: this is the operating copy ``openams_spoolman``
-        pushes, so the temperatures survive only as long as Klipper does.
+        pushes, so the values survive only as long as Klipper does. A clear
+        (material and temp_c None) keeps only a remaining percent given with
+        it; the clearing call ``(bay, None, None, None)`` forgets it too.
         """
         if not hasattr(self, "bay_filaments"):
             self.bay_filaments = [None] * self.bay_count
-        if material is None and temp_c is None:
+        if not hasattr(self, "bay_remaining"):
+            self.bay_remaining = [None] * self.bay_count
+        if remaining_pct is not None and not 0 <= remaining_pct <= 100:
+            raise ValueError("remaining_pct must be 0-100 or None")
+        clear = material is None and temp_c is None
+        if not clear and source not in ("spool", "table"):
+            raise ValueError("filament source must be 'spool' or 'table'")
+        self.bay_remaining[bay] = remaining_pct
+        if clear:
             self.bay_filaments[bay] = None
             return
-        if source not in ("spool", "table"):
-            raise ValueError("filament source must be 'spool' or 'table'")
         self.bay_filaments[bay] = {"material": material,
                                    "temp_c": temp_c, "source": source}
 
@@ -1056,6 +1088,7 @@ class OAMS(oams_ext.UnitHooks):
             self._detect_gen_protocol()
             self._detect_atomic_load()
             self._detect_arrival_confirm()
+            self._detect_unload_clear()
             self._detect_link_status()
             self._detect_tray_info()
             self._detect_tray_write()
@@ -1727,6 +1760,40 @@ class OAMS(oams_ext.UnitHooks):
             logging.error("OAMS[%s]: the firmware needs host arrival"
                           " confirmation but has no oams_cmd_load_arrived",
                           self.oams_idx)
+
+    def _detect_unload_clear(self):
+        """Resolve `oams_cmd_unload_clear` for a firmware that reports
+        AMS_CAP_HOST_UNLOAD_CLEAR=1: its unload pulls with the hub alone
+        until the host says the filament is clear of the toolhead, then
+        rewinds with the first stage too (C1 §4.1). Absent or 0: nothing is
+        looked up, and the firmware ends that phase on its own timing."""
+        self.oams_unload_clear_cmd = None
+        self._unload_clear_sent_gen = None
+        if not self.capabilities.get("host_unload_clear"):
+            return
+        try:
+            self.oams_unload_clear_cmd = self.mcu.lookup_command(
+                "oams_cmd_unload_clear gen=%c")
+        except Exception:
+            logging.error("OAMS[%s]: the firmware reports host unload clear"
+                          " but has no oams_cmd_unload_clear", self.oams_idx)
+
+    def confirm_unload_clear(self, gen):
+        """Tell the unit the filament of the unload of generation `gen` is
+        clear of the toolhead, so it may rewind with its first stage. Only a
+        unit reporting the capability, with an unload in flight, and once per
+        generation; anything else sends nothing and returns False. The
+        firmware ignores a generation that is not its active unload."""
+        if self.oams_unload_clear_cmd is None:
+            return False
+        if self.action_status != self.status_unloading:
+            return False
+        wire = self._wire_gen(gen)
+        if self._unload_clear_sent_gen == wire:
+            return False
+        self.oams_unload_clear_cmd.send([wire])
+        self._unload_clear_sent_gen = wire
+        return True
 
     @property
     def needs_host_arrival(self):
@@ -2479,8 +2546,20 @@ class OAMS(oams_ext.UnitHooks):
         (absent or 1: the reverse follower exists, as always)."""
         return self.capabilities.get("reverse_follower") is not False
 
-    #: How long an enable request waits for the firmware's immediate reply.
+    #: How long an enable request waits for the firmware's reply. A forward
+    #: follower is answered at once.
     FOLLOWER_REPLY_WAIT = 0.3
+    #: A reverse follower is answered only once the unit is pulling back:
+    #: Cortex Bridge 15 replies after the unit has answered the command (a
+    #: brief stop first on an AMS 1) and its buffer has settled, and refuses
+    #: only a unit that has gone silent. The unload macro retracts the
+    #: extruder right after this returns, so it never returns on a timeout as
+    #: if accepted: a firmware that answers follower requests and leaves this
+    #: one unanswered (or whose link drops meanwhile) has not confirmed it,
+    #: and the unload stops before it retracts.
+    #: Bridge 15's slowest healthy answer is ~4 s (an AMS 1 from a saturated
+    #: buffer, stop first, with an AMS error clearing meanwhile).
+    REVERSE_FOLLOWER_REPLY_WAIT = 4.5
 
     def set_oams_follower(self, enable, direction):
         """Send a follower request. The firmware replies at once with an
@@ -2501,31 +2580,95 @@ class OAMS(oams_ext.UnitHooks):
             return FollowerResult(refused=True,
                                   reason=self.REVERSE_FOLLOWER_REFUSAL)
         self.follower_refusal = None
+        self.follower_failed = None
         self._follower_reply = None
         self.oams_follower_cmd.send([enable, direction])
         if not enable:
             return None
-        reply = self._await_follower_reply()
-        if reply is None or reply["code"] == OAMS_OP_CODE_SUCCESS:
+        reverse = direction == FOLLOWER_REVERSE
+        # A C1 firmware always answers (§4.2); only one from before C1 may
+        # not, and keeps the old "no reply is accepted".
+        answers = (self.protocol_version is not None
+                   or self._follower_replies_seen)
+        reply = self._await_follower_reply(
+            self.REVERSE_FOLLOWER_REPLY_WAIT if reverse
+            else self.FOLLOWER_REPLY_WAIT,
+            OAMS_STATUS_REVERSE_FOLLOWING if reverse
+            else OAMS_STATUS_FORWARD_FOLLOWING)
+        if reply is self._NO_WAIT and not (reverse and answers):
+            return None      # where pausing is not allowed: as before
+        if reply is None or reply is self._NO_WAIT:
+            if not (reverse and answers):
+                return None  # a firmware that never answers: as before
+            reason = ("the unit did not confirm the reverse follower within"
+                      " %g s%s" % (self.REVERSE_FOLLOWER_REPLY_WAIT,
+                                     " (its link is down)"
+                                     if self.link_reachable is False else ""))
+            self.follower_refusal = reason
+            logging.warning("OAMS[%s]: %s", self.oams_idx, reason)
+            return FollowerResult(refused=True, reason=reason)
+        if reply["code"] == OAMS_OP_CODE_SUCCESS:
             return None
         reason = "the unit refused the %s follower (%s)" % (
             "forward" if direction else "reverse",
-            S.describe_code(reply["code"]))
+            self._follower_failure_detail(reply["code"], reply.get("value")))
         self.follower_refusal = reason
         logging.warning("OAMS[%s]: %s", self.oams_idx, reason)
         return FollowerResult(refused=True, reason=reason)
 
-    def _await_follower_reply(self):
-        deadline = self.reactor.monotonic() + self.FOLLOWER_REPLY_WAIT
-        while self._follower_reply is None:
-            now = self.reactor.monotonic()
-            if now >= deadline:
-                return None
-            try:
-                self.reactor.pause(min(deadline, now + 0.02))
-            except Exception:
-                return None      # where pausing is not allowed: no wait
-        return self._follower_reply
+    _NO_WAIT = object()
+
+    def _await_follower_reply(self, wait=None, action=None):
+        """The firmware's reply to the follower request just sent: the first
+        one for `action` (a reply for another follower action, e.g. a stop
+        or an unload that took over, is not this request's answer). None
+        when none came within `wait`, or the device's link dropped meanwhile;
+        _NO_WAIT where pausing is not allowed."""
+        deadline = self.reactor.monotonic() + (
+            self.FOLLOWER_REPLY_WAIT if wait is None else wait)
+        self._follower_waiting = True
+        try:
+            while True:
+                reply = self._follower_reply
+                if reply is not None:
+                    if action is None or reply["action"] == action:
+                        return reply
+                    self._follower_reply = None  # not this request's answer
+                    continue
+                now = self.reactor.monotonic()
+                if now >= deadline or self.link_reachable is False:
+                    return None
+                try:
+                    self.reactor.pause(min(deadline, now + 0.02))
+                except Exception:
+                    return self._NO_WAIT
+        finally:
+            self._follower_waiting = False
+
+    def _follower_failure_detail(self, code, value):
+        """A follower refusal or failure in words: the unit's reason when it
+        reports one (AMS_CAP_OP_REASON), else the code."""
+        return (self._failure_reason(code, value, calibrating=False)
+                or S.describe_code(code))
+
+    def _reverse_follower_failed(self, code, value=None):
+        """The acknowledged reverse follower stopped (the unit's own error,
+        or it went silent): the extruder must not go on retracting against
+        it. Recorded for the manager, which raises it at the macro's next
+        OpenAMS step, and the lane no longer reads as following. Runs on
+        the reactor thread (from _apply_action_status)."""
+        reason = "the unit's reverse follower stopped (%s)" % (
+            self._follower_failure_detail(code, value))
+        self.follower_refusal = reason
+        self.follower_failed = reason
+        logging.warning("OAMS[%s]: %s", self.oams_idx, reason)
+        runtime = self.runtime
+        if runtime is None:
+            return
+        lane = runtime.get_state().lanes.get(getattr(self, "fps_name", None))
+        unit = getattr(lane, "unit", None)
+        if unit is not None and unit[0] == self.oams_idx:
+            runtime.dispatch(S.FollowerApplied(self.fps_name, unit, False))
 
     # --------------------------------------------- low-level OAMS_* commands
 
@@ -2786,6 +2929,58 @@ class OAMS(oams_ext.UnitHooks):
                 % (label, ", ".join(latched)) if latched
                 else "%s: fault cleared" % label)
         self.printer.lookup_object("gcode").respond_info(message)
+        return self.reactor.NEVER
+
+    # A motion fault latched by an earlier failed operation (motion_timeout,
+    # say) stays latched through a later unload that works, and the unit
+    # refuses the next load until it is cleared. The unload that just
+    # succeeded shows the unit moves again, so the host clears it: a moment
+    # later, since a unit still settling refuses a clear while it moves.
+    STALE_MOTION_CLEAR_DELAY_S = 2.0
+
+    def _schedule_stale_motion_clear(self):
+        if getattr(self, "ams_ht_clear_fault_cmd", None) is None:
+            return
+        reactor = getattr(self, "reactor", None)
+        if reactor is None or not hasattr(reactor, "register_timer"):
+            return
+        reactor.register_timer(
+            self._clear_stale_motion_fault,
+            reactor.monotonic() + self.STALE_MOTION_CLEAR_DELAY_S)
+
+    def _clear_stale_motion_fault(self, eventtime):
+        domain = (getattr(self, "_telemetry", None) or {}).get("domain") or {}
+        busy = (getattr(self, "action_status", None) is not None
+                or getattr(self, "_active_action", None) is not None)
+        # Nothing latched, a new operation started, or a dryer or system
+        # fault is latched too: one clear covers every domain, and those
+        # are not for the host to clear behind the user's back.
+        if (not domain.get("motion_fault") or busy
+                or domain.get("dryer_fault") or domain.get("system_fault")):
+            return self.reactor.NEVER
+        name = domain.get("motion_fault_name") or "motion"
+        label = self._unit_label()
+        try:
+            params = self.ams_ht_clear_fault_cmd.send([])
+        except Exception:
+            logging.exception("OAMS[%s]: could not clear the stale %s fault",
+                              self.oams_idx, name)
+            return self.reactor.NEVER
+        result = -1 if params is None else params.get("result", -1)
+        if result == 0:
+            message = ("%s: cleared the %s fault left by an earlier failure;"
+                       " the unload that just finished worked" % (label, name))
+        else:
+            message = ("%s: could not clear the %s fault (%s); clear it with"
+                       " OAMS_CLEAR_FAULT" % (
+                           label, name,
+                           self._AMS_HT_RESULTS.get(result, "unknown")))
+        logging.info("OAMS[%s]: %s", self.oams_idx, message)
+        try:
+            self.printer.lookup_object("gcode").respond_info(message)
+        except Exception:
+            logging.exception("OAMS[%s]: could not report the fault clear",
+                              self.oams_idx)
         return self.reactor.NEVER
 
     cmd_OAMS_RFID_SCAN_help = "Read the spool tag of a bay when idle"
@@ -3207,6 +3402,14 @@ class OAMS(oams_ext.UnitHooks):
                         " stalled, on a spool that turns hard (a cardboard"
                         " spool, a tangle) or filament caught near the AMS;"
                         " free it, then Retry")
+            if error == 0x12:
+                # The bridge's motor drive fault. On voron350 (2026-11-11) the
+                # AMS 2 Pro raised it when its feeder pulled back against
+                # filament held at the toolhead: the motor could not turn.
+                return ("the AMS reported a feeder motor fault (error 0x12):"
+                        " a feeder could not turn, most often because the"
+                        " filament is held (caught at the toolhead, or tight"
+                        " on the spool); free it, then Retry")
             return "the AMS reported error 0x%02x" % error
         name = names.get(value)
         if name == "FEED_OVERRUN":
@@ -3250,6 +3453,10 @@ class OAMS(oams_ext.UnitHooks):
                              " went, so nothing was measured",
             "NO_SPOOL": "no filament in the bay",
             "UNIT_SILENT": "the AMS stopped answering",
+            "REVERSE_NOT_FOLLOWING": "the AMS could not keep pulling the"
+                                     " filament back while the extruder"
+                                     " retracted: its pull-backs did not bring"
+                                     " the toolhead buffer down",
         }
         return texts.get(name)
 
@@ -3355,6 +3562,7 @@ class OAMS(oams_ext.UnitHooks):
             elif action == self.status_unloading and code == OAMS_OP_CODE_SUCCESS:
                 self._clear_hub_after_unload()
                 self.current_spool = None
+                self._schedule_stale_motion_clear()
         else:
             # Follower/coast/stop notifications and anything unrecognized are
             # NOT op completions: dispatching them would falsely complete (or
@@ -3365,7 +3573,16 @@ class OAMS(oams_ext.UnitHooks):
                 # The firmware's immediate reply to a follower request
                 # (C1 §4.2): kept for set_oams_follower, which reports a
                 # refusal. It is not an op completion.
-                self._follower_reply = {"action": action, "code": code}
+                self._follower_reply = {"action": action, "code": code,
+                                        "value": params.get("value")}
+                self._follower_replies_seen = True
+                # A reverse follower failure nobody is waiting for: the
+                # follower that was acknowledged has stopped (Cortex Bridge
+                # 15 reports a later failure of the same request this way).
+                if (action == OAMS_STATUS_REVERSE_FOLLOWING
+                        and code != OAMS_OP_CODE_SUCCESS
+                        and not self._follower_waiting):
+                    self._reverse_follower_failed(code, params.get("value"))
                 return
             logging.info("OAMS[%s]: ignoring non-completion action status"
                          " action=%d code=%d", self.oams_idx, action, code)
@@ -3424,6 +3641,7 @@ class OAMS(oams_ext.UnitHooks):
                   and code == OAMS_OP_CODE_SUCCESS):
                 self._clear_hub_after_unload()
                 self.current_spool = None
+                self._schedule_stale_motion_clear()
             self._active_action = None
             self._active_gen = None
             # Publish the completion sentinel last.

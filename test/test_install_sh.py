@@ -478,6 +478,7 @@ class InstallShTests(unittest.TestCase):
         result = self.install()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assert_linked("oams_menu.cfg")
+        self.assert_linked("oams_screen.cfg")
         self.assertEqual(self.menu_includes(), 0)
         self.assertIn("no [display] section, so no LCD menu", result.stdout)
 
@@ -564,7 +565,9 @@ class InstallShTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.printer_cfg(), self.PRINTER_WITH_DISPLAY)
         self.assertFalse(os.path.lexists(self.config / "oams_menu.cfg"))
+        self.assertFalse(os.path.lexists(self.config / "oams_screen.cfg"))
         self.assertTrue((ROOT / "oams_menu.cfg").is_file())
+        self.assertTrue((ROOT / "oams_screen.cfg").is_file())
 
     # ------------------------------------------------------------------
     # One update entry covers klipper_mmu/ too

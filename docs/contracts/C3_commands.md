@@ -59,8 +59,9 @@ leaving the command unknown.
 
 - **Host arrival not possible (C1 §7.2).** A load (and `OAMSM_VALIDATE_LOAD`) on a unit reporting `AMS_CAP_HOST_ARRIVAL_CONFIRM=1` whose lane has no toolhead-side arrival signal (`[fps]` reads `source_oams:`) is refused at once: `"This unit needs the host to confirm toolhead arrival, but lane %s has no arrival signal; give [fps %s] a 'pin' that reads the toolhead side"`. It is never left to time out.
 
-### `OAMSM_UNLOAD_FILAMENT [FPS=<lane>]`
+### `OAMSM_UNLOAD_FILAMENT [FPS=<lane>] [CLEAR=1]`
 `cmd_UNLOAD_FILAMENT`, `oams_manager.py:683-725`.
+- **`CLEAR=1`:** the caller knows the filament is clear of the toolhead (SAFE_UNLOAD_FILAMENT's `_OAMS_FINISH_UNLOAD` passes it after the cut and the toolhead sensor check; `OAMSM_UNLOAD_FROM_TOOLHEAD` after its eject macro; the rewind of a bay whose filament stopped short of the toolhead always). On a unit reporting `AMS_CAP_HOST_UNLOAD_CLEAR` the host then sends `oams_cmd_unload_clear` with the unload's generation, so the unit rewinds with its first stage at once (C1 §4.1). Without it, or on other units, nothing extra is sent.
 - **Preconditions:** motion must be available on every unit, else stops
   followers first, then `"OpenAMS motion unavailable for %s"`; hardware
   snapshot ready, else same as above; `FPS=` required when more than one lane
@@ -322,8 +323,14 @@ error text: `"AMS load reached the toolhead, but %s failed: %s. Filament
 remains loaded and forward following remains armed."`.
 
 ### `OAMSM_UNLOAD_FROM_TOOLHEAD [FPS=<lane>]`
-`cmd_UNLOAD_FROM_TOOLHEAD`, `oams_manager.py:791-821`. Reverse-follows while
-the configured `toolhead_unload_macro` retracts, waits up to
+`cmd_UNLOAD_FROM_TOOLHEAD`, `oams_manager.py:791-821`. First heats the lane's
+extruder to the loaded bay's working temperature when it is more than 5 C below
+it (`SET_HEATER_TEMPERATURE` + `TEMPERATURE_WAIT`, `_heat_for_unload`), so no
+heat-up runs inside the reverse window. Reverse-follows while
+the configured `toolhead_unload_macro` retracts. The reverse enable itself waits
+up to 4.5 s for the unit's own reply (C1 §4.2); no reply from a C1 firmware, or
+its link dropping, is a refusal: `"the unit did not confirm the reverse follower
+within 4.5 s"`, and nothing retracts. It then waits up to
 `FOLLOW_CONFIRM_TIMEOUT` (2.0 s) for a *fresh* reducer confirmation of the
 reverse follower (`_wait_for_follower`, `oams_manager.py:751-767`,
 `"Reverse follower on lane %s was not confirmed; toolhead unload was
@@ -588,25 +595,45 @@ Clears `spool_id_<bay>`/`link_source_<bay>`; mirrors `location` cleared (to
 `""`, C4 §5.1) in Spoolman. **Preconditions: allowed at any time** (same
 resolution as above). It also clears the bay's `filament` entry (below).
 
-### `OAMSM_SET_BAY_FILAMENT OAMS=<unit> BAY=<index> [MATERIAL=<text>] [TEMP=<int>] [SOURCE=spool|table]` (H2)
+### `OAMSM_SET_BAY_FILAMENT OAMS=<unit> BAY=<index> [MATERIAL=<text>] [TEMP=<int>] [SOURCE=spool|table] [REMAINING=<0-100>]` (H2)
 Publishes what a bay holds of filament so the macros can heat before a load,
 an unload or a toolchange: the material and the **working temperature**, from
 Spoolman via `openams_spoolman` (C4 §7.4). Argument checks mirror
 `OAMSM_SET_BAY_SPOOL` above (`OAMS=`/`BAY=` must resolve to a real bay,
 `SOURCE` must be one of its two values, default `spool`).
 
-- **Clearing:** no `TEMP` (or `TEMP=0`) and no `MATERIAL` clears the bay.
+- **Clearing:** no `TEMP` (or `TEMP=0`), no `MATERIAL` and no `REMAINING`
+  clears the bay.
 - **Range:** `TEMP` is 150-400 when given.
+- **`REMAINING`** (added 2026-11-11, additive): the spool's remaining percent,
+  an integer 0-100 (its remaining weight over its initial weight, C4 §7.4).
+  Absent or empty means unknown: an `openams_spoolman` that predates it sends
+  none, and the bay's remaining percent is then `null`. Outside 0-100 or not
+  an integer is refused (`"REMAINING must be between 0 and 100, got <n>."`,
+  `"REMAINING must be an integer, got '<text>'."`). The host keeps it beside
+  the bay's `filament` and publishes it **only** in `openams_screen` (C2 §6a),
+  never in `oams_manager` or `openams_ui`. A command carrying only
+  `REMAINING` keeps it and leaves `filament` `null`.
 - **Always allowed**, like a spool link: it is metadata, not motion.
 - **Never persisted.** The command calls no `persist_config_option` and
   writes no file: this is an operating copy Spoolman does not own and Klipper
   forgets on every restart, after which the component pushes it again.
 
-**A spool link change clears the bay's `filament`:** `OAMSM_SET_BAY_SPOOL`
-linking a *different* spool, `OAMSM_CLEAR_BAY_SPOOL`, and a spool moved away
-from a bay all clear it. The values described the old spool; the component
-pushes the new ones on its next pass. Relinking the *same* spool changes
-nothing.
+**A spool link change clears the bay's `filament`** (and its remaining
+percent): `OAMSM_SET_BAY_SPOOL` linking a *different* spool,
+`OAMSM_CLEAR_BAY_SPOOL`, and a spool moved away from a bay all clear it. The
+values described the old spool; the component pushes the new ones on its next
+pass. Relinking the *same* spool changes nothing.
+
+### `OAMSM_SCREEN [UNIT=<unit>|AUTO]` (LCD status screen)
+Chooses the unit the printer LCD's "AMS status" screen shows (C2 §6a).
+`UNIT=<unit>` pins a unit (one of `openams_screen.units`; an inline follower
+has no bays to show and is refused, as is an unknown name: `"Unknown unit
+'<name>' for the AMS status screen; units: <list>."`); `UNIT=AUTO` (or an
+empty `UNIT=`) goes back to following the active unit. Without `UNIT` it only
+reports. The answer is `"AMS status screen: shows <unit> (pinned)."` or
+`"AMS status screen: follows the active unit (now <unit>)."`.
+**Always allowed**; memory only (a restart follows the active unit again).
 
 ### `OAMSM_SET_TRAY_INFO OAMS=<unit> BAY=<index> [SPOOL=<spoolman_id>] | CODE=<code> MATERIAL=<text> COLOR=<RRGGBB[AA]> MIN=<C> MAX=<C>`
 Writes a bay's **stored filament setting** into a unit that keeps one
@@ -689,6 +716,13 @@ so a stage report can never abort a toolchange.
 lane; else the single lane with an active plan or an operation in flight;
 else a warning.
 
+**The group a plan brings in** (2026-11-12): with `PLAN=`, a `GROUP=` that is
+a group on the plan's lane is also kept as the group the plan loads, so the
+printer LCD (C2 §6a `openams_screen.tool`) names the tool and shows its unit
+from the first step, before a bay is picked. The shipped `_OAMS_PLAN` passes
+it for a load and a swap. Display only: a group on another lane is ignored,
+and nothing moves on it.
+
 **Warnings (no-op):** an unresolvable lane; an invalid or unknown step name,
 a plan of more than 8 steps or one that repeats a step, or a `NAME=` not in
 the plan; a `NAME=` earlier than the current step; `LABEL_<NAME>` without
@@ -741,11 +775,22 @@ when the unload ends, at the next boundary.
 Moonraker exposes it as `POST /server/openams/stop` (C4 §9.1).
 
 The printer's LCD menu reaches the same stop without G-code (2026-11-10).
-Klipper's menu sends the printer event `menu:__main __openams __stop:populate`
-when the Stop entry of `oams_menu.cfg` is opened, from the reactor; the manager
-handles it as `openams/stop` without `lane` (`MENU_STOP_EVENT`,
-`_menu_stop`), answers in the console (`"OpenAMS: Stop from the printer's
-menu: stopping"`, or `nothing running`), and never raises into the menu.
+Klipper's menu sends a printer event when a list is opened, from the reactor.
+The manager handles `menu:__main __openams __stop:populate` (OpenAMS › Stop)
+and, since 2026-11-11, `menu:__main __oams_stop:populate` (the "Stop OpenAMS"
+row `oams_menu.cfg` puts at the top of the main menu while a sequence runs)
+as `openams/stop` without `lane` (`MENU_STOP_EVENTS`, `_menu_stop`), answers
+in the console (`"OpenAMS: Stop from the printer's menu: stopping"`, or
+`nothing running`), and never raises into the menu.
+
+At ready, where a menu exists, the manager also replaces the stock menu
+entries that move the extruder by a raw distance (`STOCK_RAW_EXTRUDE_MENU`:
+the Filament list and the three Move E rows) with disabled ones, unless the
+printer's config defines the entry or a section under it. When a toolchange
+fails in a print and the print is paused, it sets the display's status line
+with `SET_DISPLAY_TEXT MSG="<tool> failed: <step>"` (only with a
+`display_status` object), and clears it after the `RESUME` that finishes the
+toolchange, or when the print ends, unless the message has changed since.
 
 ### `OAMS_DRYER_START ... ROTATE=<0|1>` (H6)
 Extends the existing `OAMS_DRYER_START` (§2) with spool rotation during

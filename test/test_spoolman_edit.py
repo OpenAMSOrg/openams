@@ -96,10 +96,14 @@ class LinkedWeightsTest(Base):
         self.assertEqual(result["bay"]["spool"]["remaining_pct"], 50)
         self.assertEqual(result["bay"]["spool"]["initial_g"], 900)
         self.assertEqual(result["bay"]["spool"]["flow_k"], 0.05)
-        # One spool PATCH, no filament or vendor traffic, no G-code.
+        # One spool PATCH, no filament or vendor traffic; the one G-code is
+        # the bay's new remaining percent for the host (C4 §7.4, C2 §6a).
         self.assertEqual([(m, p) for m, p, _, _ in self.writes()],
                          [("PATCH", "/v1/spool/%d" % spool["id"])])
-        self.assertEqual(self.h.klippy_apis.gcode, [])
+        self.assertEqual(len(self.h.klippy_apis.gcode), 1)
+        self.assertTrue(self.h.klippy_apis.gcode[0].startswith(
+            "OAMSM_SET_BAY_FILAMENT OAMS=oams1 BAY=0 "))
+        self.assertTrue(self.h.klippy_apis.gcode[0].endswith(" REMAINING=50"))
 
     async def test_the_bay_entry_is_what_the_status_endpoint_publishes(self):
         result = await self.edit(remaining_weight=100)
@@ -242,7 +246,7 @@ class UnlinkedCreateTest(Base):
             "OAMSM_SET_BAY_SPOOL OAMS=oams1 BAY=0 SPOOL=%d SOURCE=manual"
             % spool["id"],
             'OAMSM_SET_BAY_FILAMENT OAMS=oams1 BAY=0 MATERIAL="PETG" TEMP=240'
-            ' SOURCE=table'])
+            ' SOURCE=table REMAINING=67'])
         self.assertEqual(result["bay"]["state"], "linked")
         self.assertEqual(result["bay"]["source"], "manual")
         self.assertEqual(result["bay"]["spool_id"], spool["id"])

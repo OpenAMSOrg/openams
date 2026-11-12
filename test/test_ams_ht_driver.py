@@ -10,7 +10,8 @@ if "oamspkg" not in sys.modules:
     pkg.__path__ = [_SRC]
     sys.modules["oamspkg"] = pkg
 sys.modules.setdefault("mcu", types.ModuleType("mcu"))
-OAMS = importlib.import_module("oamspkg.oams").OAMS
+oams = importlib.import_module("oamspkg.oams")
+OAMS = oams.OAMS
 
 
 class FakeQuery:
@@ -434,6 +435,94 @@ class FaultClearTests(unittest.TestCase):
         self.assertEqual(timer["callback"](timer["waketime"]),
                          driver.reactor.NEVER)
         return driver.console
+
+    MOTION_TIMEOUT = {"motion_fault": 1, "motion_fault_name": "motion_timeout",
+                      "dryer_fault": 0, "dryer_fault_name": "none",
+                      "system_fault": 0, "system_fault_name": "none"}
+
+    def stale_clear(self, driver, domain):
+        """Run the clear scheduled by an unload that succeeded."""
+        driver._telemetry["domain"] = dict(domain)
+        driver._schedule_stale_motion_clear()
+        (timer,) = driver.reactor.timers
+        self.assertEqual(timer["waketime"],
+                         12.5 + OAMS.STALE_MOTION_CLEAR_DELAY_S)
+        self.assertEqual(timer["callback"](timer["waketime"]),
+                         driver.reactor.NEVER)
+        return driver.ams_ht_clear_fault_cmd.sent
+
+    def test_a_working_unload_clears_a_stale_motion_fault(self):
+        # voron350, 2026-11-12: a retried unload worked, but the AMS 1 kept
+        # the motion_timeout of the failed one and would refuse the next load.
+        driver = self.driver()
+        self.assertEqual(self.stale_clear(driver, self.MOTION_TIMEOUT), [[]])
+        self.assertEqual(driver.console, [
+            "ams2 (AMS 2 Pro): cleared the motion_timeout fault left by an"
+            " earlier failure; the unload that just finished worked"])
+
+    def test_an_unload_completion_schedules_the_clear(self):
+        # The driver's own completion path, the old and the v4 protocol.
+        import collections
+        for wide in (False, True):
+            driver = self.driver()
+            driver.status_loading = oams.OAMS_STATUS_LOADING
+            driver.status_unloading = oams.OAMS_STATUS_UNLOADING
+            driver.status_calibrating = oams.OAMS_STATUS_CALIBRATING
+            driver.status_error = oams.OAMS_STATUS_ERROR
+            driver._use_wide_gen_protocol = wide
+            driver._gen_queue = collections.deque([3])
+            driver.on_action_complete = None
+            driver.session_lost = None
+            driver._active_action = driver.status_unloading
+            driver._active_gen = 3
+            driver.action_status = driver.status_unloading
+            driver._apply_action_status(
+                {"action": driver.status_unloading,
+                 "code": oams.OAMS_OP_CODE_SUCCESS, "value": 0},
+                wire_gen=3 if wide else None)
+            (timer,) = driver.reactor.timers
+            self.assertEqual(timer["callback"].__name__,
+                             "_clear_stale_motion_fault", wide)
+            # A failed unload schedules nothing.
+            driver = self.driver()
+            driver.status_loading = oams.OAMS_STATUS_LOADING
+            driver.status_unloading = oams.OAMS_STATUS_UNLOADING
+            driver.status_calibrating = oams.OAMS_STATUS_CALIBRATING
+            driver.status_error = oams.OAMS_STATUS_ERROR
+            driver._use_wide_gen_protocol = wide
+            driver._gen_queue = collections.deque([3])
+            driver.on_action_complete = None
+            driver.session_lost = None
+            driver._active_action = driver.status_unloading
+            driver._active_gen = 3
+            driver.action_status = driver.status_unloading
+            driver._apply_action_status(
+                {"action": driver.status_unloading, "code": 1, "value": 0},
+                wire_gen=3 if wide else None)
+            self.assertEqual(driver.reactor.timers, [], wide)
+
+    def test_a_dryer_or_system_fault_is_never_cleared_with_it(self):
+        for kind in ("dryer_fault", "system_fault"):
+            driver = self.driver()
+            domain = dict(self.MOTION_TIMEOUT, **{kind: 3})
+            self.assertEqual(self.stale_clear(driver, domain), [], kind)
+            self.assertEqual(driver.console, [], kind)
+
+    def test_nothing_is_sent_without_a_motion_fault_or_during_a_new_op(self):
+        driver = self.driver()
+        self.assertEqual(self.stale_clear(
+            driver, dict(self.MOTION_TIMEOUT, motion_fault=0)), [])
+        driver = self.driver()
+        driver.action_status = 1   # the next operation already started
+        self.assertEqual(self.stale_clear(driver, self.MOTION_TIMEOUT), [])
+
+    def test_a_refused_clear_says_how_to_clear_it(self):
+        driver = self.driver(result=1)
+        self.stale_clear(driver, self.MOTION_TIMEOUT)
+        self.assertEqual(len(driver.console), 1)
+        self.assertIn("could not clear the motion_timeout fault",
+                      driver.console[0])
+        self.assertIn("OAMS_CLEAR_FAULT", driver.console[0])
 
     def test_clear_names_the_unit_it_was_sent_to(self):
         # OAMS_CLEAR_FAULT OAMS=<idx> reaches the faulted unit; the reply

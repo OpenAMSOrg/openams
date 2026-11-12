@@ -2,6 +2,20 @@
  "schema": 1,
  "packages": [
   {
+   "version": 19,
+   "file": "bridge-19.oac2",
+   "sha256": "85269b4a0fe13a004a5aaa8d3ebfc5466996e678eaa00d2468dfa17c439a71fc",
+   "released": "2026-11-12",
+   "notes": "Unloads no longer stall on an AMS 1: the AMS rewinds its spool only once OpenAMS says the filament is out of the extruder, a retry after a failed unload starts the same way, and a failure names the AMS's own error."
+  },
+  {
+   "version": 15,
+   "file": "bridge-15.oac2",
+   "sha256": "f5ee27d87977fce2dc6833848b8bf09d755d3f45b7079f7a01bee68c92d4de49",
+   "released": "2026-11-11",
+   "notes": "During an unload the AMS works with the extruder instead of against it: an AMS 1 now pulls the filament back as the extruder retracts (it never feeds it forward), and every AMS reports reverse following only once it is actually pulling back. A working AMS is never refused."
+  },
+  {
    "version": 14,
    "file": "bridge-14.oac2",
    "sha256": "2fa388e9b6099f5a0d113581f08add9f76c5ab7104809652bdea28e2b0a84936",

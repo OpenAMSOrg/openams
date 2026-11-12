@@ -347,6 +347,9 @@ def resolve_capabilities(configured, constants):
             ("logger_control", "AMS_CAP_LOGGER_CONTROL"),
             ("error_led_control", "AMS_CAP_ERROR_LED_CONTROL"),
             ("host_arrival_confirm", "AMS_CAP_HOST_ARRIVAL_CONFIRM"),
+            # A unit whose unload keeps its first stage still until the host
+            # says the filament is clear of the toolhead (C1 §4.1).
+            ("host_unload_clear", "AMS_CAP_HOST_UNLOAD_CLEAR"),
             ("board_telemetry", "AMS_CAP_BOARD_TELEMETRY"),
             ("link_status", "AMS_CAP_LINK_STATUS"),
             # A unit that decodes its spools' tags itself (C1 section 4.7.1);

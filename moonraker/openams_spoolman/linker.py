@@ -679,12 +679,17 @@ class Linker(object):
             machine.filament_sent = None
 
     def _bay_filament(self, spool_id):
-        """What a bay's spool says the host should heat to, or None (C4 §7.4).
+        """What a bay's spool tells the host, or None (C4 §7.4): the
+        material, the temperature to heat to, where that came from, and the
+        spool's remaining percent.
 
-        First match wins: the spool's own ``settings_extruder_temp``, then the
-        material table. An unlinked bay, a spool Spoolman has not told us
-        about, a spool with no material and a material outside the table are
-        all unknown, and the host then uses its own default.
+        The temperature: first match wins, the spool's own
+        ``settings_extruder_temp``, then the material table; else unknown,
+        and the host then uses its own default. The remaining percent is the
+        spool's remaining weight over its initial weight, 0-100, or unknown;
+        only the LCD screen shows it (C2 §6a). A spool with none of the three
+        known (and an unlinked bay, or a spool Spoolman has not told us
+        about) is None, which clears the bay.
         """
         if spool_id is None:
             return None
@@ -696,14 +701,18 @@ class Linker(object):
         source = "spool"
         if temp is None:
             temp = ops.material_extruder_temp(material, self._material_temps)
-            source = "table"
-        if temp is None:
+            source = "table" if temp is not None else "spool"
+        remaining = ops.remaining_pct_of(summary.get("remaining_pct"))
+        if temp is None and material is None and remaining is None:
             return None
-        return (spool_id, material, temp, source)
+        return (spool_id, material, temp, source, remaining)
 
     @staticmethod
     def _filament_command(unit, bay, values):
-        """``OAMSM_SET_BAY_FILAMENT`` for ``values``, or the clearing form."""
+        """``OAMSM_SET_BAY_FILAMENT`` for ``values``, or the clearing form.
+
+        TEMP and REMAINING go only when known: a host keeps an absent one as
+        unknown, and one that predates REMAINING ignores it (C3 §4)."""
         command = "OAMSM_SET_BAY_FILAMENT OAMS=%s BAY=%s" % (unit, bay)
         if values is None:
             return command     # no TEMP and no MATERIAL clears the bay
@@ -712,7 +721,11 @@ class Linker(object):
             # Quoted so a material with a space stays one argument: Klipper
             # splits extended parameters with shlex (klippy/gcode.py).
             parts.append('MATERIAL="%s"' % values[1].replace('"', ""))
-        parts.append("TEMP=%d SOURCE=%s" % (values[2], values[3]))
+        if values[2] is not None:
+            parts.append("TEMP=%d" % values[2])
+        parts.append("SOURCE=%s" % values[3])
+        if values[4] is not None:
+            parts.append("REMAINING=%d" % values[4])
         return " ".join(parts)
 
     async def _push_filament(self, key, unit, bay):

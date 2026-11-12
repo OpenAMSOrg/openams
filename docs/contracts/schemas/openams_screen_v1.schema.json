@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openams.org/contracts/openams_screen_v1.schema.json",
+  "title": "openams_screen v1",
+  "description": "The printer LCD's AMS status screen object (C2 §6a, src/openams_screen.py): per bay the material and the spool's remaining percent, the units the screen pages through and the unit it shows. Spool data lives here for the LCD only; it stays off openams_ui.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "units", "active", "pin", "tool", "bays"],
+  "properties": {
+    "v": {"const": 1, "description": "Object version."},
+    "units": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Every unit with spool bays, in the manager's order; inline followers are left out."
+    },
+    "active": {
+      "type": ["string", "null"],
+      "description": "The unit the screen shows now (C2 §6a rules); null with no units."
+    },
+    "pin": {
+      "type": ["string", "null"],
+      "description": "The unit OAMSM_SCREEN UNIT= pinned (C3), null when following."
+    },
+    "tool": {
+      "type": ["string", "null"],
+      "description": "The tool (group) a running step plan works on in the shown unit's lane: the loaded group, else the group a load brings in (OAMSM_STAGE PLAN= GROUP=, C3), so the header names it from the plan's first step; null with no plan running."
+    },
+    "bays": {
+      "type": "object",
+      "description": "Per unit name, one entry per bay in bay order.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {"$ref": "#/$defs/bay"}
+      }
+    }
+  },
+  "$defs": {
+    "bay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["m", "r"],
+      "properties": {
+        "m": {
+          "type": ["string", "null"],
+          "maxLength": 16,
+          "description": "The material: the pushed filament.material, else the bay's tag material, else null."
+        },
+        "r": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "The spool's remaining percent from OAMSM_SET_BAY_FILAMENT REMAINING= (C3, C4 §7.4); null when unknown."
+        }
+      }
+    }
+  }
+}

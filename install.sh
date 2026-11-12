@@ -1096,6 +1096,8 @@ install_config()
     # The LCD menu entries. Linking it enables nothing either: add_menu_include
     # includes it where the printer has a [display].
     link_shipped_macro "oams_menu.cfg"
+    # The LCD's AMS status screen, which oams_menu.cfg includes.
+    link_shipped_macro "oams_screen.cfg"
 
     echo "[OK]"
 }
@@ -1346,12 +1348,13 @@ uninstall()
             rm -f "${KLIPPER_PATH}/scripts/$(basename "$file")"
         done
         echo "[OK]"
-        read -p "Remove oams.cfg, oams_macros.cfg, oams_macros_ordered.cfg and oams_menu.cfg from ${MOONRAKER_CONFIG_DIR}? [y/N] " confirm
+        read -p "Remove oams.cfg, oams_macros.cfg, oams_macros_ordered.cfg, oams_menu.cfg and oams_screen.cfg from ${MOONRAKER_CONFIG_DIR}? [y/N] " confirm
         if [[ "$confirm" =~ ^[Yy]$ ]]; then
             rm -f "${MOONRAKER_CONFIG_DIR}/oams.cfg"
             rm -f "${MOONRAKER_CONFIG_DIR}/oams_macros.cfg"
             rm -f "${MOONRAKER_CONFIG_DIR}/oams_macros_ordered.cfg"
             rm -f "${MOONRAKER_CONFIG_DIR}/oams_menu.cfg"
+            rm -f "${MOONRAKER_CONFIG_DIR}/oams_screen.cfg"
             echo "Config files removed."
         else
             echo "Config files kept."

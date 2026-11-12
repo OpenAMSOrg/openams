@@ -312,6 +312,19 @@ FEED_FAILURE = (
     _f("odo_flags", 1, _bitfield(ODO_BITS), "bits"),
     _f("ams_state", 1, _enum(AMS_STATE), "enum"),
 )
+# Bridge firmware 15: the AMS's motor readings during a reverse follower or
+# an unload (0x04 reply offsets 22-33), with the command streamed then, the
+# odometer and the buffer; the latest few per unit, as many as fit. On the AMS
+# 2 Pro, 22-27 follow the hub motor and 28/30/32 are 0 unless the per-slot
+# first stage runs.
+MOTOR_SAMPLE = (
+    _f("slot", 1), _f("age_ms", 4),
+    _f("primitive", 1), _f("reference", 1),
+    _f("odo_mm", 2, _signed, raw=True), _f("buffer", 2, _signed, raw=True),
+    _f("m22", 2, _signed, raw=True), _f("m24", 2, _signed, raw=True),
+    _f("m26", 2, _signed, raw=True), _f("m28", 2, _signed, raw=True),
+    _f("m30", 2, _signed, raw=True), _f("m32", 2, _signed, raw=True),
+)
 # One row per unit asked to dry, or drying, since it was bound.
 DRYER_V11 = (
     _f("slot", 1), _f("index", 1),
@@ -368,6 +381,7 @@ SECTIONS = {
     0x11: ("candidates", CANDIDATE, True),
     0x12: ("feed_failures", FEED_FAILURE, True),
     0x13: ("dryers", DRYER, True),
+    0x14: ("motor_samples", MOTOR_SAMPLE, True),
     0x20: ("refusals", REFUSAL_ROW, True),
 }
 
@@ -435,6 +449,10 @@ def decode_body(body: bytes) -> dict:
             out[name].append(fields)
         else:
             out[name] = fields
+    # Present only when the bridge sent some (bridge firmware 15), as in the
+    # firmware's reference decoder.
+    if not out.get("motor_samples"):
+        out.pop("motor_samples", None)
     return out
 
 
@@ -603,7 +621,34 @@ def classify(snapshot) -> dict:
     reading = _classify(snapshot)
     reading["feed_failures"] = feed_failure_lines(snapshot)
     reading["dryers"] = dryer_lines(snapshot)
+    reading["motor_samples"] = motor_sample_lines(snapshot)
     return reading
+
+
+PRIMITIVE_TEXT = {0x02: "stop", 0x03: "pull back or feed (03)",
+                  0x07: "follower or hold (07)", 0x09: "hub servo (09)"}
+
+
+def motor_sample_lines(snapshot) -> list:
+    """One sentence per motor sample (bridge firmware 15): the command the
+    bridge streamed, the odometer and buffer, and the two motor groups, so a
+    bench report shows which command ran the first stage."""
+    lines = []
+    for row in (snapshot or {}).get("motor_samples") or []:
+        if not isinstance(row, dict):
+            continue
+        first = (row.get("m28"), row.get("m30"), row.get("m32"))
+        lines.append(
+            "Motor sample, AMS slot %s, %s ms ago: %s, setpoint 0x%02x, "
+            "odometer %s mm, buffer %+d; hub %s/%s/%s, first stage %s/%s/%s%s"
+            % (row.get("slot"), row.get("age_ms"),
+               PRIMITIVE_TEXT.get(row.get("primitive"),
+                                  "command 0x%02x" % (row.get("primitive") or 0)),
+               row.get("reference") or 0, row.get("odo_mm"),
+               row.get("buffer") or 0, row.get("m22"), row.get("m24"),
+               row.get("m26"), *first,
+               " (first stage running)" if any(first) else ""))
+    return lines
 
 
 START_TEXT = {"confirmed": "was confirmed",
@@ -975,6 +1020,8 @@ def allowlisted(snapshot) -> dict:
     out = {"format": FORMAT_1 if snap.get("format") == FORMAT_1 else None}
     for name, layout, table in SECTIONS.values():
         value = snap.get(name)
+        if name == "motor_samples" and not value:
+            continue                          # only present when sent
         if name == "dryers":                  # a firmware 10 row's fields too
             layout = layout + tuple(field for field in DRYER_V10
                                     if field[0] not in
