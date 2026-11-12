@@ -56,10 +56,15 @@ _EVENT_FIELDS = {
     "update_result": frozenset(("firmware_version", "result", "reason")),
     # A support snapshot was asked for: "ok" or the failure's code.
     "bridge_snapshot": frozenset(("result",)),
+    # An AMS firmware update (bridge 22): which unit and image, and how it
+    # ended, with the versions before and after ("none" when unknown).
+    "ams_update_start": frozenset(("index", "family", "model", "size")),
+    "ams_update_end": frozenset(("result", "reason", "before", "after")),
 }
 
 _CODE_FIELDS = frozenset((
     "port_selection", "phase", "reason", "result", "source",
+    "family", "model", "before", "after",
 ))
 _PATH_FIELDS = frozenset(("device", "device_link", "pty_directory"))
 _CODE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{0,63}$")

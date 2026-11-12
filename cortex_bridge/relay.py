@@ -28,6 +28,7 @@ import fnmatch
 import json
 import os
 from pathlib import Path
+import select
 import signal
 import socket
 import sys
@@ -37,6 +38,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from cortex_bridge.cortexd import (  # noqa: E402
+    Message,
     CleartextMuxTransport,
     CortexCore,
     CortexDaemon,
@@ -45,6 +47,7 @@ from cortex_bridge.cortexd import (  # noqa: E402
     ROSTER_PAYLOAD_SIZE,
     VERSION as RUNTIME_MUX_VERSION,
 )
+from cortex_bridge import ams_update  # noqa: E402
 from cortex_bridge import bridge_info, bridge_snapshot  # noqa: E402
 from cortex_bridge import update_messages  # noqa: E402
 from cortex_bridge.support_log import GatewaySupportLog  # noqa: E402
@@ -59,6 +62,10 @@ DEFAULT_PTY_DIR = "/dev/oams"
 DEFAULT_RUN_DIR = "/run/cortex-bridge"
 STATUS_FILE = "status.json"
 CONTROL_SOCKET = "control.sock"
+AMS_UPDATE_METHOD = "ams_update"
+AMS_LISTEN_METHOD = "ams_listen"
+AMS_IMAGE_MAX = 512 * 1024
+AMS_UNITS_WAIT_S = 5.0
 
 ROSTER_TIMEOUT = 30.0
 READY_WAIT = 60.0
@@ -339,6 +346,20 @@ class ControlServer:
             pass
 
 
+def _peer_closed(connection) -> bool:
+    """True once the client of a control connection has gone away. Never
+    waits: the connection keeps the 2 s timeout ControlServer gave it."""
+    try:
+        readable, _, _ = select.select([connection], [], [], 0)
+        if not readable:
+            return False
+        return connection.recv(1, socket.MSG_PEEK) == b""
+    except (BlockingIOError, InterruptedError, socket.timeout):
+        return False
+    except (OSError, ValueError):
+        return True
+
+
 def send_line(connection, payload: dict) -> None:
     try:
         connection.sendall((json.dumps(payload, sort_keys=True) + "\n")
@@ -384,6 +405,7 @@ class Relay:
         self.snapshot_query = None
         self.snapshot_waiters = []
         self.snapshot_sent_at = None
+        self.ams = None              # the running AMS firmware update
 
     # -- lifecycle --------------------------------------------------------
 
@@ -489,6 +511,10 @@ class Relay:
                 raise UpdateRequested(connection, request, prepared)
         elif method == bridge_snapshot.SNAPSHOT_METHOD:
             self.request_snapshot(connection, running=running)
+        elif method == AMS_UPDATE_METHOD:
+            self.start_ams_update(connection, request, running=running)
+        elif method == AMS_LISTEN_METHOD:
+            self.start_ams_listen(connection, request, running=running)
         else:
             send_line(connection, {"event": "result", "ok": False,
                                    "error": "unknown-method",
@@ -547,6 +573,174 @@ class Relay:
     def _answer(connection, reply: dict) -> None:
         send_line(connection, reply)
         connection.close()
+
+    # -- an AMS firmware update ------------------------------------------
+
+    def _ams_gate(self, connection, running: bool) -> bool:
+        """Refuse (and answer) unless this bridge can take AMS update
+        messages; True when it can."""
+        def refuse(error, message):
+            self._answer(connection, {"event": "result", "ok": False,
+                                      "code": error, "message": message})
+            return False
+        if not running or self.core is None:
+            return refuse("not-connected", "no bridge session is running")
+        if self.ams is not None:
+            return refuse("busy", "another AMS firmware update is running")
+        firmware = self.status.state.get("firmware") or {}
+        bridge = self.bridge or {}
+        version = firmware.get("version")
+        if bridge.get("manufacturer") != "SiForge" or \
+                firmware.get("state") != "known" or \
+                not isinstance(version, int):
+            return refuse("firmware-unknown", "the bridge has not reported "
+                          "its firmware version, so it is not asked")
+        if version < ams_update.MINIMUM_FIRMWARE:
+            return refuse("unsupported-firmware",
+                          "bridge firmware %d cannot update an AMS; version "
+                          "%d or later can (cortex-bridge.py update)"
+                          % (version, ams_update.MINIMUM_FIRMWARE))
+        return True
+
+    def start_ams_listen(self, connection, request, *, running: bool) -> None:
+        """Answer {"method": "ams_listen", "seconds": n}: stream every AMS
+        loader line on the bus for n seconds (1-120), no session opened."""
+        if not self._ams_gate(connection, running):
+            return
+        try:
+            seconds = min(120.0, max(1.0, float(request.get("seconds", 10))))
+        except (TypeError, ValueError):
+            seconds = 10.0
+        listener = ams_update.AmsListener(now=time.monotonic(),
+                                          seconds=seconds)
+        self.ams = {"driver": listener, "connection": connection,
+                    "finished_at": None, "listen": True}
+        self.core.ams_update_handler = \
+            lambda payload: listener.accept(payload, time.monotonic())
+
+    def start_ams_update(self, connection, request, *, running: bool) -> None:
+        """Answer {"method": "ams_update", "image": path, "index": n,
+        "family": "ams2", "model": "N3F05"}: run one AMS firmware update
+        through the bridge, streaming its progress as JSON lines. The image
+        was checked by the caller (cortex_bridge.ams_firmware); it is read
+        here and only its BIMH magic and size are checked again."""
+        def refuse(error, message):
+            self._answer(connection, {"event": "result", "ok": False,
+                                      "code": error, "message": message})
+        if not running or self.core is None:
+            return refuse("not-connected", "no bridge session is running")
+        if self.ams is not None:
+            return refuse("busy", "another AMS firmware update is running")
+        firmware = self.status.state.get("firmware") or {}
+        bridge = self.bridge or {}
+        version = firmware.get("version")
+        if bridge.get("manufacturer") != "SiForge" or \
+                firmware.get("state") != "known" or \
+                not isinstance(version, int):
+            return refuse("firmware-unknown", "the bridge has not reported "
+                          "its firmware version, so it is not asked")
+        if version < ams_update.MINIMUM_FIRMWARE:
+            return refuse("unsupported-firmware",
+                          "bridge firmware %d cannot update an AMS; version "
+                          "%d or later can (cortex-bridge.py update)"
+                          % (version, ams_update.MINIMUM_FIRMWARE))
+        try:
+            index = int(request["index"])
+            family = str(request["family"])
+            model = str(request["model"])
+            with open(str(request["image"]), "rb") as handle:
+                image = handle.read(AMS_IMAGE_MAX + 1)
+        except (KeyError, TypeError, ValueError) as exc:
+            return refuse("bad-request", "bad AMS update request: %s" % exc)
+        except OSError as exc:
+            return refuse("bad-image", "cannot read the image: %s"
+                          % (exc.strerror or exc))
+        if len(image) > AMS_IMAGE_MAX or len(image) < 512 or \
+                image[:4] != b"BIMH" or \
+                int.from_bytes(image[8:12], "little") != len(image):
+            return refuse("bad-image", "the file is not a complete AMS image")
+        resume = bool(request.get("resume"))
+        if resume and version < ams_update.RESUME_MINIMUM_FIRMWARE:
+            return refuse("unsupported-firmware",
+                          "bridge firmware %d cannot resume an AMS waiting in "
+                          "its loader; version %d or later can"
+                          % (version, ams_update.RESUME_MINIMUM_FIRMWARE))
+        try:
+            driver = ams_update.AmsUpdateDriver(
+                image, index=index, family=family, model=model,
+                now=time.monotonic(), probe=bool(request.get("probe")),
+                resume=resume)
+            ams_update.make_begin(driver.token, index, family, len(image),
+                                  model)
+        except ams_update.AmsUpdateError as exc:
+            return refuse("bad-request", str(exc))
+        self.ams = {"driver": driver, "connection": connection,
+                    "finished_at": None}
+        self.core.ams_update_handler = \
+            lambda payload: driver.accept(payload, time.monotonic())
+        self.log_ams("ams_update_start", index=index,
+                     family=family.replace("_", "-"), model=model.lower(),
+                     size=len(image))
+
+    def log_ams(self, event: str, **fields) -> None:
+        """A support-log line that can never stop an update."""
+        try:
+            self.log.record(event, **fields)
+        except (ValueError, OSError):
+            pass
+
+    def drive_ams_update(self, daemon, now: float) -> None:
+        state = self.ams
+        if state is None:
+            return
+        driver = state["driver"]
+        if not driver.finished and _peer_closed(state["connection"]):
+            driver.abort()        # the command was interrupted
+        for payload in driver.due(now):
+            daemon.send_request(Message(MessageType.AMS_UPDATE_REQUEST,
+                                        payload))
+        events, driver.events = driver.events, []
+        for event in events:
+            try:
+                send_line(state["connection"], event)
+            except OSError:
+                pass
+        if driver.finished:
+            if state["finished_at"] is None and state.get("listen"):
+                state["finished_at"] = now
+            if state["finished_at"] is None:
+                state["finished_at"] = now
+                outcome = driver.outcome
+                self.log_ams("ams_update_end",
+                             result="ok" if outcome.ok else "failed",
+                             reason=outcome.code or "none",
+                             before=outcome.before or "none",
+                             after=outcome.after or "none")
+            # Wait for the bridge's after-session units report, then close.
+            if driver.final_units is not None or \
+                    now - state["finished_at"] > AMS_UNITS_WAIT_S:
+                self.end_ams_update()
+
+    def end_ams_update(self, *, reason: str = "") -> None:
+        state, self.ams = self.ams, None
+        if state is None:
+            return
+        if self.core is not None:
+            self.core.ams_update_handler = None
+        driver = state["driver"]
+        if not driver.finished:
+            driver._finish(False, "host-lost", reason or
+                           "the bridge session ended during the update")
+        for event in driver.events:
+            try:
+                send_line(state["connection"], event)
+            except OSError:
+                pass
+        driver.events = []
+        try:
+            state["connection"].close()
+        except OSError:
+            pass
 
     # -- one USB session --------------------------------------------------
 
@@ -636,8 +830,12 @@ class Relay:
                                     **self.core.support_snapshot())
                     summary_at = now + SUMMARY_INTERVAL
                 self.drive_snapshot(daemon, now)
+                self.drive_ams_update(daemon, now)
                 self.serve_control(running=True)
         finally:
+            self.end_ams_update(reason="the bridge session ended during the "
+                                "update; the AMS may wait in its loader: run "
+                                "the update again")
             self.core.identity_handler = None
             self.core.support_handler = None
             if self.snapshot_query is not None:

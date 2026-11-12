@@ -340,6 +340,10 @@ def resolve_capabilities(configured, constants):
             # A unit that refuses to dry while filament is out to the
             # toolhead (an AMS 2 Pro); absent means not known to.
             ("dryer_requires_unloaded", "AMS_CAP_DRYER_REQUIRES_UNLOADED"),
+            # A unit that keeps feeding while it dries, so a print can run
+            # during a dry (an AMS HT from firmware 04.x; Cortex Bridge 25).
+            # Absent means it does not: a drying unit is not loaded from.
+            ("dryer_feeds_while_drying", "AMS_CAP_DRYER_FEEDS_WHILE_DRYING"),
             ("dryer_independent_zones", "AMS_DRYER_INDEPENDENT_ZONES"),
             ("host_sensor_configuration",
              "AMS_CAP_HOST_SENSOR_CONFIGURATION"),

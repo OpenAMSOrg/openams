@@ -1,0 +1,188 @@
+{
+  "schema": 1,
+  "about": "Where Bambu Lab publishes each AMS firmware image. OpenAMS stores no Bambu firmware: an image is either downloaded from url (Bambu's public download server) or imported from the Bambu offline package named in package (bambulab.com > Support > Firmware download), then checked (size, MD5, BIMH header, inner_name) before the bridge sends it. family uses OpenAMS names (ams1, ams2 = AMS 2 Pro, ams_ht). hardware is the board revision the image is built for. source is the printer release that carries it.",
+  "images": [
+    {
+      "family": "ams1",
+      "version": "00.00.06.40",
+      "hardware": "rev7",
+      "url": "https://public-cdn.bambulab.com/upgrade/device/BL-A001/00.00.06.40/product/ams_rev7-firmware-v00.00.06.40-20230906130758_product.bin.sig",
+      "md5": "5b94fcf898d949531efa437e9d2f15c8",
+      "size": 89800,
+      "inner_name": "ams_rev7-firmware-v00.00.06.40-20230906130758.bin.sig",
+      "source": "X1 01.08.00.00 update list"
+    },
+    {
+      "family": "ams1",
+      "version": "00.00.06.40",
+      "hardware": "rev8",
+      "url": "https://public-cdn.bambulab.com/upgrade/device/BL-A001/00.00.06.40/product/ams_rev8-firmware-v00.00.06.40-20230906130910_product.bin.sig",
+      "md5": "8219313049f13339cfec8917826628c1",
+      "size": 91244,
+      "inner_name": "ams_rev8-firmware-v00.00.06.40-20230906130910.bin.sig",
+      "source": "X1 01.08.00.00 update list"
+    },
+    {
+      "family": "ams1",
+      "version": "00.00.06.49",
+      "hardware": "rev7",
+      "url": "https://public-cdn.bblmw.com/upgrade/device/BL-A001/00.00.06.49/product/ef67633af9/ams_rev7-firmware-v00.00.06.49-20241018194533_product.bin.sig",
+      "md5": "c3a9bc11df443836332bb20370d5c4a9",
+      "size": 90812,
+      "inner_name": "ams_rev7-firmware-v00.00.06.49-20241018194533.bin.sig",
+      "source": "AMS update list ams-ota_v00.00.06.49"
+    },
+    {
+      "family": "ams1",
+      "version": "00.00.06.49",
+      "hardware": "rev8",
+      "url": "https://public-cdn.bblmw.com/upgrade/device/BL-A001/00.00.06.49/product/ef67633af9/ams_rev8-firmware-v00.00.06.49-20241018194443_product.bin.sig",
+      "md5": "fec0dad80e12496fba6695591fbe0097",
+      "size": 92260,
+      "inner_name": "ams_rev8-firmware-v00.00.06.49-20241018194443.bin.sig",
+      "source": "AMS update list ams-ota_v00.00.06.49"
+    },
+    {
+      "family": "ams1",
+      "version": "00.01.06.62",
+      "hardware": "rev8",
+      "url": "https://public-cdn.bblmw.com/upgrade/device/BL-A001/00.01.06.62/product/3f9bc0542b/ams_rev8-firmware-v00.01.06.62-20250331204240_product.bin.sig",
+      "md5": "61d0b28d20f1de27d341323116210f1f",
+      "size": 94552,
+      "inner_name": "ams_rev8-firmware-v00.01.06.62-20250331204240.bin.sig",
+      "source": "X1 update list (2025-03)"
+    },
+    {
+      "family": "ams1",
+      "version": "01.00.06.83",
+      "hardware": "rev7",
+      "file": "ams_rev7-firmware-v01.00.06.83-20250709152949_product.bin.sig",
+      "package": "offline-ota-p003_v01.10.00.00-20260330090748.zip",
+      "md5": "38927c561a025acad425f3c0b5475ce9",
+      "size": 94356,
+      "inner_name": "ams_rev7-firmware-v01.00.06.83-20250709152949.bin.sig",
+      "source": "P1 series 01.10.00.00"
+    },
+    {
+      "family": "ams1",
+      "version": "01.00.06.83",
+      "hardware": "rev8",
+      "file": "ams_rev8-firmware-v01.00.06.83-20250709152655_product.bin.sig",
+      "package": "offline-ota-p003_v01.10.00.00-20260330090748.zip",
+      "md5": "fed817348483406485f8f2bc08c785ca",
+      "size": 95804,
+      "inner_name": "ams_rev8-firmware-v01.00.06.83-20250709152655.bin.sig",
+      "source": "P1 series 01.10.00.00"
+    },
+    {
+      "family": "ams1",
+      "version": "01.00.06.87",
+      "hardware": "rev7",
+      "file": "ams_rev7-firmware-v01.00.06.87-20260109151724_product.bin.sig",
+      "package": "offline-ota-h2d_v01.03.00.00-20260302165904.zip",
+      "md5": "383d56e5eee3e7482213d76d5acc6ad9",
+      "size": 94748,
+      "inner_name": "ams_rev7-firmware-v01.00.06.87-20260109151724.bin.sig",
+      "source": "H2D 01.03.00.00"
+    },
+    {
+      "family": "ams1",
+      "version": "01.00.06.87",
+      "hardware": "rev8",
+      "file": "ams_rev8-firmware-v01.00.06.87-20260109152259_product.bin.sig",
+      "package": "offline-ota-h2d_v01.03.00.00-20260302165904.zip",
+      "md5": "7ca8698b359ee00423b4dcd0ceeaa982",
+      "size": 96200,
+      "inner_name": "ams_rev8-firmware-v01.00.06.87-20260109152259.bin.sig",
+      "source": "H2D 01.03.00.00"
+    },
+    {
+      "family": "ams1",
+      "version": "01.00.07.00",
+      "hardware": "rev7",
+      "file": "ams_rev7-firmware-v01.00.07.00-20260701153846_product.bin.sig",
+      "package": "offline-ota-p2s_v01.03.00.00-20260921090417.zip",
+      "md5": "1f0fa2d1f76a22f69b58d71a6ce2de34",
+      "size": 95928,
+      "inner_name": "ams_rev7-firmware-v01.00.07.00-20260701153846.bin.sig",
+      "source": "P2S 01.03.00.00"
+    },
+    {
+      "family": "ams1",
+      "version": "01.00.07.00",
+      "hardware": "rev8",
+      "file": "ams_rev8-firmware-v01.00.07.00-20260701154005_product.bin.sig",
+      "package": "offline-ota-p2s_v01.03.00.00-20260921090417.zip",
+      "md5": "d781e974e10c6d546bf1ab249591c272",
+      "size": 97380,
+      "inner_name": "ams_rev8-firmware-v01.00.07.00-20260701154005.bin.sig",
+      "source": "P2S 01.03.00.00"
+    },
+    {
+      "family": "ams2",
+      "version": "03.00.21.29",
+      "hardware": "rev5",
+      "file": "n3f_rev5-firmware-v03.00.21.29-20250725095915_product.bin.sig",
+      "package": "offline-ota-p003_v01.10.00.00-20260330090748.zip",
+      "md5": "fb090eeead7d85ebea818cd439c889c7",
+      "size": 166124,
+      "inner_name": "n3f_rev5-firmware-v03.00.21.29-20250725095915.bin.sig",
+      "source": "P1 series 01.10.00.00"
+    },
+    {
+      "family": "ams2",
+      "version": "04.00.21.87",
+      "hardware": "rev5",
+      "file": "n3f_rev5-firmware-v04.00.21.87-20260116194923_product.bin.sig",
+      "package": "offline-ota-h2d_v01.03.00.00-20260302165904.zip",
+      "md5": "3ed444bb56576ea82a3eeb1a26f9231b",
+      "size": 170236,
+      "inner_name": "n3f_rev5-firmware-v04.00.21.87-20260116194923.bin.sig",
+      "source": "H2D 01.03.00.00"
+    },
+    {
+      "family": "ams2",
+      "version": "05.00.22.22",
+      "hardware": "rev5",
+      "file": "n3f_rev5-firmware-v05.00.22.22-20260702164346_product.bin.sig",
+      "package": "offline-ota-p2s_v01.03.00.00-20260921090417.zip",
+      "md5": "0f54f176181a23256f0dd3f3ac29df93",
+      "size": 172132,
+      "inner_name": "n3f_rev5-firmware-v05.00.22.22-20260702164346.bin.sig",
+      "source": "P2S 01.03.00.00"
+    },
+    {
+      "family": "ams_ht",
+      "version": "03.00.21.29",
+      "hardware": "rev5",
+      "file": "n3s_rev5-firmware-v03.00.21.29-20250725100315_product.bin.sig",
+      "package": "offline-ota-p003_v01.10.00.00-20260330090748.zip",
+      "md5": "ee5d30d1d1008503c54408ddc3321560",
+      "size": 155224,
+      "inner_name": "n3s_rev5-firmware-v03.00.21.29-20250725100315.bin.sig",
+      "source": "P1 series 01.10.00.00"
+    },
+    {
+      "family": "ams_ht",
+      "version": "04.00.21.86",
+      "hardware": "rev5",
+      "file": "n3s_rev5-firmware-v04.00.21.86-20260116195059_product.bin.sig",
+      "package": "offline-ota-h2d_v01.03.00.00-20260302165904.zip",
+      "md5": "499c5eb077ffcfcfe3acb51e581451db",
+      "size": 158448,
+      "inner_name": "n3s_rev5-firmware-v04.00.21.86-20260116195059.bin.sig",
+      "source": "H2D 01.03.00.00"
+    },
+    {
+      "family": "ams_ht",
+      "version": "05.00.22.19",
+      "hardware": "rev5",
+      "file": "n3s_rev5-firmware-v05.00.22.19-20260616201708_product.bin.sig",
+      "package": "offline-ota-p2s_v01.03.00.00-20260921090417.zip",
+      "md5": "3c5fba2137541f9d464756acb81e6b14",
+      "size": 160552,
+      "inner_name": "n3s_rev5-firmware-v05.00.22.19-20260616201708.bin.sig",
+      "source": "P2S 01.03.00.00"
+    }
+  ]
+}

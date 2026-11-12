@@ -51,6 +51,13 @@ SUPPORT_TOKEN_SIZE = 4
 SUPPORT_REQUEST_PAYLOAD_SIZE = SUPPORT_TOKEN_SIZE
 SUPPORT_REPORT_MIN_PAYLOAD = SUPPORT_TOKEN_SIZE + 1
 SUPPORT_REPORT_MAX_PAYLOAD = 512
+# The AMS firmware update (production firmware 22 and later,
+# cortex_bridge.ams_update): requests of at most 265 bytes out, reports of
+# 6 to 78 bytes back.
+AMS_UPDATE_REQUEST_MIN_PAYLOAD = 5
+AMS_UPDATE_REQUEST_MAX_PAYLOAD = 265
+AMS_UPDATE_REPORT_MIN_PAYLOAD = 6
+AMS_UPDATE_REPORT_MAX_PAYLOAD = 78
 MAX_PAYLOAD = max(ROSTER_PAYLOAD_SIZE, NODE_DATA_PAYLOAD_SIZE,
                   IDENTITY_REPORT_MAX_PAYLOAD, SUPPORT_REPORT_MAX_PAYLOAD)
 MAX_MESSAGE = HEADER_SIZE + MAX_PAYLOAD
@@ -86,12 +93,15 @@ class MessageType(IntEnum):
     IDENTITY_REPORT = 5
     SUPPORT_REQUEST = 8
     SUPPORT_REPORT = 9
+    AMS_UPDATE_REQUEST = 10
+    AMS_UPDATE_REPORT = 11
 
 
 HOST_MESSAGES = (MessageType.HOST_DATA, MessageType.IDENTITY_REQUEST,
-                 MessageType.SUPPORT_REQUEST)
+                 MessageType.SUPPORT_REQUEST, MessageType.AMS_UPDATE_REQUEST)
 BRIDGE_MESSAGES = (MessageType.ROSTER, MessageType.NODE_DATA,
-                   MessageType.IDENTITY_REPORT, MessageType.SUPPORT_REPORT)
+                   MessageType.IDENTITY_REPORT, MessageType.SUPPORT_REPORT,
+                   MessageType.AMS_UPDATE_REPORT)
 
 
 class Direction(IntEnum):
@@ -186,6 +196,14 @@ def _validate_message(message: Message, direction: Direction) -> None:
         if not SUPPORT_REPORT_MIN_PAYLOAD <= len(payload) <= \
                 SUPPORT_REPORT_MAX_PAYLOAD:
             raise ProtocolError("invalid support report")
+    elif message.kind == MessageType.AMS_UPDATE_REQUEST:
+        if not AMS_UPDATE_REQUEST_MIN_PAYLOAD <= len(payload) <= \
+                AMS_UPDATE_REQUEST_MAX_PAYLOAD:
+            raise ProtocolError("invalid AMS update request")
+    elif message.kind == MessageType.AMS_UPDATE_REPORT:
+        if not AMS_UPDATE_REPORT_MIN_PAYLOAD <= len(payload) <= \
+                AMS_UPDATE_REPORT_MAX_PAYLOAD:
+            raise ProtocolError("invalid AMS update report")
     elif message.kind == MessageType.HOST_DATA:
         if len(payload) <= UID_SIZE or not _valid_uid(payload[:UID_SIZE]):
             raise ProtocolError("invalid host-data UID or payload")
@@ -517,6 +535,9 @@ class CortexCore:
         # The same for each SUPPORT_REPORT payload (the support snapshot).
         self.support_handler: Callable[[bytes], None] | None = None
         self.support_handler_errors = 0
+        # And for each AMS_UPDATE_REPORT payload (an AMS firmware update).
+        self.ams_update_handler: Callable[[bytes], None] | None = None
+        self.ams_update_handler_errors = 0
         self.bridge_to_host_messages = 0
         self.bridge_to_host_bytes = 0
         self.host_to_bridge_messages = 0
@@ -617,6 +638,13 @@ class CortexCore:
                     self.support_handler(message.payload)
                 except Exception:  # noqa: BLE001 - see above
                     self.support_handler_errors += 1
+            return
+        if message.kind == MessageType.AMS_UPDATE_REPORT:
+            if self.ams_update_handler is not None:
+                try:
+                    self.ams_update_handler(message.payload)
+                except Exception:  # noqa: BLE001 - see above
+                    self.ams_update_handler_errors += 1
             return
         if message.kind == MessageType.ROSTER:
             generation, statuses = parse_roster(message)

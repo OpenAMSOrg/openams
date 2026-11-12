@@ -33,6 +33,8 @@ import urllib.request
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from cortex_bridge import ams_firmware  # noqa: E402
+from cortex_bridge import ams_update  # noqa: E402
 from cortex_bridge import bridge_info  # noqa: E402
 from cortex_bridge import config as bridge_config  # noqa: E402
 from cortex_bridge import firmware as bridge_firmware  # noqa: E402
@@ -737,6 +739,402 @@ def cmd_firmware(args) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# AMS firmware (the AMS units' own firmware, not the bridge's)
+
+def ams_units(args) -> list:
+    """The AMS units the bridge reports, with their firmware versions, or []
+    when the relay or the bridge cannot say."""
+    facts = status_snapshot(args)
+    if not facts.get("available"):
+        return []
+    return ams_firmware.units_from_snapshot(facts.get("snapshot") or {})
+
+
+def cmd_ams_firmware(args) -> int:
+    try:
+        images = ams_firmware.load_catalog()
+    except ams_firmware.AmsFirmwareError as exc:
+        print("AMS firmware list: %s" % exc, file=sys.stderr)
+        return 1
+    if args.action == "fetch":
+        return ams_firmware_fetch(args, images)
+    if args.action == "import":
+        return ams_firmware_import(args, images)
+    if args.action == "update":
+        return ams_firmware_update(args, images)
+    if args.action == "listen":
+        return ams_firmware_listen(args)
+    units = ams_units(args)
+    # Bridge 24 and later read a unit's version again after an update, so
+    # their reading stands; older ones keep the version from admission.
+    firmware = (read_status(Path(args.run_dir)) or {}).get("firmware") or {}
+    bridge_version = firmware.get("version")
+    installed = ams_firmware.installed_versions() \
+        if not isinstance(bridge_version, int) or bridge_version < 24 else {}
+    if units:
+        print("Connected AMS units:")
+        for unit in units:
+            family = unit["family"]
+            name = ams_firmware.FAMILIES.get(family, "unknown AMS")
+            listed = ams_firmware.versions(images, family) if family else []
+            note = ""
+            done = (installed.get(unit["uid"]) or {}).get("version")
+            if done and unit["version"] and done != unit["version"]:
+                # The bridge still holds the version it read at admission.
+                print("  %-12s %-10s %-12s installed %s; the bridge reads "
+                      "the new version after its next restart" % (
+                          unit["uid"], name, done, done))
+                continue
+            if unit["version"] and listed:
+                step = ams_firmware.compare(unit["version"], listed[0])
+                note = {"same": "the newest listed",
+                        "upgrade": "%s is listed" % listed[0],
+                        "downgrade": "newer than any listed"}[step]
+            print("  %-12s %-10s %-12s %s%s" % (
+                unit["uid"], name, unit["version"] or "version unknown",
+                note, "" if unit["online"] else "  (offline)"))
+    else:
+        print("No AMS versions to show: the relay or the bridge did not "
+              "answer (cortex-bridge.py status).")
+    print()
+    print("Listed AMS firmware (from Bambu Lab; * = on this computer):")
+    for family, name in ams_firmware.FAMILIES.items():
+        listed = ams_firmware.versions(images, family)
+        if not listed:
+            print("  %-10s none listed yet" % name)
+            continue
+        for version in listed:
+            chosen = [i for i in images
+                      if i.family == family and i.version == version]
+            boards = ", ".join(
+                i.hardware + ("*" if ams_firmware.cached_path(i).exists()
+                              else "") for i in chosen)
+            where = chosen[0].source or ""
+            if not chosen[0].url:
+                where += " offline package" if where else "offline package"
+            print("  %-10s %s  %-12s %s" % (name, version, boards, where))
+    return 0
+
+
+def pick_unit(units: list, wanted: str):
+    """The unit named by uid or bus index, or (None, why)."""
+    if not wanted:
+        return None, ("name the AMS with --unit (its id or index): %s"
+                      % ", ".join("%s (index %s, %s)" % (
+                          u["uid"], u["index"],
+                          ams_firmware.FAMILIES.get(u["family"], "unknown"))
+                          for u in units))
+    for unit in units:
+        if unit["uid"] == wanted or str(unit["index"]) == wanted:
+            return unit, ""
+    return None, "no AMS %s is connected to the bridge" % wanted
+
+
+def wait_unit_version(args, unit: dict, version: str, seconds: float,
+                      *, sleep=time.sleep, clock=time.monotonic) -> str:
+    """The version the bridge reads for `unit` once it is online and reports
+    `version`, or "" after `seconds`."""
+    deadline = clock() + seconds
+    while clock() < deadline:
+        for other in ams_units(args):
+            if other["uid"] == unit["uid"] and other["online"] and \
+                    other["version"] == version:
+                return version
+        sleep(3.0)
+    return ""
+
+
+def probe_board(args, unit: dict, chosen: list):
+    """([the image for this AMS's board], "") or ([], why). The bridge opens
+    a session, reports the unit's model code in its first answer, and the
+    session is aborted before any loader command (nothing is written)."""
+    try:
+        path = ams_firmware.fetch(chosen[0])
+    except ams_firmware.AmsFirmwareError as exc:
+        return [], str(exc)
+    seen = {}
+
+    def on_line(event):
+        if event.get("event") == "probe":
+            seen.update(event)
+        elif event.get("event") == "result":
+            seen["result"] = event
+    try:
+        control_request(
+            {"method": "ams_update", "image": str(path),
+             "index": unit["index"], "family": unit["family"],
+             "model": ams_update.model_for(unit["family"],
+                                           chosen[0].hardware),
+             "probe": True},
+            run_dir=Path(args.run_dir), on_line=on_line, timeout=60.0)
+    except OSError as exc:
+        return [], "the relay did not answer (%s)" % (exc.strerror or exc)
+    code = seen.get("model_code", "")
+    if not code:
+        result = seen.get("result") or {}
+        return [], ("the bridge did not report which board this AMS has (%s)"
+                    % (result.get("message") or "no model code"))
+    for image in chosen:
+        if ams_update.model_for(unit["family"], image.hardware) == code:
+            print("The AMS reports board %s." % code)
+            return [image], ""
+    return [], ("the AMS reports board %r, which no listed image is for "
+                "(%s); nothing was changed"
+                % (code, ", ".join(i.hardware for i in chosen)))
+
+
+def ams_firmware_update(args, images: list) -> int:
+    units = ams_units(args)
+    if not units and not args.resume:
+        print("The bridge did not report its AMS units (cortex-bridge.py "
+              "status).", file=sys.stderr)
+        return 1
+    unit, why = pick_unit(units, args.unit)
+    if unit is None and args.resume:
+        # An AMS waiting in its loader is not in the bridge's list: it is
+        # named by its bus index and model instead.
+        if not args.unit.isdigit() or not args.family:
+            print("--resume needs --unit <bus index> and --family",
+                  file=sys.stderr)
+            return 2
+        unit = {"uid": "index %s" % args.unit, "index": int(args.unit),
+                "family": args.family, "online": False, "version": ""}
+    if unit is None:
+        print(why, file=sys.stderr)
+        return 2
+    family = unit["family"]
+    name = ams_firmware.FAMILIES.get(family, "unknown AMS")
+    if family is None:
+        print("The bridge does not know which AMS model %s is."
+              % unit["uid"], file=sys.stderr)
+        return 1
+    try:
+        chosen = ams_firmware.choose(images, family, args.version)
+    except ams_firmware.AmsFirmwareError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    if args.board:
+        chosen = [i for i in chosen if i.hardware == args.board]
+    if len(chosen) > 1 and not args.resume:
+        # Several board revisions (the AMS 1's rev7 and rev8): ask the bridge
+        # which board this AMS is, without sending it to its loader.
+        chosen, why = probe_board(args, unit, chosen)
+        if not chosen:
+            print(why, file=sys.stderr)
+            return 1
+    if len(chosen) != 1:
+        print("%s %s comes for boards %s: name one with --board"
+              % (name, chosen[0].version if chosen else args.version,
+                 ", ".join(i.hardware for i in chosen) or "(none)"),
+              file=sys.stderr)
+        return 2
+    image = chosen[0]
+    try:
+        path = ams_firmware.fetch(image)
+    except ams_firmware.AmsFirmwareError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    installed = unit["version"]
+    step = ams_firmware.compare(installed, image.version) if installed \
+        else "update"
+    if step == "same" and not args.force:
+        print("%s %s already runs %s (--force to install it again)."
+              % (name, unit["uid"], installed))
+        return 0
+    state = printer_state(args.moonraker)
+    if state in ("printing", "paused"):
+        print("Klipper is %s: update the AMS when no print runs." % state,
+              file=sys.stderr)
+        return 1
+    print("%s %s (index %s): %s -> %s (%s)" % (
+        name, unit["uid"], unit["index"], installed or "unknown",
+        image.version, step))
+    print("The AMS stops answering for a minute or two while it updates; "
+          "Klipper stays connected. Do not power the AMS or the bridge off "
+          "until this says Done.")
+    if not confirm("Update it now?", args.yes):
+        print("Nothing was changed.")
+        return 1
+    model = ams_update.model_for(family, image.hardware)
+    shown = {"block": -10, "result": None}
+    started = time.monotonic()
+
+    def stamp():
+        return "%6.2fs " % (time.monotonic() - started) if args.verbose \
+            else ""
+
+    def on_line(event):
+        kind = event.get("event")
+        if kind == "result":
+            shown["result"] = event
+        elif kind == "phase":
+            text = event.get("text") or event.get("phase")
+            if event.get("banner") and event.get("phase") == "isolate":
+                text += " (loader: %s)" % event["banner"]
+            print("  " + stamp() + text, flush=True)
+        elif kind == "progress":
+            block, total = event["block"], event["blocks"]
+            if block - shown["block"] >= max(1, total // 10) or \
+                    block + 1 == total:
+                shown["block"] = block
+                print("    block %d of %d%s" % (
+                    block + 1, total, ", %d repeats" % event["retries"]
+                    if event.get("retries") else ""), flush=True)
+        elif kind == "loader" and args.verbose:
+            print("    %sloader 0x%04x: %s" % (stamp(), event["source"],
+                                            event["line"]), flush=True)
+        elif kind == "units":
+            states = ", ".join("index %s %s" % (u["index"], u["state"])
+                               for u in event["units"])
+            print("  After the update: " + states, flush=True)
+            if event.get("after"):
+                shown["after"] = event["after"]
+
+    # --wait-loader: an AMS left in its loader names its board only when it
+    # powers up, so it is switched on while the bridge keeps asking; each
+    # attempt that finds no loader (15 s) is safe and is repeated.
+    give_up = time.monotonic() + max(0, args.wait_loader)
+    while True:
+        shown["result"] = None
+        try:
+            last = control_request(
+                {"method": "ams_update", "image": str(path),
+                 "index": unit["index"], "family": family, "model": model,
+                 "resume": bool(args.resume)},
+                run_dir=Path(args.run_dir), on_line=on_line, timeout=900.0)
+        except OSError as exc:
+            print("The relay did not answer (%s): is cortex-bridge running?"
+                  % (exc.strerror or exc), file=sys.stderr)
+            return 1
+        # The result comes before the after-update unit states.
+        result = shown["result"] or last or {}
+        if result.get("code") != "no-loader" or time.monotonic() > give_up:
+            break
+        print("  No loader yet; asking again (switch the AMS on now if it "
+              "is off).", flush=True)
+    if result.get("ok"):
+        if not unit["uid"].startswith("index "):
+            try:
+                ams_firmware.record_installed(unit["uid"], image.version)
+            except OSError:
+                pass
+        after = shown.get("after") or result.get("after")
+        if result.get("code") == "no-rejoin" and not after:
+            # The loader accepted the image; the unit took longer than the
+            # bridge's wait to answer. The bridge reads its version as soon
+            # as it does.
+            print("  The AMS is restarting; waiting for it to answer...",
+                  flush=True)
+            after = wait_unit_version(args, unit, image.version, 60.0)
+        if result.get("code") == "no-rejoin" and not after:
+            print("Done: %s %s accepted %s but has not answered yet; if it "
+                  "stays offline for two minutes, power it off and on."
+                  % (name, unit["uid"], image.version))
+        else:
+            print("Done: %s %s now runs %s." % (name, unit["uid"],
+                                                after or image.version))
+        # Some of what Klipper knows about an AMS follows its firmware
+        # version (an AMS HT on 04.x feeds while it dries); Klipper reads it
+        # again at FIRMWARE_RESTART.
+        state = printer_state(args.moonraker)
+        if args.no_restart or state in ("printing", "paused"):
+            print("Run FIRMWARE_RESTART (Mainsail: FIRMWARE RESTART) when no "
+                  "print runs, so Klipper sees what the new firmware can do.")
+        else:
+            restart_klipper(args.moonraker,
+                            why=" to read what the new firmware can do")
+        return 0
+    print("Update failed: %s" % (result.get("message") or
+                                 result.get("code") or "no answer"),
+          file=sys.stderr)
+    return 1
+
+
+def ams_firmware_listen(args) -> int:
+    """Show every AMS loader line on the bus for a while: an AMS that waits
+    in its loader (after an interrupted update) prints one every second."""
+    started = time.monotonic()
+    heard = {"lines": 0, "result": None}
+
+    def on_line(event):
+        kind = event.get("event")
+        if kind == "loader":
+            heard["lines"] += 1
+            print("  %6.2fs  0x%04x: %s" % (time.monotonic() - started,
+                                           event["source"], event["line"]),
+                  flush=True)
+        elif kind == "result":
+            heard["result"] = event
+
+    print("Listening for AMS loaders for %d s..." % args.seconds)
+    try:
+        last = control_request({"method": "ams_listen",
+                                "seconds": args.seconds},
+                               run_dir=Path(args.run_dir), on_line=on_line,
+                               timeout=args.seconds + 30)
+    except OSError as exc:
+        print("The relay did not answer (%s)." % (exc.strerror or exc),
+              file=sys.stderr)
+        return 1
+    result = heard["result"] or last or {}
+    if not result.get("ok"):
+        print("Could not listen: %s" % (result.get("message") or "no answer"),
+              file=sys.stderr)
+        return 1
+    print("No AMS loader is talking." if not heard["lines"] else
+          "%d loader line(s): an AMS waits in its loader; run the update "
+          "for it again." % heard["lines"])
+    return 0
+
+
+def ams_firmware_import(args, images: list) -> int:
+    if not args.package:
+        print("import needs a Bambu offline package: ams-firmware import "
+              "<file.zip>", file=sys.stderr)
+        return 2
+    try:
+        results = ams_firmware.import_package(Path(args.package).expanduser(),
+                                              images)
+    except ams_firmware.AmsFirmwareError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    if not results:
+        print("%s holds no AMS firmware this OpenAMS lists." % args.package)
+        return 1
+    status = 0
+    for image, path, error in results:
+        if path:
+            print("%s: checked, %d bytes, %s" % (image.label, image.size,
+                                                 path))
+        else:
+            print("%s: not imported: %s" % (image.label, error),
+                  file=sys.stderr)
+            status = 1
+    return status
+
+
+def ams_firmware_fetch(args, images: list) -> int:
+    try:
+        chosen = ams_firmware.choose(images, args.family or "ams_ht",
+                                     args.version)
+    except ams_firmware.AmsFirmwareError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    status = 0
+    for image in chosen:
+        if args.board and image.hardware != args.board:
+            continue
+        try:
+            path = ams_firmware.fetch(image)
+        except ams_firmware.AmsFirmwareError as exc:
+            print("%s: %s" % (image.label, exc), file=sys.stderr)
+            status = 1
+            continue
+        print("%s: checked, %d bytes, %s" % (image.label, image.size, path))
+    return status
+
+
 PHASE_TEXT = {
     "entering": "Asking the bridge to enter update mode",
     "waiting-receiver": "Waiting for the bridge's update receiver",
@@ -959,11 +1357,7 @@ def cmd_update(args) -> int:
     print("  %d AMS online" % len(units))
     code = confirm_installed(version, wait_for_firmware(run_dir, 30))
     if not args.no_restart:
-        try:
-            moonraker(args.moonraker, "/printer/firmware_restart", post=True)
-            print("Klipper restarted (FIRMWARE_RESTART).")
-        except (OSError, ValueError, urllib.error.URLError):
-            print("Restart Klipper from Mainsail (FIRMWARE RESTART).")
+        restart_klipper(args.moonraker)
     return code
 
 
@@ -994,6 +1388,32 @@ def wait_klipper_settled(url: str, seconds: float, *, sleep=time.sleep,
         if state in ("ready", "error", "shutdown") or clock() >= deadline:
             return state, message
         sleep(2.0)
+
+
+def restart_klipper(url: str, *, why: str = "", sleep=time.sleep,
+                    clock=time.monotonic) -> bool:
+    """FIRMWARE_RESTART, then wait for Klipper; when it is not ready (the
+    restart came while an AMS was still coming back, and Mainsail still asks
+    for FIRMWARE_RESTART), send it once more. True when Klipper is ready."""
+    for attempt in (1, 2):
+        try:
+            moonraker(url, "/printer/firmware_restart", post=True)
+        except (OSError, ValueError, urllib.error.URLError):
+            print("Restart Klipper from Mainsail (FIRMWARE RESTART).")
+            return False
+        if attempt == 1:
+            print("Klipper restarted (FIRMWARE_RESTART)%s." % why)
+        else:
+            print("Klipper was not ready yet; sent FIRMWARE_RESTART again.")
+        sleep(5.0)
+        state, message = wait_klipper_settled(url, 60.0, sleep=sleep,
+                                              clock=clock)
+        if state == "ready":
+            print("Klipper is ready.")
+            return True
+    print("Klipper is %s. If Mainsail still asks for FIRMWARE_RESTART, press "
+          "FIRMWARE RESTART there." % (state or "not answering"))
+    return False
 
 
 def cmd_klipper_started(args, *, sleep=time.sleep, clock=time.monotonic) -> int:
@@ -1160,6 +1580,54 @@ def parser() -> argparse.ArgumentParser:
     update.add_argument("--no-restart", action="store_true",
                         help="do not restart Klipper afterwards")
     update.set_defaults(func=cmd_update)
+
+    amsfw = commands.add_parser(
+        "ams-firmware", help="the AMS units' own firmware: what they run and "
+        "what Bambu Lab publishes")
+    amsfw.add_argument("action", nargs="?", default="list",
+                       choices=("list", "fetch", "import", "update",
+                                "listen"),
+                       help="list (default): versions installed and listed; "
+                       "fetch: download and check an image; import: take "
+                       "the listed images out of a Bambu offline package; "
+                       "update: install a version on one AMS (upgrade or "
+                       "downgrade); listen: show AMS loader lines on the "
+                       "bus")
+    amsfw.add_argument("package", nargs="?", default="",
+                       help="with import: the offline package (.zip) from "
+                       "bambulab.com > Support > Firmware download")
+    amsfw.add_argument("--family", choices=sorted(ams_firmware.FAMILIES),
+                       default="", help="with fetch or update --resume: "
+                       "ams1, ams2 (AMS 2 Pro) or ams_ht (fetch default "
+                       "ams_ht)")
+    amsfw.add_argument("--version", default="latest",
+                       help="with fetch: a version like 03.00.21.29, or "
+                       "latest (default)")
+    amsfw.add_argument("--board", default="",
+                       help="with fetch or update: only this board revision "
+                       "(rev7, rev8, ...)")
+    amsfw.add_argument("--unit", default="",
+                       help="with update: the AMS, by its id or bus index "
+                       "(see list)")
+    amsfw.add_argument("--yes", action="store_true",
+                       help="with update: do not ask for confirmation")
+    amsfw.add_argument("--force", action="store_true",
+                       help="with update: install even the version it runs")
+    amsfw.add_argument("--resume", action="store_true",
+                       help="with update: the AMS waits in its loader and is "
+                       "not listed; name it with --unit <bus index> and "
+                       "--family")
+    amsfw.add_argument("--wait-loader", type=int, default=0, metavar="S",
+                       help="with update: keep asking for the AMS's loader "
+                       "for up to S seconds (switch the AMS on meanwhile)")
+    amsfw.add_argument("--no-restart", action="store_true",
+                       help="with update: do not FIRMWARE_RESTART Klipper "
+                       "afterwards")
+    amsfw.add_argument("--seconds", type=int, default=15,
+                       help="with listen: how long (default %(default)s)")
+    amsfw.add_argument("--verbose", action="store_true",
+                       help="with update: also print the AMS loader's lines")
+    amsfw.set_defaults(func=cmd_ams_firmware)
 
     support = commands.add_parser(
         "support", help="write a support report with private details "

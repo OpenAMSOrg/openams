@@ -269,6 +269,8 @@ and says so.
 > date.` means there was nothing to install. If the installer added no AMS,
 > run `python3 ~/openams/tools/cortex-bridge.py config --write` after the
 > update, then **FIRMWARE RESTART**.
+> If Mainsail still asks for FIRMWARE_RESTART after the update, press
+> **FIRMWARE RESTART** in Mainsail; that's expected and harmless.
 > [Update the Cortex Bridge firmware](cortex-bridge-update.md) has the details.
 
 ## 6. Check the bridge
@@ -571,13 +573,38 @@ on the command line add `ROTATE=1`:
 OAMS_DRYER_START OAMS=<n> TARGET=<C> DURATION=<s> ROTATE=1
 ```
 
-Unload the AMS first: its spools don't turn while filament is out to the
-toolhead or in the hub. The AMS turns them by itself during the dry.
-Drying while printing isn't supported.
+The spools only turn when nothing can be pulled through them:
 
-If the dryer then answers `faulted (4)`, the last start didn't run (most often
-because filament was still loaded). **Clear errors** in the panel
-(`OAMSM_CLEAR_ERRORS`) clears it; there's no need to power the AMS off.
+- Unload the AMS first. Its spools don't turn while filament is out to the
+  toolhead or in the hub.
+- No print may be running or paused. During a print, start the dryer without
+  rotation (on an AMS that dries while printing, below).
+
+The panel, the display and the LCD menu offer **Rotate** only when both hold.
+A turning spool is free, with its filament back out of the AMS's first stage,
+so OpenAMS doesn't load from an AMS while it dries with its spools turning.
+
+### Dry while printing
+
+An AMS HT on its firmware 04.x or later, with bridge firmware 26, dries with
+filament loaded and keeps feeding the print, and loads during a dry. Start the dry before the print
+or during it, without rotation. On the bench an AMS HT on 05.00.22.19 printed
+PA while drying at 80 °C. An AMS 2 Pro, and an AMS HT on firmware 03.x,
+don't dry with filament loaded: OpenAMS refuses the start and says why.
+
+| You do | What happens |
+|---|---|
+| Start a dry, AMS unloaded, no print | It dries; tick Rotate if you like. |
+| Start a dry during a print, without Rotate | An AMS HT on 04.x or later dries and keeps printing. Others are refused: unload first. |
+| Start a dry with Rotate during a print, or with filament out | Refused: the spools can't turn then. Start it without Rotate. |
+| Start a dry while that AMS already dries | Refused: it is already drying. Stop it first to change the temperature, the time or Rotate. |
+| Load (or print) from an AMS that dries without Rotate | An AMS HT on 04.x or later feeds. Others are refused: stop the dryer first. |
+| Load from an AMS that dries with its spools turning | Refused: stop the dryer, or start it again without Rotate. |
+
+If the dryer answers `faulted (4)`, the last start didn't run (with bridge
+firmware 24 or older, most often an AMS HT on 03.x with filament loaded).
+**Clear errors** in the panel (`OAMSM_CLEAR_ERRORS`) clears it; there's no
+need to power the AMS off.
 
 ## Keep it up to date
 

@@ -270,6 +270,85 @@ class DryerControlTests(unittest.TestCase):
         driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 50}))
         self.assertEqual(len(driver.ams_ht_dryer_start_cmd.sent), 1)
 
+    # -- printing, drying and rotation (2026-11-12, AMS HT on 05.00.22.19:
+    # it dries with filament loaded and feeds a print while it dries; spools
+    # never turn during a print) -------------------------------------------
+
+    @staticmethod
+    def with_print(driver, state):
+        stats = types.SimpleNamespace(get_status=lambda now: {"state": state})
+        driver.printer = types.SimpleNamespace(
+            lookup_object=lambda name, default=None:
+            stats if name == "print_stats" else default)
+        return driver
+
+    def rotating_ht(self, state="standby"):
+        driver = self.with_print(make_driver(), state)
+        driver.name = "oams ams_ht"
+        driver.capabilities["spool_rotation_during_drying"] = True
+        driver.capabilities["dryer_feeds_while_drying"] = True
+        driver.ams_ht_dryer_start2_cmd = FakeQuery()
+        return driver
+
+    def test_rotate_is_refused_during_a_print_and_not_offered(self):
+        for state in ("printing", "paused"):
+            driver = self.rotating_ht(state)
+            self.assertIn("dryer_start", driver._supported_actions())
+            self.assertNotIn("dryer_rotate", driver._supported_actions())
+            with self.assertRaisesRegex(
+                    RuntimeError, "cannot turn its spools during a print.*"
+                    "ROTATE=0.*dries while you print"):
+                driver.cmd_OAMS_DRYER_START(
+                    FakeGcmd({"TARGET": 80, "ROTATE": 1}))
+            self.assertEqual(driver.ams_ht_dryer_start2_cmd.sent, [])
+            # Without rotation it dries while the print runs.
+            driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 80}))
+            self.assertEqual(len(driver.ams_ht_dryer_start_cmd.sent), 1)
+
+    def test_rotate_is_offered_only_when_nothing_is_out_and_no_print(self):
+        driver = self.rotating_ht()
+        self.assertIn("dryer_rotate", driver._supported_actions())
+        driver.current_spool = 0
+        self.assertIn("dryer_start", driver._supported_actions())
+        self.assertNotIn("dryer_rotate", driver._supported_actions())
+
+    def test_a_start_while_drying_is_told_it_already_dries(self):
+        # Mid-print, someone tries to switch the spools turning on: the unit
+        # is already drying, and nothing is sent.
+        driver = self.rotating_ht("printing")
+        driver._telemetry["dryer"] = {"state_name": "timed_dry",
+                                      "remaining_s": 3600}
+        for params in ({"TARGET": 80, "ROTATE": 1}, {"TARGET": 60}):
+            with self.assertRaisesRegex(
+                    RuntimeError, "already drying \\(timed_dry, 60 min left"
+                    "\\).*OAMS_DRYER_STOP"):
+                driver.cmd_OAMS_DRYER_START(FakeGcmd(params))
+        self.assertEqual(driver.ams_ht_dryer_start_cmd.sent, [])
+        self.assertEqual(driver.ams_ht_dryer_start2_cmd.sent, [])
+
+    def test_feeding_during_a_dry(self):
+        driver = self.rotating_ht()
+        self.assertIsNone(driver._dryer_blocks_feeding())      # not drying
+        driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 80, "ROTATE": 1}))
+        driver._telemetry["dryer"] = {"state_name": "timed_dry"}
+        self.assertEqual(driver._dryer_blocks_feeding(), "rotating")
+        driver.cmd_OAMS_DRYER_STOP(FakeGcmd({}))
+        driver._telemetry["dryer"] = {"state_name": "off"}
+        self.assertIsNone(driver._dryer_blocks_feeding())
+        # A dry without rotation: a unit that feeds while it dries feeds.
+        driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 80}))
+        driver._telemetry["dryer"] = {"state_name": "timed_dry"}
+        self.assertIsNone(driver._dryer_blocks_feeding())
+        # A unit that does not say so does not.
+        driver.capabilities["dryer_feeds_while_drying"] = False
+        self.assertEqual(driver._dryer_blocks_feeding(), "drying")
+        # A rotating cycle that ended by itself no longer counts.
+        driver.capabilities["dryer_feeds_while_drying"] = True
+        driver._dryer_rotate_started = True
+        driver._telemetry["dryer"] = {"state_name": "off"}
+        self.assertIsNone(driver._dryer_blocks_feeding())
+        self.assertFalse(driver._dryer_rotate_started)
+
     def test_loaded_unit_without_the_capability_may_still_dry(self):
         driver = make_driver()
         driver.current_spool = 0
@@ -419,15 +498,15 @@ class DryerVentLoopTests(unittest.TestCase):
                                                   "VENT": "open"}))
 
     def test_a_running_dry_keeps_its_tuning(self):
-        # The unit answers Busy to the second start; the tuning must not be
-        # changed under the running cycle on the way there.
+        # A second start is refused before anything is sent: the tuning must
+        # not be changed under the running cycle.
         driver = self.loop_driver()
         driver._telemetry["dryer"] = {"state_name": "timed_dry",
                                       "remaining_s": 600}
-        driver.ams_ht_dryer_start_cmd.result = 1
-        with self.assertRaisesRegex(RuntimeError, "already running"):
+        with self.assertRaisesRegex(RuntimeError, "already drying .*10 min"):
             driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 55}))
         self.assertEqual(driver.ams_dryer_vent_tuning_cmd.sent, [])
+        self.assertEqual(driver.ams_ht_dryer_start_cmd.sent, [])
 
     def test_a_start_refused_for_a_latched_fault_says_how_to_clear_it(self):
         # A tester's AMS HT, 2026-11-11: the first start never ran with the

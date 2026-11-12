@@ -826,10 +826,30 @@ spools while it dries. `ROTATE=1` is refused with `"this unit cannot rotate
 spools while drying (it needs Cortex Bridge firmware 20 or later)"` on any
 other unit, and with `"... cannot turn its spools while filament is out:
 unload <spool> first, or start the dryer without ROTATE"` while a bay is loaded
-or filament is at the hub. `ROTATE=0` (the default) sends the plain
+or filament is at the hub, and with `"... cannot turn its spools during a
+print; start the dryer without Rotate (ROTATE=0)[, and it dries while you
+print]"` while `print_stats.state` is `printing` or `paused` (the bracketed
+part on a unit with `dryer_feeds_while_drying`). Any `OAMS_DRYER_START` on a
+unit whose dryer cycle runs is refused before anything is sent, with
+`"<unit> is already drying (<state>, <n> min left); to change the temperature,
+the time or Rotate, stop it first (OAMS_DRYER_STOP)"` (2026-11-12; it replaced
+relying on the firmware's Busy). `ROTATE=0` (the default) sends the plain
 `ams_ht_dryer_start`. `OAMS_DRYER_START` is also refused with `"the dryer needs
 the power adapter; connect it and retry"` while the unit's `dryer.adapter` is
 `false` (C2 §4.7).
+
+### Load refused while the unit dries (2026-11-12)
+`OAMSM_LOAD_FILAMENT` (and a toolchange's load) is refused when every unit its
+group could load from is kept from feeding by its dryer:
+- a dry this session started with `ROTATE=1` (its spools turn freely and the
+  filament is back out of the first stage): `"<unit> is drying with its spools
+  turning, so it cannot feed; stop the dryer (OAMS_DRYER_STOP), or start it
+  again without Rotate, before loading <group>"`;
+- any dry on a unit without `dryer_feeds_while_drying` (C1
+  `AMS_CAP_DRYER_FEEDS_WHILE_DRYING`): `"<units> is drying and does not feed;
+  stop the dryer (OAMS_DRYER_STOP) before loading <group>"`.
+A unit that feeds while drying (an AMS HT on firmware 04.x or later, Cortex
+Bridge 25) is loaded from during a dry without rotation.
 
 ### Load refused on an uncalibrated bay (D7)
 See §1 `OAMSM_LOAD_FILAMENT` above — **EXISTS (H10, 2026-09-28):** `src/oams_state.py:585-639` (`_group_candidates` / `_uncalibrated_msg`).

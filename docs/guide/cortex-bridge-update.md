@@ -130,6 +130,7 @@ Installed. Waiting for the AMS to come back...
   1 AMS online
 The bridge now runs version 7.
 Klipper restarted (FIRMWARE_RESTART).
+Klipper is ready.
 ```
 
 What happens, in order:
@@ -150,7 +151,13 @@ What happens, in order:
 4. The bridge restarts into the new firmware, the relay reconnects, the AMS
    appear again, and the bridge is asked for its version once more:
    `The bridge now runs version 7.` confirms the install.
-5. Klipper is restarted (`FIRMWARE_RESTART`) and is **Ready** again.
+5. Klipper is restarted (`FIRMWARE_RESTART`) and is **Ready** again. If it
+   is not ready a minute later (the restart came while an AMS was still coming
+   back), the command sends `FIRMWARE_RESTART` once more.
+
+**If Mainsail still says to FIRMWARE_RESTART after the update**, press
+**FIRMWARE RESTART** in Mainsail. That is expected now and then, and harmless:
+Klipper reconnects to the AMS and everything works.
 
 **Check:** `python3 ~/openams/tools/cortex-bridge.py version` says
 `Up to date.`

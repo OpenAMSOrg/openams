@@ -4073,17 +4073,35 @@ class OAMSManager(oams_ext.ManagerHooks):
         # group gates nothing and is reported by the resolution below.
         units = self._group_unit_names(group)
         self._require_hardware_snapshot(gcmd, units)
-        # A drying unit does not feed (a stock AMS HT ignored a load during its
-        # timed cycle until the firmware's motion check failed). Refuse when
-        # every unit the group could load from is drying.
-        drying = [name for name in units
-                  if getattr(self.oams.get(name), "_dryer_cycle_running",
-                             lambda: False)()]
-        if units and len(drying) == len(units):
+        # A drying unit does not feed (a stock AMS HT on 03.x ignored a load
+        # during its timed cycle until the firmware's motion check failed),
+        # unless it publishes that it feeds while drying (an AMS HT on 04.x
+        # or later); a dry with its spools turning never feeds, because the
+        # filament is back out of the first stage. Refuse when every unit the
+        # group could load from is kept from feeding.
+        blocked = {}
+        for name in units:
+            unit = self.oams.get(name)
+            why_fn = getattr(unit, "_dryer_blocks_feeding", None)
+            if why_fn is not None:
+                why = why_fn()
+            else:
+                why = "drying" if getattr(unit, "_dryer_cycle_running",
+                                          lambda: False)() else None
+            if why:
+                blocked[name] = why
+        if units and len(blocked) == len(units):
+            turning = [n for n, w in blocked.items() if w == "rotating"]
+            if turning:
+                raise gcmd.error(
+                    "%s is drying with its spools turning, so it cannot feed;"
+                    " stop the dryer (OAMS_DRYER_STOP), or start it again"
+                    " without Rotate, before loading %s"
+                    % (", ".join(turning), group))
             raise gcmd.error(
                 "%s is drying and does not feed; stop the dryer"
                 " (OAMS_DRYER_STOP) before loading %s"
-                % (", ".join(drying), group))
+                % (", ".join(sorted(blocked)), group))
         fps = self.group_lane.get(group)
         if fps is None:
             if group in self.topo.groups:

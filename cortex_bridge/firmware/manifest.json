@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 26,
+   "file": "bridge-26.oac2",
+   "sha256": "acb922565a169159106188a6be61fe388c4915b59d9199049af2d0500be2642b",
+   "released": "2026-11-12",
+   "notes": "An AMS HT on its firmware 04.x or later dries with filament loaded and keeps feeding a print, and can be loaded while it dries (without Rotate). The bridge updates an AMS's own firmware, upgrade or downgrade (cortex-bridge.py ams-firmware update), with Bambu Lab's own image you download, and resumes an AMS left waiting in its loader without a power cycle."
+  },
+  {
    "version": 21,
    "file": "bridge-21.oac2",
    "sha256": "9f72b47353b80f1c51d0ad4d2dbfd34984ecad94cc99d7f7ec35881351dc6f7a",

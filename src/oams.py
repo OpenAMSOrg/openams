@@ -738,7 +738,9 @@ class OAMS(oams_ext.UnitHooks):
                 and self._dryer_blocked_by_load() is None):
             actions.append("dryer_start")
         if (dryer and "dryer_start" in actions
-                and self._dryer_can_rotate()):
+                and self._dryer_can_rotate()
+                and self._dryer_rotation_blocked_by_load() is None
+                and not self._print_active()):
             # The dryer start may turn the spools (ROTATE=1): a UI offers
             # the choice only where this is listed.
             actions.append("dryer_rotate")
@@ -2236,6 +2238,41 @@ class OAMS(oams_ext.UnitHooks):
                 return bay
         return None
 
+    def _print_active(self):
+        """True while a print runs or is paused: no spool may turn then."""
+        printer = getattr(self, "printer", None)
+        stats = printer.lookup_object("print_stats", None) \
+            if printer is not None else None
+        if stats is None:
+            return False
+        try:
+            state = stats.get_status(self.reactor.monotonic()).get("state")
+        except Exception:  # noqa: BLE001 - no print state means no print
+            return False
+        return state in ("printing", "paused")
+
+    def _dryer_rotating(self):
+        """True while a dry this session started with ROTATE=1 runs. Its
+        spools turn freely, so its filament is back out of the first stage
+        and the unit cannot feed."""
+        if not self._dryer_cycle_running():
+            self._dryer_rotate_started = False
+        return bool(getattr(self, "_dryer_rotate_started", False))
+
+    def _dryer_blocks_feeding(self):
+        """Why this unit's dryer keeps it from feeding now: "rotating" (its
+        spools turn), "drying" (a unit that does not feed while it dries) or
+        None. Only a unit publishing AMS_CAP_DRYER_FEEDS_WHILE_DRYING feeds
+        during a dry, and only without rotation."""
+        rotating = self._dryer_rotating()     # also forgets an ended cycle
+        if not self._dryer_cycle_running():
+            return None
+        if rotating:
+            return "rotating"
+        if not self.capabilities.get("dryer_feeds_while_drying"):
+            return "drying"
+        return None
+
     def _dryer_cycle_running(self):
         """True while the firmware reports a dryer cycle in progress, whether
         this session started it or adopted it from an earlier one."""
@@ -2866,6 +2903,18 @@ class OAMS(oams_ext.UnitHooks):
         self._require_dryer(gcmd)
         if self.capabilities.get("heater_control") is False:
             raise gcmd.error("This firmware does not support heater control")
+        if self._dryer_cycle_running():
+            # One cycle at a time: a new temperature, time or Rotate means
+            # stopping this one first (a start mid-print to switch the
+            # spools turning on is told the same).
+            data = self._telemetry.get("dryer") or {}
+            left = data.get("remaining_s")
+            raise gcmd.error(
+                "%s is already drying (%s%s); to change the temperature, the"
+                " time or Rotate, stop it first (OAMS_DRYER_STOP)" % (
+                    self._unit_label(), data.get("state_name"),
+                    "" if left is None else ", %d min left"
+                    % ((int(left) + 59) // 60)))
         blocked = self._dryer_blocked_by_load()
         if blocked is not None:
             raise gcmd.error(
@@ -2882,6 +2931,14 @@ class OAMS(oams_ext.UnitHooks):
             raise gcmd.error(
                 "this unit cannot rotate spools while drying (it needs Cortex"
                 " Bridge firmware 20 or later)")
+        if rotate and self._print_active():
+            raise gcmd.error(
+                "%s cannot turn its spools during a print; start the dryer "
+                "without Rotate (ROTATE=0)%s" % (
+                    self._unit_label(),
+                    ", and it dries while you print"
+                    if self.capabilities.get("dryer_feeds_while_drying")
+                    else ""))
         if rotate:
             out = self._dryer_rotation_blocked_by_load()
             if out is not None:
@@ -2962,6 +3019,7 @@ class OAMS(oams_ext.UnitHooks):
                        name if name and name != "none" else "dryer",
                        clear, exc))
             raise
+        self._dryer_rotate_started = bool(rotate)
         gcmd.respond_info(
             "%s: dryer started at %.1fC for %ds (hold_after=%d)%s%s"
             % (self._unit_label(), target, duration, hold_after, vents,
@@ -2975,6 +3033,7 @@ class OAMS(oams_ext.UnitHooks):
         label = self._unit_label()
         self._send_ams_ht_control(
             self.ams_ht_dryer_stop_cmd, [], "%s dryer stop" % label, gcmd)
+        self._dryer_rotate_started = False
         gcmd.respond_info("%s: dryer stopped" % label)
 
     cmd_OAMS_CLEAR_FAULT_help = "Clear a recoverable unit firmware fault"
@@ -3538,6 +3597,10 @@ class OAMS(oams_ext.UnitHooks):
                                      " filament back while the extruder"
                                      " retracted: its pull-backs did not bring"
                                      " the toolhead buffer down",
+            # Cortex Bridge 26: a load let through during a dry on a unit
+            # that feeds while drying, and the unit never moved.
+            "DRYING_NO_FEED": "the AMS did not feed while it dries: stop the"
+                              " dryer (OAMS_DRYER_STOP), then Retry",
         }
         return texts.get(name)
 
