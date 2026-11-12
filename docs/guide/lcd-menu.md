@@ -208,9 +208,10 @@ it restarts. To start on it, add `display_group: oams_tiles` to your
 The top line names the unit: its letter (`A`, `B`, ... in unit order,
 inverted), its name, the humidity and the temperature. While its dryer runs
 it shows the dryer, the time left, the humidity and the temperature instead.
-While a bay of it loads or unloads it shows the tool and the step
-(`T5 feed 3/3`), and on a fault the whole line is inverted and names it
-(`!T5 feed failed`).
+While a bay of it loads or unloads it shows the tool and the step, from
+the first step on (`T5 homing 1/4`, `T5 heating 2/4`, `T5 feeding 4/4`, or
+your macro's own label for a step), with an arrow for a load or an unload.
+On a fault the whole line is inverted and names it (`!T5 feed failed`).
 
 Below, each bay is a framed tile with three lines:
 
@@ -238,7 +239,9 @@ component's next pass.
 
 - during a print (printing or paused), the unit holding the loaded bay, with
   no paging;
-- otherwise a unit with a fault, then one loading or unloading;
+- otherwise a unit with a fault, then one loading or unloading, counted
+  from the first step (homing and heating come before the AMS moves; a load
+  into an empty toolhead shows the unit holding the tool it loads);
 - otherwise each unit for 5 seconds in turn;
 - **Screen** in the OpenAMS menu, or `OAMSM_SCREEN UNIT=<unit>` from the
   console, keeps it on one unit; `OAMSM_SCREEN UNIT=AUTO` goes back to the
