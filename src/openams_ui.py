@@ -39,8 +39,9 @@ except ImportError:                   # imported standalone (src/ on sys.path)
 # unit-level action such a unit adds. An extension may carry more: each with
 # the capability that must not be false for it to be offered.
 _EXT_UI_ACTIONS = dict(oams_ext.FAMILY.ui_unit_actions())
-UI_UNIT_ACTIONS = (("dryer_start", "dryer_stop", "clear_fault", "rfid_scan",
-                    "home") + tuple(_EXT_UI_ACTIONS))
+UI_UNIT_ACTIONS = (("dryer_start", "dryer_rotate", "dryer_stop",
+                    "clear_fault", "rfid_scan", "home")
+                   + tuple(_EXT_UI_ACTIONS))
 
 # bays[].a letters, in the contract's order. The last three are a klipper-mmu
 # unit's own bay operations (C5 §7.1); an AMS unit never publishes them.
@@ -135,7 +136,8 @@ def _unit_actions(device, dryer):
     for action in device.get("supported_actions") or ():
         if action not in UI_UNIT_ACTIONS:
             continue
-        if action in ("dryer_start", "dryer_stop") and dryer is None:
+        if (action in ("dryer_start", "dryer_rotate", "dryer_stop")
+                and dryer is None):
             continue
         # A unit reads tags either through raw RFID or by decoding them
         # itself (tray reads, as a Cortex Bridge's AMS does): hide the scan

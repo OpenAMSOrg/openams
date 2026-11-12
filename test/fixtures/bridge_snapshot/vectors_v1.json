@@ -763,7 +763,8 @@
        "cooling": false,
        "fast": false,
        "open_at_pulse": true,
-       "vents_open": false
+       "vents_open": false,
+       "rotate": false
       },
       "ended": {
        "cool_down": true,
@@ -952,7 +953,8 @@
        "cooling": false,
        "fast": false,
        "open_at_pulse": false,
-       "vents_open": false
+       "vents_open": false,
+       "rotate": false
       },
       "ended": {
        "cool_down": false,

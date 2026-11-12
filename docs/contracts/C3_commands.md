@@ -397,8 +397,10 @@ control"`). `TARGET` clamped to
 `ams_ht_dryer_start target_centic duration_s hold_after`. Rejection text:
 `"%s rejected: %s (%d)"` where `%s` names one of
 `accepted/busy/invalid bay/invalid parameter/faulted/unavailable`
-(`_AMS_HT_RESULTS`, `oams.py:1868-1871`). **No `ROTATE=` parameter exists**
-today — **EXISTS (H6, 2026-09-28):** `ROTATE=` parameter added for `spool_rotation_during_drying`-capable units (AMS 2 Pro per `ams_family.py:82`); gate in `src/oams.py:2544-2549`.
+(`_AMS_HT_RESULTS`). `ROTATE=1` sends `ams_ht_dryer_start2 ... rotate=1`
+instead (Cortex Bridge firmware 20; see `OAMS_DRYER_START ... ROTATE=` below).
+A start refused `faulted` names the latched dryer fault and says to clear it
+with `OAMS_CLEAR_FAULT`.
 
 A cycle can already be running when Klipper starts (C1 §4.4: a firmware may keep
 it across host sessions); it is adopted, shown in `openams_ui` `dryer`, and
@@ -794,14 +796,16 @@ toolchange, or when the print ends, unless the message has changed since.
 
 ### `OAMS_DRYER_START ... ROTATE=<0|1>` (H6)
 Extends the existing `OAMS_DRYER_START` (§2) with spool rotation during
-drying, gated on `capabilities.spool_rotation_during_drying` (`ams_family.py`:
-`true` only for AMS 2 Pro today).
-
-**H6 (2026-09-28):** every unit reports
-`AMS_CAP_DRYER_SPOOL_ROTATION = 0` and no rotation parameter exists on the
-wire (C1), so `ROTATE=1` is refused with `"this unit cannot rotate spools
-while drying"` whenever the capability is false, and `ROTATE=0` (the default)
-is today's command. `OAMS_DRYER_START` is also refused with `"the dryer needs
+drying. **EXISTS (2026-11-11):** a unit whose firmware publishes
+`AMS_CAP_DRYER_SPOOL_ROTATION=1` and has `ams_ht_dryer_start2` (Cortex Bridge
+firmware 20: AMS 2 Pro and AMS HT) lists `dryer_rotate` in its actions;
+`ROTATE=1` then sends `ams_ht_dryer_start2 ... rotate=1` and the unit turns its
+spools while it dries. `ROTATE=1` is refused with `"this unit cannot rotate
+spools while drying (it needs Cortex Bridge firmware 20 or later)"` on any
+other unit, and with `"... cannot turn its spools while filament is out:
+unload <spool> first, or start the dryer without ROTATE"` while a bay is loaded
+or filament is at the hub. `ROTATE=0` (the default) sends the plain
+`ams_ht_dryer_start`. `OAMS_DRYER_START` is also refused with `"the dryer needs
 the power adapter; connect it and retry"` while the unit's `dryer.adapter` is
 `false` (C2 §4.7).
 

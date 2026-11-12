@@ -70,8 +70,8 @@ _PROFILES = {
         "dryer_independent_zones": False,
         "heater_count": 1, "fan_count": 1,
         "dryer_temperature_sensor_count": 2,
-        # The hardware can rotate its spool, but no unit exposes dryer-driven
-        # rotation as a supported operation yet.
+        # Off unless the firmware says so: Cortex Bridge firmware 20
+        # publishes AMS_CAP_DRYER_SPOOL_ROTATION=1 with ams_ht_dryer_start2.
         "spool_rotation_during_drying": False,
         "dryer_target_min_c": 30.0, "dryer_target_max_c": 80.0,
         "vent_count": 2, "autonomous_follower": True,

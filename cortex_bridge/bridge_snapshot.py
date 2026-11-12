@@ -112,8 +112,9 @@ VENT_STATE_V10 = ("idle", "heating", "closed", "open", "cooldown")
 OPENED_BY = ("none", "plateau", "forced", "unit")
 CLOSED_BY = ("none", "settled", "max_open", "cold", "end", "stopped",
              "disabled")
+# Bit 7 (bridge firmware 20): the last start asked the AMS to turn its spools.
 VENT_FLAG_BITS = ("enabled", "timed", "forcing", "cooling", "fast",
-                  "open_at_pulse", "vents_open")
+                  "open_at_pulse", "vents_open", "rotate")
 ENDED_BITS = ("cool_down", "stop", "unit_off", "vents_opened", "capped")
 DRYER_REPLY_SIZE = 55
 
@@ -340,8 +341,9 @@ DRYER_V11 = (
     _f("reply", DRYER_REPLY_SIZE, _reply, "reply", raw=True),
 )
 # Bridge firmware 12 appends how the last start went: 77 bytes.
+# Bridge firmware 20 adds 7: a rotating start refused with filament out.
 START = ("none", "confirmed", "sent", "refused_busy", "refused_hub",
-         "not_confirmed", "failed")
+         "not_confirmed", "failed", "refused_rotate")
 DRYER = DRYER_V11 + (
     _f("start", 1, _enum(START), "enum"),
     _f("start_state", 1),
@@ -657,7 +659,9 @@ START_TEXT = {"confirmed": "was confirmed",
               "refused_hub": "was refused: filament is past the feeder, in "
                              "the hub",
               "not_confirmed": "was sent but the AMS never started drying",
-              "failed": "could not be sent"}
+              "failed": "could not be sent",
+              "refused_rotate": "was refused: the spools cannot turn while "
+                                "filament is out"}
 STATE_TEXT = {"drying": "drying", "forcing": "drying, asking the AMS to "
               "vent", "cooldown": "in the sealed cooldown", "idle": "idle",
               "heating": "heating", "closed": "drying, vents closed",
@@ -699,6 +703,8 @@ def dryer_lines(snapshot) -> list:
         start = row.get("start")
         if start in START_TEXT:
             text += "; the last start %s" % START_TEXT[start]
+            if flags.get("rotate") and start != "refused_rotate":
+                text += ", turning the spools"
             if start in ("refused_busy", "not_confirmed") and \
                     isinstance(row.get("start_state"), int) and \
                     row["start_state"] != 255:

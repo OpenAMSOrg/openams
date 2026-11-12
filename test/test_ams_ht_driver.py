@@ -219,6 +219,57 @@ class DryerControlTests(unittest.TestCase):
         driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 50}))
         self.assertEqual(len(driver.ams_ht_dryer_start_cmd.sent), 1)
 
+    def test_rotate_goes_out_on_the_start_that_carries_it(self):
+        # Cortex Bridge firmware 20: AMS_CAP_DRYER_SPOOL_ROTATION=1 and
+        # ams_ht_dryer_start2. ROTATE=1 sends rotate 1 on start2; a plain
+        # start keeps the old command.
+        driver = make_driver()
+        driver.capabilities["spool_rotation_during_drying"] = True
+        driver.ams_ht_dryer_start2_cmd = FakeQuery()
+        self.assertIn("dryer_rotate", driver._supported_actions())
+        gcmd = FakeGcmd({"TARGET": 50, "DURATION": 7200, "ROTATE": 1})
+        driver.cmd_OAMS_DRYER_START(gcmd)
+        self.assertEqual(driver.ams_ht_dryer_start2_cmd.sent,
+                         [[5000, 7200, 0, 1]])
+        self.assertEqual(driver.ams_ht_dryer_start_cmd.sent, [])
+        self.assertIn("the spools turn while it dries", gcmd.responses[0])
+        driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 50}))
+        self.assertEqual(len(driver.ams_ht_dryer_start_cmd.sent), 1)
+        self.assertEqual(len(driver.ams_ht_dryer_start2_cmd.sent), 1)
+
+    def test_rotate_needs_the_capability_and_the_command(self):
+        driver = make_driver()
+        driver.capabilities["spool_rotation_during_drying"] = True
+        driver.ams_ht_dryer_start2_cmd = None       # bridge 19 and older
+        self.assertNotIn("dryer_rotate", driver._supported_actions())
+        with self.assertRaisesRegex(RuntimeError, "firmware 20 or later"):
+            driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 50, "ROTATE": 1}))
+        driver.capabilities["spool_rotation_during_drying"] = False
+        driver.ams_ht_dryer_start2_cmd = FakeQuery()
+        self.assertNotIn("dryer_rotate", driver._supported_actions())
+        with self.assertRaisesRegex(RuntimeError, "cannot rotate spools"):
+            driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 50, "ROTATE": 1}))
+        self.assertEqual(driver.ams_ht_dryer_start2_cmd.sent, [])
+
+    def test_rotate_is_refused_with_filament_out(self):
+        # A turning spool would drag loaded filament, on any unit.
+        driver = make_driver()
+        driver.name = "oams ams_ht"
+        driver.capabilities["spool_rotation_during_drying"] = True
+        driver.ams_ht_dryer_start2_cmd = FakeQuery()
+        driver.current_spool = 0
+        with self.assertRaisesRegex(RuntimeError,
+                                    "unload .*Spool 1 first.*without ROTATE"):
+            driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 50, "ROTATE": 1}))
+        driver.current_spool = None
+        driver.hub_hes_value = [1, 0, 0, 0]
+        with self.assertRaisesRegex(RuntimeError, "Spool 1"):
+            driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 50, "ROTATE": 1}))
+        self.assertEqual(driver.ams_ht_dryer_start2_cmd.sent, [])
+        # Without ROTATE this unit still dries loaded.
+        driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 50}))
+        self.assertEqual(len(driver.ams_ht_dryer_start_cmd.sent), 1)
+
     def test_loaded_unit_without_the_capability_may_still_dry(self):
         driver = make_driver()
         driver.current_spool = 0
@@ -377,6 +428,28 @@ class DryerVentLoopTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "already running"):
             driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 55}))
         self.assertEqual(driver.ams_dryer_vent_tuning_cmd.sent, [])
+
+    def test_a_start_refused_for_a_latched_fault_says_how_to_clear_it(self):
+        # A tester's AMS HT, 2026-11-11: the first start never ran with the
+        # filament out to the toolhead, the retry read only "faulted (4)",
+        # and they power-cycled the unit to get past it.
+        driver = make_driver()
+        driver.ams_ht_dryer_start_cmd.result = 4
+        driver._telemetry["domain"] = {
+            "dryer_fault": 26, "dryer_fault_name": "dryer_start_refused"}
+        with self.assertRaisesRegex(
+                RuntimeError, "does not dry while filament is loaded.*"
+                "OAMS_CLEAR_FAULT OAMS=.*faulted \\(4\\)"):
+            driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 55}))
+        driver._telemetry["domain"] = {
+            "dryer_fault": 3, "dryer_fault_name": "heater_overtemperature"}
+        with self.assertRaisesRegex(
+                RuntimeError, "latched heater_overtemperature fault.*"
+                "OAMS_CLEAR_FAULT"):
+            driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 55}))
+        driver._telemetry["domain"] = {}
+        with self.assertRaisesRegex(RuntimeError, "latched dryer fault"):
+            driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 55}))
 
     def test_a_unit_without_the_loop_gets_no_tuning(self):
         driver = make_driver()

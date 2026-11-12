@@ -133,6 +133,12 @@ DRYER_VENT_TUNING_COMMAND = (
     "ams_dryer_vent_tuning rise_mgm3=%hu flat_mgm3=%hu hold_s=%hu"
     " min_open_s=%hu max_open_s=%hu min_interval_s=%hu max_interval_s=%hu"
     " cooldown_centic=%hu enable=%c")
+# Bridge 20 (C1 section 4.4, AMS_CAP_DRYER_SPOOL_ROTATION): the dryer start
+# that carries spool rotation. `rotate` 1 has the unit turn its spools while
+# it dries; a unit without this command cannot be asked to.
+DRYER_START2_COMMAND = (
+    "ams_ht_dryer_start2 target_centic=%hu duration_s=%u hold_after=%c"
+    " rotate=%c")
 # [oams NAME] option -> (wire scale, minimum, maximum), in the wire order. The
 # ranges are the unit's own clamps, so a value outside them is a config error
 # here instead of a silent change there.
@@ -368,6 +374,7 @@ class OAMS(oams_ext.UnitHooks):
         # the *2 set but not this one keeps the separate length write.
         self.oams_load_spool3_cmd = None
         self.ams_ht_dryer_start_cmd = None
+        self.ams_ht_dryer_start2_cmd = None
         self.ams_ht_dryer_stop_cmd = None
         self.ams_dryer_vent_tuning_cmd = None
         self.ams_ht_clear_fault_cmd = None
@@ -731,6 +738,11 @@ class OAMS(oams_ext.UnitHooks):
                 and not self._dryer_cycle_running()
                 and self._dryer_blocked_by_load() is None):
             actions.append("dryer_start")
+        if (dryer and "dryer_start" in actions
+                and self._dryer_can_rotate()):
+            # The dryer start may turn the spools (ROTATE=1): a UI offers
+            # the choice only where this is listed.
+            actions.append("dryer_rotate")
         if dryer and self.ams_ht_dryer_stop_cmd is not None:
             actions.append("dryer_stop")
         if self.ams_ht_clear_fault_cmd is not None:
@@ -1858,7 +1870,8 @@ class OAMS(oams_ext.UnitHooks):
         # command/response dynamically from firmware capabilities and dictionary.
         self.capabilities["telemetry"] = False
         self._telemetry_commands = {}
-        for attribute in ("ams_ht_dryer_start_cmd", "ams_ht_dryer_stop_cmd",
+        for attribute in ("ams_ht_dryer_start_cmd", "ams_ht_dryer_start2_cmd",
+                          "ams_ht_dryer_stop_cmd",
                           "ams_dryer_vent_tuning_cmd",
                           "ams_ht_clear_fault_cmd"):
             setattr(self, attribute, None)
@@ -1942,6 +1955,20 @@ class OAMS(oams_ext.UnitHooks):
                                       self.oams_idx, operation)
                 else:
                     setattr(self, attribute, value)
+            if self.ams_ht_dryer_start_cmd is not None:
+                # Looked up quietly: firmware before bridge 20 has no such
+                # command, and that is not an error.
+                try:
+                    self.ams_ht_dryer_start2_cmd = \
+                        self.mcu.lookup_query_command(
+                            DRYER_START2_COMMAND, dryer_response,
+                            cq=control_queue)
+                except Exception:
+                    self.ams_ht_dryer_start2_cmd = None
+        # Spool rotation needs the start that carries it, whatever the
+        # family's hardware could do.
+        if self.ams_ht_dryer_start2_cmd is None:
+            self.capabilities["spool_rotation_during_drying"] = False
         self._ext_after_controls()
 
         # F3 (C1 §5.4): the environment changes slowly, so its query rides its
@@ -2184,6 +2211,25 @@ class OAMS(oams_ext.UnitHooks):
         None when nothing is out, or for any other unit."""
         if not self.capabilities.get("dryer_requires_unloaded"):
             return None
+        if getattr(self, "current_spool", None) is not None:
+            return self.current_spool
+        for bay, hub in enumerate(getattr(self, "hub_hes_value", None) or ()):
+            if hub:
+                return bay
+        return None
+
+    def _dryer_can_rotate(self):
+        """Whether OAMS_DRYER_START ROTATE=1 can reach this unit: it
+        publishes AMS_CAP_DRYER_SPOOL_ROTATION and has the start that carries
+        it (bridge 20)."""
+        return bool(self.capabilities.get("spool_rotation_during_drying")
+                    and getattr(self, "ams_ht_dryer_start2_cmd", None)
+                    is not None)
+
+    def _dryer_rotation_blocked_by_load(self):
+        """The bay whose filament is out (loaded, or seen at the hub), which
+        keeps the spools from turning while drying; None when nothing is
+        out. Any unit: a turning spool would drag loaded filament."""
         if getattr(self, "current_spool", None) is not None:
             return self.current_spool
         for bay, hub in enumerate(getattr(self, "hub_hes_value", None) or ()):
@@ -2830,12 +2876,20 @@ class OAMS(oams_ext.UnitHooks):
         if self._adapter_status() is False:
             raise gcmd.error(
                 "the dryer needs the power adapter; connect it and retry")
-        # H6: ROTATE is a host-side gate only; no rotation parameter exists on
-        # the wire (C1), so the value never reaches the firmware.
+        # ROTATE=1 turns the spools while drying (bridge 20's
+        # ams_ht_dryer_start2, C1 section 4.4).
         rotate = gcmd.get_int("ROTATE", 0, minval=0, maxval=1)
-        if rotate and not self.capabilities.get(
-                "spool_rotation_during_drying"):
-            raise gcmd.error("this unit cannot rotate spools while drying")
+        if rotate and not self._dryer_can_rotate():
+            raise gcmd.error(
+                "this unit cannot rotate spools while drying (it needs Cortex"
+                " Bridge firmware 20 or later)")
+        if rotate:
+            out = self._dryer_rotation_blocked_by_load()
+            if out is not None:
+                raise gcmd.error(
+                    "%s cannot turn its spools while filament is out: unload"
+                    " %s first, or start the dryer without ROTATE"
+                    % (self._unit_label(), self.spool_label(out)))
         low = self.capabilities.get("dryer_target_min_c") or 30.0
         high = self.capabilities.get("dryer_target_max_c") or 80.0
         target = gcmd.get_float("TARGET", minval=low, maxval=high)
@@ -2856,10 +2910,16 @@ class OAMS(oams_ext.UnitHooks):
             vents = ("; the bridge drives the vents" if vent == "auto"
                      else "; the unit moves its vents")
         try:
-            self._send_ams_ht_control(
-                self.ams_ht_dryer_start_cmd,
-                [int(round(target * 100.0)), duration, hold_after],
-                "%s dryer start" % self._unit_label(), gcmd)
+            if rotate:
+                self._send_ams_ht_control(
+                    self.ams_ht_dryer_start2_cmd,
+                    [int(round(target * 100.0)), duration, hold_after, 1],
+                    "%s dryer start" % self._unit_label(), gcmd)
+            else:
+                self._send_ams_ht_control(
+                    self.ams_ht_dryer_start_cmd,
+                    [int(round(target * 100.0)), duration, hold_after],
+                    "%s dryer start" % self._unit_label(), gcmd)
         except Exception as exc:
             if running and "busy" in str(exc):
                 # The firmware's answer (C1 §4.4: Busy) is authoritative; say
@@ -2881,10 +2941,33 @@ class OAMS(oams_ext.UnitHooks):
                     "error, or still starting up), so it would not start the "
                     "dryer; try again once it is idle (%s)"
                     % (self._unit_label(), exc))
+            if "faulted" in str(exc):
+                # C1 §4.4 Faulted: a dryer fault is latched, most often from
+                # the last start, which the unit acknowledged and never ran
+                # (an AMS HT with filament out to the toolhead, 2026-11-11).
+                # A clear ends it; a power cycle is not needed.
+                domain = self._telemetry.get("domain") or {}
+                name = (domain.get("dryer_fault_name")
+                        if domain.get("dryer_fault") else None)
+                clear = ("OAMS_CLEAR_FAULT OAMS=%s (Clear fault in the panel)"
+                         % self.oams_idx)
+                if name == "dryer_start_refused":
+                    raise gcmd.error(
+                        "%s did not run the last dryer start: it does not dry"
+                        " while filament is loaded or in its hub. Unload it,"
+                        " clear the fault with %s, then start the dryer"
+                        " again (%s)" % (self._unit_label(), clear, exc))
+                raise gcmd.error(
+                    "%s has a latched %s fault, so it will not start the"
+                    " dryer; clear it with %s, then start again (%s)"
+                    % (self._unit_label(),
+                       name if name and name != "none" else "dryer",
+                       clear, exc))
             raise
         gcmd.respond_info(
-            "%s: dryer started at %.1fC for %ds (hold_after=%d)%s"
-            % (self._unit_label(), target, duration, hold_after, vents))
+            "%s: dryer started at %.1fC for %ds (hold_after=%d)%s%s"
+            % (self._unit_label(), target, duration, hold_after, vents,
+               "; the spools turn while it dries" if rotate else ""))
 
     cmd_OAMS_DRYER_STOP_help = "Stop the unit's dryer safely"
 

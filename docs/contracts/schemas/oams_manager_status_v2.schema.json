@@ -694,6 +694,7 @@
               "calibrate_ptfe",
               "calibrate_hub_hes",
               "dryer_start",
+              "dryer_rotate",
               "dryer_stop",
               "clear_fault",
               "rfid_scan",

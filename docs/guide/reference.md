@@ -239,7 +239,7 @@ the unit's `oams_idx`, except in the four group and spool-link commands and
 | `OAMS_PID_SET` | `P=`, `I=`, `D=`, `TARGET=` (optional) |
 | `OAMS_CURRENT_PID_SET` | `P=`, `I=`, `D=`, `TARGET=` (optional) |
 | `OAMS_PID_AUTOTUNE` | none; always answers that autotune is unsupported |
-| `OAMS_DRYER_START` | `TARGET=<C>`, `DURATION=<s>` (default 3600), `HOLD_AFTER=<0\|1>`, `ROTATE=<0\|1>`, `VENT=<auto\|unit>` (default `auto`: on Cortex Bridge firmware 11 the bridge asks the AMS to vent as a Bambu printer does, firmware 10 opens them once the moisture stops rising; `unit` leaves them to the AMS, closed) |
+| `OAMS_DRYER_START` | `TARGET=<C>`, `DURATION=<s>` (default 3600), `HOLD_AFTER=<0\|1>`, `ROTATE=<0\|1>` (1: the AMS turns its spools while it dries; bridge firmware 20, nothing loaded), `VENT=<auto\|unit>` (default `auto`: on Cortex Bridge firmware 11 the bridge asks the AMS to vent as a Bambu printer does, firmware 10 opens them once the moisture stops rising; `unit` leaves them to the AMS, closed) |
 | `OAMS_DRYER_STOP` | none |
 | `OAMS_CLEAR_FAULT` | none |
 | `OAMS_RFID_SCAN` | `BAY=<bay>`: asks a unit that reads its own tags to read that bay ([using](using.md#units-that-read-their-own-tags)); on an OpenAMS 1, re-reads the bay's reader and says what the bay's tag is, and `ASSERT=1` confirms that the one tag in the field is that bay's ([configure](configure.md)) |

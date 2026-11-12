@@ -560,6 +560,25 @@ way when Klipper restarts. Mainsail's panel shows the vent position and the
 humidity. `VENT=unit` on `OAMS_DRYER_START` leaves the vents to the AMS:
 closed for the whole dry.
 
+### Rotate spools while drying
+
+From bridge firmware 20 the AMS can turn its spools while it dries, as a
+Bambu printer does, so the filament dries evenly around the spool. In
+Mainsail's panel, tick **Rotate spools while drying** when you start the dry;
+on the command line add `ROTATE=1`:
+
+```
+OAMS_DRYER_START OAMS=<n> TARGET=<C> DURATION=<s> ROTATE=1
+```
+
+Unload the AMS first: its spools don't turn while filament is out to the
+toolhead or in the hub. The AMS turns them by itself during the dry.
+Drying while printing isn't supported.
+
+If the dryer then answers `faulted (4)`, the last start didn't run (most often
+because filament was still loaded). `OAMS_CLEAR_FAULT OAMS=<n>`, or **Clear
+fault** in the panel, clears it; there's no need to power the AMS off.
+
 ## Keep it up to date
 
 - **OpenAMS**, including the bridge relay, updates from Mainsail's

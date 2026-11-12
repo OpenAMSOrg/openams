@@ -880,6 +880,43 @@ def test_custom_dryer_keeps_its_temperature_and_time(bench):
         "unit2 65C 8h?", ["OAMS_DRYER_START OAMS=2 TARGET=65 DURATION=28800"])
 
 
+def test_rotate_shows_only_where_a_unit_can_and_adds_rotate(bench):
+    # Cortex Bridge firmware 20 lists dryer_rotate; the switch then appears
+    # and a start from the menu turns the spools.
+    rotating = dict(AMS2_PRO, actions=AMS2_PRO["actions"] + ("dryer_rotate",))
+    b = bench(units=[("unit1", 1, "fps", {}), ("unit2", 2, "fps", rotating)],
+              groups=TWO_UNIT_GROUPS)
+    b.lcd.home()
+    assert b.lcd.open("Dryer") == ["..", "Start dryer", "Stop dryer", "Custom",
+                                   "Rotate: off"]
+    assert b.lcd.pick("Start dryer", 0) == (
+        "PLA 45C 12h?", ["OAMS_DRYER_START OAMS=2 TARGET=45 DURATION=43200"])
+    b.lcd.select("Rotate: off")
+    b.lcd.key("click")
+    b.lcd.key("down")       # as for Dry temp above: down steps the input up
+    assert b.lcd.label() == "Rotate: on"
+    b.lcd.key("click")
+    assert b.lcd.scripts[-1] == (
+        "SET_GCODE_VARIABLE MACRO=_OAMS_MENU VARIABLE=dryer_rotate VALUE=1")
+    run(b, b.lcd.scripts[-1:])
+    assert b.lcd.pick("Start dryer", 0) == (
+        "PLA 45C 12h?",
+        ["OAMS_DRYER_START OAMS=2 TARGET=45 DURATION=43200 ROTATE=1"])
+    b.lcd.open("Custom")
+    assert b.lcd.pick("Start custom", 0) == (
+        "unit2 55C 4h?",
+        ["OAMS_DRYER_START OAMS=2 TARGET=55 DURATION=14400 ROTATE=1"])
+
+
+def test_rotate_stays_hidden_and_off_on_a_unit_that_cannot(bench):
+    b = bench(units=TWO_UNITS, groups=TWO_UNIT_GROUPS)
+    run(b, ["SET_GCODE_VARIABLE MACRO=_OAMS_MENU VARIABLE=dryer_rotate VALUE=1"])
+    b.lcd.home()
+    assert b.lcd.open("Dryer") == ["..", "Start dryer", "Stop dryer", "Custom"]
+    assert b.lcd.pick("Start dryer", 0)[1] == [
+        "OAMS_DRYER_START OAMS=2 TARGET=45 DURATION=43200"]
+
+
 def test_a_temperature_below_the_units_floor_is_raised_to_it(bench):
     b = bench(units=TWO_UNITS, groups=TWO_UNIT_GROUPS)
     run(b, ["SET_GCODE_VARIABLE MACRO=_OAMS_MENU VARIABLE=dryer_temp VALUE=30"])
@@ -1089,7 +1126,7 @@ def check_command(bench, line):
         "OAMS_CALIBRATE_PTFE_LENGTH": {"OAMS", "SPOOL"},
         "OAMS_CALIBRATE_HUB_HES": {"OAMS", "SPOOL"},
         "OAMS_CLEAR_FAULT": {"OAMS"},
-        "OAMS_DRYER_START": {"OAMS", "TARGET", "DURATION"},
+        "OAMS_DRYER_START": {"OAMS", "TARGET", "DURATION", "ROTATE"},
         "OAMS_DRYER_STOP": {"OAMS"},
         "OAMSM_SET_OPTION": {"NAME", "VALUE"},
         "SET_GCODE_VARIABLE": {"MACRO", "VARIABLE", "VALUE"},

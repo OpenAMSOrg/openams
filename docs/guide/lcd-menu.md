@@ -105,6 +105,7 @@ RESUME finishes the toolchange.
 | **Dryer** › Stop dryer | `OAMS_DRYER_STOP OAMS=<unit>` | same |
 | **Dryer** › Custom › Dry temp, Dry time | Set the temperature and time Start custom uses | same |
 | **Dryer** › Custom › Start custom | `OAMS_DRYER_START` with those | same |
+| **Dryer** › Rotate | On: a dryer start from the menu turns the spools (`ROTATE=1`). Shown only when an AMS can (Cortex Bridge firmware 20); unload it first | same |
 | **Follower** › Follower on | `OAMSM_FOLLOWER ENABLE=1 DIRECTION=1 FPS=<lane>` | not printing |
 | **Follower** › Follower off | `OAMSM_FOLLOWER ENABLE=0 DIRECTION=0`, every lane | not printing |
 | **Settings** › Autoreload, Tag insert, Tag start, New spools, Apply PA, Sync trays | One click: `OAMSM_SET_OPTION NAME=<setting> VALUE=<the other one>` for `auto_reload_on_runout`, `read_tag_on_insertion`, `read_tags_at_startup`, `auto_create_spoolman_spools`, `apply_pa_on_load` and `sync_unit_tray_info` | always |

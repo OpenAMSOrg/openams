@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 20,
+   "file": "bridge-20.oac2",
+   "sha256": "0ff801dbefc9140da7146e9874be49c4c8ae35786d44d8662bad0cd8efc854f0",
+   "released": "2026-11-12",
+   "notes": "An AMS 2 Pro or AMS HT can turn its spools while it dries, as a Bambu printer does: tick Rotate spools while drying in Mainsail, or add ROTATE=1 to OAMS_DRYER_START. Unload the AMS first."
+  },
+  {
    "version": 19,
    "file": "bridge-19.oac2",
    "sha256": "85269b4a0fe13a004a5aaa8d3ebfc5466996e678eaa00d2468dfa17c439a71fc",

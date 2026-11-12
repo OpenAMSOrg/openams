@@ -1000,8 +1000,10 @@ resolved firmware commands and capabilities (`src/oams.py:358-406`):
 `clear_errors` always; `load`, `unload`, `follower` with normal motion and the
 command resolved; `configure_pid` on AMS 1 only; `calibrate_ptfe` and
 `calibrate_hub_hes` per capability; `dryer_start` (with `heater_control`),
-`dryer_stop`, `clear_fault`, `rfid_scan` (a unit that reads its own tags on
-request). It describes what the unit can do, not
+`dryer_rotate` (with `dryer_start`, on a unit that turns its spools while
+drying: `spool_rotation_during_drying` and `ams_ht_dryer_start2`, Cortex Bridge
+firmware 20; `OAMS_DRYER_START ROTATE=1`), `dryer_stop`, `clear_fault`,
+`rfid_scan` (a unit that reads its own tags on request). It describes what the unit can do, not
 what is allowed now. A klipper-mmu unit publishes its own four on top of that
 list — `preload`, `unpreload`, `eject` and `home` (C3 §2, C5 §7.1) — and an
 AMS unit publishes none of them.
@@ -1208,7 +1210,7 @@ examples were produced by exactly such a function.
 | `dryer` | `{state, target, min, heat, fan, fault, adapter}` or null | `dryer`, with the target rounded and the remaining time in whole minutes, rounded up (`display:src/model/mmu_model.h:123-124`) |
 | `fault` | `{sev, code, text, unit, bay, act}` or null | the most severe fault on the unit's lane (`stop` > `pause` > `info`, then first listed); `text` cut to 48 characters. The display model has one active error (`display:src/model/mmu_model.h:193-201`) |
 | `nf` | int | how many faults the lane has, including the one shown |
-| `act` | unit-level actions: `dryer_start`, `dryer_stop`, `clear_fault`, `rfid_scan`, and a klipper-mmu unit's `home` | `devices.<u>.supported_actions`; `load`, `unload`, and `calibrate_ptfe` travel per bay; engineering actions are dropped; `clear_errors` is always available (`src/oams.py:364`) and not listed. `home` (C3 §2 `OAMS_HOME`) is offered only where the family's selector kind has a selector to move (§4.4.1), so the `claymore_4` example carries it and `boxturtle_8` does not |
+| `act` | unit-level actions: `dryer_start`, `dryer_rotate` (the dryer start may turn the spools: offer a "Rotate spools while drying" choice and send `ROTATE=1`), `dryer_stop`, `clear_fault`, `rfid_scan`, and a klipper-mmu unit's `home` | `devices.<u>.supported_actions`; `load`, `unload`, and `calibrate_ptfe` travel per bay; engineering actions are dropped; `clear_errors` is always available (`src/oams.py:364`) and not listed. `home` (C3 §2 `OAMS_HOME`) is offered only where the family's selector kind has a selector to move (§4.4.1), so the `claymore_4` example carries it and `boxturtle_8` does not |
 
 ### 6.2a Capability-limited units
 

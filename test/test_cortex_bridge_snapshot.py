@@ -732,6 +732,26 @@ class DryerRowTests(unittest.TestCase):
         self.assertIn("refused: filament is past the feeder, in the hub "
                       "(bay 2)", snap.classify(decoded)["dryers"][0])
 
+    def test_bridge_20_says_whether_the_start_turned_the_spools(self):
+        # Bridge firmware 20: vent_flags bit 7 is "the last start asked for
+        # rotation" (its cooldown vector's flag byte 0x21 became 0xa1), and
+        # start 7 is a rotating start refused with filament out.
+        flags = snap._bitfield(snap.VENT_FLAG_BITS)(0xa1)
+        self.assertIs(flags["rotate"], True)
+        self.assertIs(flags["enabled"], True)
+        self.assertIs(snap._bitfield(snap.VENT_FLAG_BITS)(0x21)["rotate"],
+                      False)
+        self.assertEqual(snap.START[7], "refused_rotate")
+        row = {"index": 0, "vent_state": "idle", "vent_flags": flags,
+               "start": "confirmed"}
+        self.assertIn("the last start was confirmed, turning the spools",
+                      snap.dryer_lines({"dryers": [row]})[0])
+        row = dict(row, start="refused_rotate")
+        line = snap.dryer_lines({"dryers": [row]})[0]
+        self.assertIn("the last start was refused: the spools cannot turn "
+                      "while filament is out", line)
+        self.assertNotIn("turning the spools", line)
+
     def test_a_firmware_11_row_of_73_bytes_still_decodes(self):
         body = bytearray(bytes.fromhex(self.CASE["body_hex"]))
         at = bytes(body).index(bytes((0x13, 77)))
