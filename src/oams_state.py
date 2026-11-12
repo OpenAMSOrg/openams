@@ -624,9 +624,9 @@ def _latched_fault_msg(fps, firmware_faults):
     Falls back to a generic string if the fault map is unexpectedly empty."""
     for physical_lane, record in firmware_faults.items():
         if record[0] == fps or physical_lane == 255:
-            return ("firmware fault (%s) latched; OAMS_CLEAR_FAULT first"
+            return ("firmware fault (%s) latched; press Clear errors first"
                     % record[1])
-    return "firmware fault latched; OAMS_CLEAR_FAULT first"
+    return "firmware fault latched; press Clear errors first"
 
 
 def _in_flight(lane):

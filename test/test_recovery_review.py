@@ -506,6 +506,37 @@ def test_reset_keeps_a_panel_load_that_started(setup):
     assert any("Retry finishes it" in line for line in said)
 
 
+def test_abandon_forgets_a_failed_panel_load_and_resets(setup):
+    printer, manager, unit = setup(loaded=0)
+    inlet_sensor(printer, False)
+    with pytest.raises(printer.command_error):
+        printer.gcode.run_script("OPENAMS_LOAD GROUP=T1 SLOT=2")
+    assert fault_of(manager)["panel"]
+    said = output(printer)
+    printer.gcode.run_script("OAMSM_CLEAR_ERRORS")
+    assert any("Abandon (OAMSM_ABANDON) forgets it" in line for line in said)
+    lane = next(iter(manager._tc_faults()))
+    printer.trace.clear()
+    said = output(printer)
+    printer.gcode.run_script("OAMSM_ABANDON")
+    assert fault_of(manager) is None
+    assert moves(printer.trace) == []
+    assert any("abandoned; the filament stays where it stopped" in line
+               for line in said)
+    with pytest.raises(printer.command_error, match="nothing on lane"):
+        printer.gcode.run_script("OAMSM_ABANDON FPS=%s" % lane)
+    with pytest.raises(printer.command_error, match="nothing is waiting"):
+        printer.gcode.run_script("OAMSM_ABANDON")
+
+
+def test_abandon_refuses_the_paused_prints_own_toolchange(setup):
+    printer, manager, unit, _ = failed_print_toolchange(setup)
+    assert not fault_of(manager)["panel"]
+    with pytest.raises(printer.command_error, match="is the print's"):
+        printer.gcode.run_script("OAMSM_ABANDON")
+    assert fault_of(manager) is not None
+
+
 def test_retry_is_refused_while_the_print_is_printing(setup):
     printer, manager, unit = setup(loaded=0)
     inlet_sensor(printer, False)

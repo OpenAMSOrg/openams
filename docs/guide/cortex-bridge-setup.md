@@ -391,8 +391,8 @@ Either way, the length matters:
   says `Spool loading failed (the filament fed <n> mm (ptfe_length <n> mm +
   200 mm) without the toolhead buffer reaching arrival_threshold: ...)`; older
   firmware says `the AMS stopped feeding before the toolhead buffer reached
-  arrival_threshold`, and the AMS reports `motion_timeout`. Clear the fault
-  with `OAMS_CLEAR_FAULT OAMS=<n>`, then rewind the bay with
+  arrival_threshold`, and the AMS reports `motion_timeout`. Press **Clear
+  errors** (`OAMSM_CLEAR_ERRORS`), then rewind the bay with
   `OAMSM_UNLOAD_FILAMENT` (the filament stopped short of the extruder, so no
   cut is needed), then calibrate the bay. A calibration refuses to start while
   that filament is still out. On older firmware, measure how far the tip
@@ -576,8 +576,8 @@ toolhead or in the hub. The AMS turns them by itself during the dry.
 Drying while printing isn't supported.
 
 If the dryer then answers `faulted (4)`, the last start didn't run (most often
-because filament was still loaded). `OAMS_CLEAR_FAULT OAMS=<n>`, or **Clear
-fault** in the panel, clears it; there's no need to power the AMS off.
+because filament was still loaded). **Clear errors** in the panel
+(`OAMSM_CLEAR_ERRORS`) clears it; there's no need to power the AMS off.
 
 ## Keep it up to date
 
@@ -615,7 +615,7 @@ names the first thing to fix.
 | Klipper: `<ams> Spool N has no PTFE length` | `ptfe_length` is 0 for that bay | Run the command the message names: `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<n> SPOOL=<bay>` on firmware 8 or later, or [measure and set it](#filament-path-length) on older firmware. |
 | `PTFE calibration of <ams> Spool N failed: the filament fed <n> mm (MAX_LENGTH <n> mm + 200 mm) without reaching the toolhead buffer` | The path is longer than `MAX_LENGTH`, or the filament isn't reaching the toolhead | Look where the tip stopped. Running freely: run it again with a larger `MAX_LENGTH=`. Stuck: fix the path. |
 | `PTFE calibration ... failed: the filament stopped moving for 4 s` | A snag in the path, at a joint, a bend or the hub | Push filament by hand through the whole path; fix where it catches. |
-| A load stops before the toolhead: `the filament fed <n> mm (ptfe_length ... + 200 mm)` (firmware 8 or later) or `the AMS stopped feeding before the toolhead buffer reached arrival_threshold` (older), fault `motion_timeout` | `ptfe_length` is shorter than the filament path, or the filament snagged (`stopped moving for 4 s` on firmware 8) | Clear the fault with `OAMS_CLEAR_FAULT OAMS=<n>`, then `OAMSM_CLEAR_ERRORS`. If the filament runs freely, the length is too short: [calibrate the bay](#filament-path-length), or set the old length plus 200 mm plus the gap left at the gears. |
+| A load stops before the toolhead: `the filament fed <n> mm (ptfe_length ... + 200 mm)` (firmware 8 or later) or `the AMS stopped feeding before the toolhead buffer reached arrival_threshold` (older), fault `motion_timeout` | `ptfe_length` is shorter than the filament path, or the filament snagged (`stopped moving for 4 s` on firmware 8) | Press **Clear errors** (`OAMSM_CLEAR_ERRORS`). If the filament runs freely, the length is too short: [calibrate the bay](#filament-path-length), or set the old length plus 200 mm plus the gap left at the gears. |
 | Loads stall, or the buffer reports arrival before the filament reaches the toolhead | Too much friction in the filament path | Check that every tube up to the coupler is 3 mm ID / 4 mm OD (not 2 mm ID), any 2 mm ID tube starts at the coupler's 2 end, the bends are gentle, the coupler and splitter joints are smooth, and the stronger buffer spring is fitted. |
 | A load stops just short of the toolhead | The buffer reading did not reach `arrival_threshold` | Lower it as the message suggests ([details](configure.md#host-confirmed-arrival-from-a-relayed-fps)). |
 | An unload ends in a unit fault | The filament tip stayed in the extruder gears | Use `toolhead_unload_macro: _OAMS_TOOLHEAD_EJECT`. |

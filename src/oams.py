@@ -477,9 +477,8 @@ class OAMS(oams_ext.UnitHooks):
                 names.append(name)
         if not names:
             return None
-        return ("the unit reports fault %s; clear it with OAMS_CLEAR_FAULT"
-                " OAMS=%s, then OAMSM_CLEAR_ERRORS"
-                % (", ".join(names), self.oams_idx))
+        return ("the unit reports fault %s; Clear errors (OAMSM_CLEAR_ERRORS)"
+                " clears it" % ", ".join(names))
 
     # ------------------------------------------------------------------ status
 
@@ -2949,17 +2948,16 @@ class OAMS(oams_ext.UnitHooks):
                 domain = self._telemetry.get("domain") or {}
                 name = (domain.get("dryer_fault_name")
                         if domain.get("dryer_fault") else None)
-                clear = ("OAMS_CLEAR_FAULT OAMS=%s (Clear fault in the panel)"
-                         % self.oams_idx)
+                clear = "Clear errors (OAMSM_CLEAR_ERRORS)"
                 if name == "dryer_start_refused":
                     raise gcmd.error(
                         "%s did not run the last dryer start: it does not dry"
                         " while filament is loaded or in its hub. Unload it,"
-                        " clear the fault with %s, then start the dryer"
-                        " again (%s)" % (self._unit_label(), clear, exc))
+                        " press %s, then start the dryer again (%s)"
+                        % (self._unit_label(), clear, exc))
                 raise gcmd.error(
                     "%s has a latched %s fault, so it will not start the"
-                    " dryer; clear it with %s, then start again (%s)"
+                    " dryer; press %s, then start again (%s)"
                     % (self._unit_label(),
                        name if name and name != "none" else "dryer",
                        clear, exc))
@@ -3054,8 +3052,8 @@ class OAMS(oams_ext.UnitHooks):
             message = ("%s: cleared the %s fault left by an earlier failure;"
                        " the unload that just finished worked" % (label, name))
         else:
-            message = ("%s: could not clear the %s fault (%s); clear it with"
-                       " OAMS_CLEAR_FAULT" % (
+            message = ("%s: could not clear the %s fault (%s); press Clear"
+                       " errors (OAMSM_CLEAR_ERRORS)" % (
                            label, name,
                            self._AMS_HT_RESULTS.get(result, "unknown")))
         logging.info("OAMS[%s]: %s", self.oams_idx, message)

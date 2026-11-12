@@ -2186,17 +2186,41 @@ def test_reset_waits_out_a_fault_that_clears_and_latches_again(setup):
         if cleared_at and now - cleared_at[0] > 5 and not manager._latched_faults("unit1"):
             manager.runtime.dispatch(S.FirmwareFault(None, 255, 7, ("again",)))
     printer.reactor.on_pause = relatch
-    with pytest.raises(printer.command_error, match="stayed latched.*unit1"):
+    with pytest.raises(printer.command_error,
+                       match="on unit1 still latched after the clear; power"):
         printer.gcode.run_script("OAMSM_CLEAR_ERRORS")
     assert printer.reactor.monotonic() - cleared_at[0] >= manager.FAULT_CLEAR_SETTLE_S
+
+
+def test_reset_is_done_once_the_fault_stays_cleared(setup):
+    # No 15 s wait when the latch goes and stays gone: Reset ends after the
+    # quiet window instead (2026-11-12).
+    printer, manager, unit = setup()
+    identity = ("once",)
+    manager.runtime.dispatch(S.FirmwareFault(None, 255, 7, identity))
+    cleared_at = []
+
+    def clear_fault(gcmd):
+        manager.runtime.dispatch(S.FirmwareFaultCleared(255, identity))
+        cleared_at.append(printer.reactor.monotonic())
+    printer.gcode.register_command("OAMS_CLEAR_FAULT", clear_fault)
+    printer.gcode.run_script("OAMSM_CLEAR_ERRORS")
+    took = printer.reactor.monotonic() - cleared_at[0]
+    assert manager.FAULT_CLEAR_QUIET_S <= took < manager.FAULT_CLEAR_SETTLE_S
 
 
 def test_reset_names_a_unit_fault_that_stays_latched(setup):
     printer, manager, unit = setup()
     manager.runtime.dispatch(S.FirmwareFault(None, 255, 7, ("stuck",)))
     printer.gcode.register_command("OAMS_CLEAR_FAULT", lambda gcmd: None)
-    with pytest.raises(printer.command_error, match="stayed latched.*unit1"):
+    with pytest.raises(printer.command_error,
+                       match="on unit1 still latched after the clear; power"):
         printer.gcode.run_script("OAMSM_CLEAR_ERRORS")
+    # Its fault entry now says Clear errors did not clear it, until it goes.
+    fault, = [f for f in manager.get_status(0.)["devices"]["unit1"]["faults"]
+              if f["source"] == "firmware"]
+    assert fault["actions"] == ["clear_errors"]
+    assert "Clear errors did not clear it: power the AMS off" in fault["text"]
 
 
 def test_a_print_fault_is_forgotten_when_the_print_ends(setup):

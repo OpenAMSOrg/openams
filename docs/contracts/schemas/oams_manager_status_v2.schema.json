@@ -92,6 +92,9 @@
         },
         "retry": {
           "$ref": "#/$defs/gcode_word"
+        },
+        "abandon": {
+          "$ref": "#/$defs/gcode_word"
         }
       }
     },

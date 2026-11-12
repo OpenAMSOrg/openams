@@ -110,7 +110,7 @@ resends the whole top-level field.
 | `topology` | object, §4.3 | no | EXISTS-v1 | HC | — | `src/oams_manager.py:405`, `:379-392` |
 | `devices` | object, unit name → §4.4 | no | EXISTS-v1 | FW + HC + HR | — | `src/oams_manager.py:406-407` |
 | `settings` | object, §4.9 | no | NEW-v2 | HC | H7 | D3 |
-| `commands` | object `{load?, unload?, cancel?, reset?, retry?}` → G-code word | no | UI-API-v1 | host (registered commands) | P0.3b | `legacy:src/oams_manager.py:171-179`: a key appears only while its command is registered |
+| `commands` | object `{load?, unload?, cancel?, reset?, retry?, abandon?}` → G-code word (`abandon`: `OAMSM_ABANDON`, 2026-11-12) | no | UI-API-v1 | host (registered commands) | P0.3b | `legacy:src/oams_manager.py:171-179`: a key appears only while its command is registered |
 | `units` | array, §4.10 | no | UI-API-v1 | FW + HC | P0.3b | `legacy:src/oams_manager.py:130-146` |
 | `groups` | array, §4.10 | no | UI-API-v1 | HC | P0.3b | `legacy:src/oams_manager.py:148-157` |
 
@@ -1087,10 +1087,10 @@ as a question.
 | `stop` | heater, motor, vent faults | `invalid_heater_thermistor`, `invalid_motor_thermistor`, `heater_overtemperature`, `motor_overtemperature`, `chamber_overtemperature`, `heater_drive_fault`, `motor_drive_fault`, `vent_actuator_fault`, `fan_stalled` (dryer fan; every dryer-safety fault is `stop`) |
 | `pause` | runout without spare, feed failure | lane: `no spare spool`, `auto reload off`, `reload failed`, `load failed`, `ptfe_length uncalibrated`; firmware: `motion_timeout`, `motion_stalled`, `follower_buffer_invalid`, `follower_filament_lost`, `follower_starved`, `follower_stalled`, `follower_timeout`, `lane_obstructed` (names its bay: the hub sensor reads filament without the feeder inlet, most likely a broken piece stuck in the lane), `rfid_tag_error` (classified 2026-10-07: the unit rejected a spool's RFID tag and keeps reporting it; text starts `RFID Tag Error`) |
 | `info` | tag read failures | OpenAMS 1 reader `ERROR`; a unit that reads its own tags: `read_failed` |
-| `info` (classified 2026-10-05) | a dryer start that never ran | `dryer_start_refused`: the unit acknowledged the start and kept reporting off (an AMS 2 Pro with filament loaded). The heater never ran, so it never withholds motion; `clear_fault` clears it. |
+| `info` (classified 2026-10-05) | a dryer start that never ran | `dryer_start_refused`: the unit acknowledged the start and kept reporting off (an AMS 2 Pro with filament loaded). The heater never ran, so it never withholds motion; Clear errors clears it. |
 | `stop` (classified 2026-09-28, H9 review) | power, drive and session faults | `supply_undervoltage`, `supply_overvoltage`, `first_stage_overcurrent`, `ac_sync_lost` (heater control), `host_communication_lost` (the session is gone: recovery is `FIRMWARE_RESTART`, so this entry offers no action) |
 | `pause` (classified 2026-09-28) | a failed lane op | lane `unload failed`, `calibration failed`, `spare spool is not calibrated` |
-| `stop` (reclassified 2026-09-28, review) | dryer faults that stop the dryer | `supply_monitor_invalid`, `environment_sensor_invalid` (the firmware raises both only as dryer faults: heater off, needs `clear_fault`); `invalid_request` is a latched motion / emergency-stop system fault. None of the three is informational. **Any name published in `dryer_fault_name` is `stop`** — a dryer fault is never `info`. `invalid_request` as a request result (a command's own reply code) is not a fault and is not published here. |
+| `stop` (reclassified 2026-09-28, review) | dryer faults that stop the dryer | `supply_monitor_invalid`, `environment_sensor_invalid` (the firmware raises both only as dryer faults: heater off, needs Clear errors); `invalid_request` is a latched motion / emergency-stop system fault. None of the three is informational. **Any name published in `dryer_fault_name` is `stop`** — a dryer fault is never `info`. `invalid_request` as a request result (a command's own reply code) is not a fault and is not published here. |
 | `stop` (default) | any fault name not listed above, including `unknown` | a new or unrecognized fault withholds motion until someone looks at it |
 
 **Klipper-mmu units (C5 §7.6, EXIST 2026-09-29).** A klipper-mmu unit
@@ -1143,8 +1143,8 @@ only offer a token that really clears or resumes the unit:
 
 | Token | Command | Typical faults |
 |---|---|---|
-| `clear_fault` | `OAMS_CLEAR_FAULT OAMS=<idx>` — the AMS HT control command on an AMS unit, a klipper-mmu unit's fault acknowledgement on a klipper-mmu one (see the note above) | firmware `stop` faults |
-| `clear_errors` | `OAMSM_CLEAR_ERRORS` | after a failed load or unload |
+| `clear_fault` | `OAMS_CLEAR_FAULT OAMS=<idx>` — a klipper-mmu unit's fault acknowledgement (see the note above). Since 2026-11-12 an AMS unit's faults carry `clear_errors` instead, and the UIs render `clear_fault` as Clear errors too: one clear | klipper-mmu firmware faults |
+| `clear_errors` | `OAMSM_CLEAR_ERRORS` (the host's Reset: clears every unit's latch, then resyncs the lanes) | an AMS unit's firmware faults; after a failed load or unload |
 | `retry_load` | the lane's load again (`OAMSM_LOAD_FILAMENT GROUP=<group>`, or `OAMS_LOAD_SPOOL` for a bay) | `load failed`, `reload failed` |
 | `resume` | `RESUME` | a paused print once the cause is fixed |
 

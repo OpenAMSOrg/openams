@@ -123,7 +123,7 @@ PAUSE_FIRMWARE_FAULTS = frozenset((
 LANE_OBSTRUCTED_TEXT = (
     "Bay %s: the hub sensor sees filament but the feeder inlet does not. "
     "Most likely a broken piece of filament is stuck in this lane; remove "
-    "it, then clear the fault.")
+    "it, then press Clear errors.")
 
 # `rfid_tag_error`: the unit raised an error for a spool tag it rejected (a
 # tag written by hand, without the maker's signature). The unit keeps
@@ -131,7 +131,7 @@ LANE_OBSTRUCTED_TEXT = (
 # ended it.
 RFID_TAG_ERROR_TEXT = (
     "RFID Tag Error: the unit rejected a spool's RFID tag. Remove the tag, "
-    "power-cycle the unit, then clear the fault.")
+    "power-cycle the unit, then press Clear errors.")
 
 # Latched firmware fault names the C2 §5.7 table classifies `info`: reported,
 # cleared with clear_fault, and never a reason to withhold motion.
@@ -148,7 +148,14 @@ PAUSE_IDLE_TIMEOUT_DEFAULT = 172800.
 DRYER_START_REFUSED_TEXT = (
     "The dryer did not start. This unit does not dry while filament is "
     "loaded or past its feeder, in the hub: unload it back to the feeder, "
-    "clear the fault, then start the dryer again.")
+    "press Clear errors, then start the dryer again.")
+
+# Appended to a firmware fault's text when the last Reset could not clear it:
+# the cases left (an AMS that keeps its own error, a unit stuck reporting
+# motion on an older bridge) end only with the unit's power.
+CLEAR_STUCK_TEXT = (
+    "Clear errors did not clear it: power the AMS off and on, then press "
+    "Clear errors again.")
 
 # Lane messages that leave a lane fault entry (C2 §5.7, the lane `pause` row).
 LANE_FAILURE_MESSAGES = frozenset((
@@ -1221,7 +1228,8 @@ class OAMSManager(oams_ext.ManagerHooks):
                 ("unload", ("OPENAMS_UNLOAD", "OAMSM_UNLOAD_FROM_TOOLHEAD")),
                 ("cancel", ("OAMSM_LOAD_FILAMENT_CANCEL",)),
                 ("reset", ("OAMSM_CLEAR_ERRORS",)),
-                ("retry", ("OAMSM_RETRY",))):
+                ("retry", ("OAMSM_RETRY",)),
+                ("abandon", ("OAMSM_ABANDON",))):
             for command in candidates:
                 if command in available:
                     commands[key] = command
@@ -1785,7 +1793,7 @@ class OAMSManager(oams_ext.ManagerHooks):
                                  else "info" if code in INFO_FIRMWARE_FAULTS
                                  else "stop"),
                     "code": code, "text": code, "bay": None,
-                    "actions": ["clear_fault"], "source": "firmware"}
+                    "actions": ["clear_errors"], "source": "firmware"}
             faults.append(entry)
         # The unit's own decoded fault names, straight from its domain
         # telemetry (C2 §5.7). A name the runtime latch already carries is
@@ -1808,9 +1816,12 @@ class OAMSManager(oams_ext.ManagerHooks):
                 # unit raises them as dryer faults that stop the dryer, not
                 # as informational monitoring.
                 severity = "stop"
+            # Clear errors (the host's Reset) is the one way a UI offers: it
+            # clears the unit's latch and resyncs the lane in one go.
+            # OAMS_CLEAR_FAULT stays a console command (2026-11-12).
             entry = {
                 "severity": severity, "code": name, "text": name,
-                "bay": None, "actions": ["clear_fault"],
+                "bay": None, "actions": ["clear_errors"],
                 "source": "firmware"}
             if name == "lane_obstructed":
                 bay = self._obstructed_bay(unit)
@@ -1829,6 +1840,17 @@ class OAMSManager(oams_ext.ManagerHooks):
                 if getattr(unit, "session_lost", None):
                     entry["text"] = unit.session_lost
             faults.append(entry)
+        stuck = self._clear_stuck().get(next(
+            (name for name, oam in self.oams.items() if oam is unit), None))
+        if stuck:
+            # A code that went away takes its "did not clear" note with it;
+            # one still latched says the last Reset could not clear it.
+            stuck &= {fault["code"] for fault in faults}
+            for fault in faults:
+                if (fault["code"] in stuck and fault.get("actions")
+                        and fault.get("source") == "firmware"):
+                    fault["text"] = "%s %s" % (fault["text"],
+                                               CLEAR_STUCK_TEXT)
         lane_state = state.lanes.get(fps)
         if (lane_state is not None
                 and lane_state.message in LANE_FAILURE_MESSAGES):
@@ -2215,6 +2237,7 @@ class OAMSManager(oams_ext.ManagerHooks):
              self.cmd_CURRENT_LOADED_GROUP_help),
             ("OAMSM_CLEAR_ERRORS", self.cmd_CLEAR_ERRORS,
              self.cmd_CLEAR_ERRORS_help),
+            ("OAMSM_ABANDON", self.cmd_ABANDON, self.cmd_ABANDON_help),
             ("OAMSM_TOOLCHANGE", self.cmd_TOOLCHANGE,
              self.cmd_TOOLCHANGE_help),
             ("OAMSM_RETRY", self.cmd_RETRY, self.cmd_RETRY_help),
@@ -2572,10 +2595,58 @@ class OAMSManager(oams_ext.ManagerHooks):
                 "OAMSM_CLEAR_ERRORS: %s on lane %s is not finished: %s"
                 % (self._fault_subject(fault), fps,
                    "RESUME finishes it" if not fault["panel"]
-                   else "Retry finishes it"))
+                   else "Retry finishes it, Abandon (OAMSM_ABANDON) forgets"
+                        " it"))
         if still_latched:
-            raise gcmd.error("OAMSM_CLEAR_ERRORS: a fault stayed latched after"
-                             " the clear on %s" % ", ".join(still_latched))
+            raise gcmd.error(
+                "OAMSM_CLEAR_ERRORS: %s still latched after the clear; power"
+                " the AMS off and on, then press Clear errors again"
+                % "; ".join("%s on %s" % (", ".join(sorted(
+                    self._clear_stuck().get(name) or ("a fault",))), name)
+                            for name in still_latched))
+
+    cmd_ABANDON_help = ("Forget a failed load or unload from the panel (the"
+                        " filament stays where it stopped), then Reset")
+
+    def cmd_ABANDON(self, gcmd):
+        """The failed-toolchange alert's Abandon (2026-11-12). Reset keeps a
+        failed toolchange so RESUME or Retry can finish it; Abandon forgets
+        one the panel started, so the lane stops showing it as not finished,
+        then runs the same Reset. A paused print's own fault is refused:
+        RESUME, Unload or cancelling the print ends it."""
+        faults = self._tc_faults()
+        fps = gcmd.get("FPS", None)
+        if fps is None:
+            if not faults:
+                raise gcmd.error("OAMSM_ABANDON: nothing is waiting to be"
+                                 " finished")
+            if len(faults) > 1:
+                raise gcmd.error("OAMSM_ABANDON: name the lane with FPS= (%s)"
+                                 % ", ".join(sorted(faults)))
+            fps = next(iter(faults))
+        fault = faults.get(fps)
+        if fault is None:
+            raise gcmd.error("OAMSM_ABANDON: nothing on lane %s is waiting"
+                             " to be finished" % fps)
+        if (not fault["panel"]
+                and self._print_state() in ("printing", "paused")):
+            raise gcmd.error(
+                "OAMSM_ABANDON: %s on lane %s is the print's: RESUME retries"
+                " it, Unload backs it out, or cancel the print"
+                % (self._fault_subject(fault), fps))
+        faults.pop(fps, None)
+        self._tc_notes().pop(fps, None)
+        gcmd.respond_info(
+            "OAMSM_ABANDON: %s on lane %s abandoned; the filament stays where"
+            " it stopped" % (self._fault_subject(fault), fps))
+        still_latched = self._reset_errors(gcmd)
+        if still_latched:
+            raise gcmd.error(
+                "OAMSM_ABANDON: %s still latched after the clear; power the"
+                " AMS off and on, then press Clear errors"
+                % "; ".join("%s on %s" % (", ".join(sorted(
+                    self._clear_stuck().get(name) or ("a fault",))), name)
+                            for name in still_latched))
 
     # A unit answers a fault clear when it accepts it, not when its recovery
     # ends, and a fault can look gone for a moment and latch again (seen on an
@@ -2584,6 +2655,9 @@ class OAMSManager(oams_ext.ManagerHooks):
     # and waits a little longer for a slow unit before naming what stayed.
     FAULT_CLEAR_SETTLE_S = 15.0
     FAULT_CLEAR_WAIT_S = 20.0
+    # Done sooner once every unit has shown no latch for this long: longer
+    # than a fault took to come back (the motor_drive_fault above, about 5 s).
+    FAULT_CLEAR_QUIET_S = 10.0
 
     def _reset_errors(self, gcmd):
         """Clear latched unit faults, then resync every unit and lane. Returns
@@ -2598,6 +2672,11 @@ class OAMSManager(oams_ext.ManagerHooks):
                   if name not in skipped]
         self._require_hardware_snapshot(gcmd, active)
         still_latched = self._clear_unit_faults(gcmd, active)
+        stuck = self._clear_stuck()
+        for name in active:
+            stuck.pop(name, None)
+        for name in still_latched:
+            stuck[name] = set(self._latched_faults(name))
         self.stop_monitor()
         for name, oam in self.oams.items():
             if name not in skipped:
@@ -2614,12 +2693,17 @@ class OAMSManager(oams_ext.ManagerHooks):
 
     def _latched_faults(self, name):
         """The codes of the faults latched on one unit that a fault clear can
-        clear (the `clear_fault` action of C2 §5.7)."""
+        clear: its firmware faults that offer an action (C2 §5.7)."""
         oam = self.oams[name]
         fps = self.topo.lane_of_oams(name)
         state = self.runtime.get_state()
         return [fault["code"] for fault in self._unit_faults(oam, state, fps)
-                if "clear_fault" in fault.get("actions", ())]
+                if fault.get("source") == "firmware" and fault.get("actions")]
+
+    def _clear_stuck(self):
+        """Per unit, the fault codes the last Reset could not clear; their
+        text says so until they go."""
+        return self.__dict__.setdefault("_clear_stuck_faults", {})
 
     def _clear_unit_faults(self, gcmd, names):
         """Send each unit with a latched fault its own OAMS_CLEAR_FAULT, then
@@ -2642,13 +2726,20 @@ class OAMSManager(oams_ext.ManagerHooks):
         if not pending:
             return []
         start = self.reactor.monotonic()
+        quiet_since = None
         while True:
             now = self.reactor.monotonic()
+            latched = [name for name in pending if self._latched_faults(name)]
+            if latched:
+                quiet_since = None
+            elif quiet_since is None:
+                quiet_since = now
+            if (quiet_since is not None
+                    and now - quiet_since >= self.FAULT_CLEAR_QUIET_S):
+                return []
             if now - start >= self.FAULT_CLEAR_SETTLE_S:
-                pending = [name for name in pending
-                           if self._latched_faults(name)]
-                if not pending or now - start >= self.FAULT_CLEAR_WAIT_S:
-                    return pending
+                if not latched or now - start >= self.FAULT_CLEAR_WAIT_S:
+                    return latched
             self.reactor.pause(now + 0.25)
 
     # ------------------------------------------------- toolchange recovery

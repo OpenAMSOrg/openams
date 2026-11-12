@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 21,
+   "file": "bridge-21.oac2",
+   "sha256": "9f72b47353b80f1c51d0ad4d2dbfd34984ecad94cc99d7f7ec35881351dc6f7a",
+   "released": "2026-11-12",
+   "notes": "Clear errors now clears what used to need a power cycle: an AMS that still reports moving is stopped first, a bay pulled back by hand is forgotten so drying and tag reads work again, and a clear during a dryer stop waits for it instead of being refused."
+  },
+  {
    "version": 20,
    "file": "bridge-20.oac2",
    "sha256": "0ff801dbefc9140da7146e9874be49c4c8ae35786d44d8662bad0cd8efc854f0",

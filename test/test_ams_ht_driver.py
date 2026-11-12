@@ -439,13 +439,13 @@ class DryerVentLoopTests(unittest.TestCase):
             "dryer_fault": 26, "dryer_fault_name": "dryer_start_refused"}
         with self.assertRaisesRegex(
                 RuntimeError, "does not dry while filament is loaded.*"
-                "OAMS_CLEAR_FAULT OAMS=.*faulted \\(4\\)"):
+                "press Clear errors \\(OAMSM_CLEAR_ERRORS\\).*faulted \\(4\\)"):
             driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 55}))
         driver._telemetry["domain"] = {
             "dryer_fault": 3, "dryer_fault_name": "heater_overtemperature"}
         with self.assertRaisesRegex(
                 RuntimeError, "latched heater_overtemperature fault.*"
-                "OAMS_CLEAR_FAULT"):
+                "OAMSM_CLEAR_ERRORS"):
             driver.cmd_OAMS_DRYER_START(FakeGcmd({"TARGET": 55}))
         driver._telemetry["domain"] = {}
         with self.assertRaisesRegex(RuntimeError, "latched dryer fault"):
@@ -595,7 +595,7 @@ class FaultClearTests(unittest.TestCase):
         self.assertEqual(len(driver.console), 1)
         self.assertIn("could not clear the motion_timeout fault",
                       driver.console[0])
-        self.assertIn("OAMS_CLEAR_FAULT", driver.console[0])
+        self.assertIn("OAMSM_CLEAR_ERRORS", driver.console[0])
 
     def test_clear_names_the_unit_it_was_sent_to(self):
         # OAMS_CLEAR_FAULT OAMS=<idx> reaches the faulted unit; the reply

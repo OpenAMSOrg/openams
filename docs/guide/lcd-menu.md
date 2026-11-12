@@ -94,9 +94,9 @@ RESUME finishes the toolchange.
 | **Unload** › Rewind | `OAMS_UNLOAD_SPOOL OAMS=<unit> SPOOL=<bay>`: an AMS unit rewinds its loaded spool, with no cut and no extruder motion; use it once the filament is clear of the extruder | same |
 | Extrude 10mm | 10 mm forward at 4 mm/s (`M83`, `G1 E10 F240`), with the G-code state put back: the purge after a load | not printing; shows `Extrude (cold)` and runs nothing until the nozzle may extrude |
 | Retry | `OAMSM_RETRY FPS=<lane>`: continue the failed toolchange or unload from where it stopped | not printing, a failed toolchange |
-| Reset errors | `OAMSM_CLEAR_ERRORS` | not printing |
+| Clear errors | `OAMSM_CLEAR_ERRORS`: clears every unit's latched fault and re-reads the lanes | not printing |
 | Cancel load | `OAMSM_LOAD_FILAMENT_CANCEL` | a load in flight (a runout reload, for example) |
-| Clear fault | `OAMS_CLEAR_FAULT OAMS=<unit>` | not printing, a unit fault that the unit can clear |
+| Abandon | `OAMSM_ABANDON FPS=<lane>`: forget a failed Load or Unload from the panel (the filament stays where it stopped), then Clear errors | not printing, a failed panel Load or Unload |
 | **Tags** › Re-read tag | `OAMS_RFID_SCAN OAMS=<unit> BAY=<bay>` | not printing, a unit that reads tags on request |
 | **Tags** › It is this slot | `OAMS_RFID_SCAN OAMS=<unit> BAY=<bay> ASSERT=1`: the tag in this bay's reader field is this bay's | a unit whose tag reads the host attributes (OpenAMS 1 readers) |
 | **Calibrate** › Calibrate path | `OAMS_CALIBRATE_PTFE_LENGTH OAMS=<unit> SPOOL=<bay>` | not printing, a unit that calibrates its path |

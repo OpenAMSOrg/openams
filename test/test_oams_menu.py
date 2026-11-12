@@ -491,7 +491,7 @@ def test_no_option_value_carries_a_hash_klipper_would_cut(bench):
 def test_idle_and_unloaded_shows_what_can_run(bench):
     b = bench()
     assert b.lcd.home() == ["..", "Stop", "Load", "Extrude 10mm",
-                            "Reset errors", "Calibrate", "Follower",
+                            "Clear errors", "Calibrate", "Follower",
                             "Settings", "Status"]
     assert b.lcd.open("Load") == ["..", "Load tool", "Load spool",
                                   "Load, no cut"]
@@ -502,7 +502,7 @@ def test_a_loaded_lane_adds_unload(bench):
     run(b, ["OAMSM_TOOLCHANGE GROUP=T1"])
     assert b.units["unit1"].current_spool == 2
     assert b.lcd.home() == ["..", "Stop", "Load", "Unload", "Extrude 10mm",
-                            "Reset errors", "Calibrate", "Follower",
+                            "Clear errors", "Calibrate", "Follower",
                             "Settings", "Status"]
     assert b.lcd.open("Unload") == ["..", "Unload", "Unload, no cut", "Rewind"]
 
@@ -520,7 +520,7 @@ def test_a_paused_print_allows_manual_recovery(bench):
     run(b, ["OAMSM_TOOLCHANGE GROUP=T1"])
     b.printing("paused")
     assert b.lcd.home() == ["..", "Stop", "Load", "Unload", "Extrude 10mm",
-                            "Reset errors", "Calibrate", "Follower",
+                            "Clear errors", "Calibrate", "Follower",
                             "Settings", "Status"]
 
 
@@ -679,7 +679,7 @@ def test_retry_appears_with_a_failed_toolchange_and_runs_oamsm_retry(bench):
         b.printer.gcode.run_script("OAMSM_TOOLCHANGE GROUP=T1")
     assert b.lane()["toolchange_fault"]["group"] == "T1"
     entries = b.lcd.home()
-    assert "Retry" in entries and "Reset errors" in entries
+    assert "Retry" in entries and "Clear errors" in entries
     assert b.lcd.labels("Retry") == [
         ("Retry", []), ("Retry T1?", ["OAMSM_RETRY FPS=fps"])]
     b.units["unit1"].load_result = 0
@@ -688,10 +688,10 @@ def test_retry_appears_with_a_failed_toolchange_and_runs_oamsm_retry(bench):
     assert "Retry" not in b.lcd.home()
 
 
-def test_reset_errors_and_cancel_load_are_plain_entries(bench):
+def test_clear_errors_and_cancel_load_are_plain_entries(bench):
     b = bench()
     b.lcd.home()
-    b.lcd.select("Reset errors")
+    b.lcd.select("Clear errors")
     b.lcd.key("click")
     assert b.lcd.scripts == ["OAMSM_CLEAR_ERRORS"]
     run(b, b.lcd.scripts)
@@ -707,14 +707,31 @@ def test_reset_errors_and_cancel_load_are_plain_entries(bench):
     assert b.lcd.scripts == ["OAMSM_LOAD_FILAMENT_CANCEL"]
 
 
-def test_clear_fault_lists_the_units_with_a_fault_to_clear(bench):
+def test_a_unit_fault_is_cleared_with_clear_errors_alone(bench):
+    # One way to clear (2026-11-12): no Clear fault entry; Clear errors
+    # clears the unit's latch and resyncs the lanes.
     b = bench(units=TWO_UNITS, groups=TWO_UNIT_GROUPS)
     b.units["unit2"]._telemetry = {"domain": {"system_fault_name": "rfid_fault"}}
     entries = b.lcd.home()
-    assert "Clear fault" in entries
-    assert b.lcd.labels("Clear fault") == [
-        ("Clear fault", []), ("unit1 no fault", []),
-        ("Clear unit2?", ["OAMS_CLEAR_FAULT OAMS=2"])]
+    assert "Clear fault" not in entries
+    assert "Clear errors" in entries
+
+
+def test_abandon_forgets_a_failed_panel_load_only(bench):
+    b = bench()
+    b.units["unit1"].load_result = S.OAMS_OP_CODE_ERROR_UNSPECIFIED
+    with pytest.raises(b.printer.command_error):
+        b.printer.gcode.run_script("OAMSM_TOOLCHANGE GROUP=T1")
+    fault = b.lane()["toolchange_fault"]
+    entries = b.lcd.home()
+    if not fault["panel"]:
+        # The print's own (here: a toolchange outside a panel run) has none.
+        assert "Abandon" not in entries
+        b.manager._toolchange_faults["fps"]["panel"] = True
+        entries = b.lcd.home()
+    assert "Abandon" in entries
+    assert b.lcd.labels("Abandon") == [
+        ("Abandon", []), ("Abandon T1?", ["OAMSM_ABANDON FPS=fps"])]
 
 
 def test_tags_read_a_bay_and_confirm_it(bench):
@@ -1120,6 +1137,7 @@ def check_command(bench, line):
         "OPENAMS_UNLOAD": {"FPS"},
         "OAMSM_UNLOAD_FROM_TOOLHEAD": {"FPS"},
         "OAMSM_RETRY": {"FPS"},
+        "OAMSM_ABANDON": {"FPS"},
         "OAMSM_FOLLOWER": {"ENABLE", "DIRECTION", "FPS"},
         "OAMS_UNLOAD_SPOOL": {"OAMS", "SPOOL"},
         "OAMS_RFID_SCAN": {"OAMS", "BAY", "ASSERT"},

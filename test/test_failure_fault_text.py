@@ -16,8 +16,8 @@ S = importlib.import_module("oamspkg.oams_state")
 OAMS = importlib.import_module("oamspkg.oams").OAMS
 
 FPS = "fps1"
-HINT = ("the unit reports fault motor_drive_fault; clear it with "
-        "OAMS_CLEAR_FAULT OAMS=2, then OAMSM_CLEAR_ERRORS")
+HINT = ("the unit reports fault motor_drive_fault; Clear errors "
+        "(OAMSM_CLEAR_ERRORS) clears it")
 
 
 def unloading_failure(fault):

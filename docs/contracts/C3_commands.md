@@ -110,19 +110,41 @@ recovery on every AMS behind it. It is now left alone and named:
 `"OAMSM_CLEAR_ERRORS: skipped read-only box; it holds no error state to
 clear"`, after the units that could be cleared are. The hardware-snapshot
 guard still applies to those (`"OpenAMS hardware snapshot unavailable for %s"`).
-**Reset clears latched unit faults first (2026-11-08).** Each unit whose
-faults carry the `clear_fault` action (§5.7 of C2) gets its own
-`OAMS_CLEAR_FAULT OAMS=<idx>`; the command then judges the latches only after
-`FAULT_CLEAR_SETTLE_S` (15 s, the unit's own recovery window: an AMS 2 Pro's
-`motor_drive_fault` looked cleared at once and latched again seconds later),
-waits up to `FAULT_CLEAR_WAIT_S` (20 s) in all, resyncs as above, and raises
-`"OAMSM_CLEAR_ERRORS: a fault stayed latched after the clear on <units>"` for
-any that stayed. A lane's `toolchange_fault` is kept and named
-(`"OAMSM_CLEAR_ERRORS: the toolchange to T1 on lane fps is not finished: ..."`),
-so `RESUME` or `OAMSM_RETRY` still finishes it. A panel fault (`panel`) whose run
+**Reset clears latched unit faults first (2026-11-08).** Each unit with a
+latched firmware fault that offers an action (§5.7 of C2) gets its own
+`OAMS_CLEAR_FAULT OAMS=<idx>`. The command returns as soon as every unit has
+shown no latch for `FAULT_CLEAR_QUIET_S` (10 s, 2026-11-12: longer than an AMS
+2 Pro's `motor_drive_fault` took to latch again after looking cleared);
+otherwise it judges the latches after `FAULT_CLEAR_SETTLE_S` (15 s) and waits up
+to `FAULT_CLEAR_WAIT_S` (20 s) in all, resyncs as above, and raises
+`"OAMSM_CLEAR_ERRORS: <codes> on <unit> still latched after the clear; power the
+AMS off and on, then press Clear errors again"` for any that stayed. Until such
+a fault goes, its C2 entry's text ends in "Clear errors did not clear it: power
+the AMS off and on, then press Clear errors again." **Clear errors is the one
+clear the UIs offer (2026-11-12):** an AMS unit's firmware faults carry
+`clear_errors`, not `clear_fault`; `OAMS_CLEAR_FAULT` stays a console command. A
+lane's `toolchange_fault` is kept and named (`"OAMSM_CLEAR_ERRORS: the
+toolchange to T1 on lane fps is not finished: RESUME finishes it"`, or for a
+panel one `"Retry finishes it, Abandon (OAMSM_ABANDON) forgets it"`), so
+`RESUME` or `OAMSM_RETRY` still finishes it. A panel fault (`panel`) whose run
 never started its plan and fed nothing is dropped instead
 (`"OAMSM_CLEAR_ERRORS: the toolchange to T5 on lane fps had not started; cleared"`):
 it moved nothing, and a retry would only repeat the same refusal.
+
+### `OAMSM_ABANDON [FPS=<lane>]`
+`cmd_ABANDON` (2026-11-12). Forgets a lane's failed load or unload that the
+panel started (`toolchange_fault.panel`), so the lane stops showing it as not
+finished, then runs `OAMSM_CLEAR_ERRORS`'s Reset. The filament stays where it
+stopped (`"OAMSM_ABANDON: the toolchange to T1 on lane fps abandoned; the
+filament stays where it stopped"`). `FPS=` may be left out when one lane has a
+fault. Refused for the print's own fault while a print is printing or paused
+(`"OAMSM_ABANDON: the toolchange to T1 on lane fps is the print's: RESUME
+retries it, Unload backs it out, or cancel the print"`), and when nothing on the
+lane waits (`"OAMSM_ABANDON: nothing on lane fps is waiting to be finished"`,
+or without `FPS=` and no fault anywhere `"OAMSM_ABANDON: nothing is waiting to
+be finished"`).
+Advertised as C2 `commands.abandon`; the failed-toolchange alert offers it in
+place of Clear errors for a panel fault.
 
 ### `OAMSM_TOOLCHANGE GROUP=<name> [SLOT=<id>] [TEMP=<°C>]` / `OAMSM_TOOLCHANGE UNLOAD=1 [FPS=<lane>] [TEMP=<°C>]`
 `cmd_TOOLCHANGE` (2026-11-08). The failure guard every toolchange and unload

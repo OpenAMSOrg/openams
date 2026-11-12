@@ -733,7 +733,7 @@ class FaultLatchRequestTests(unittest.TestCase):
         result = completion.wait()
         self.assertFalse(result.ok)
         self.assertIn("firmware fault", result.message)
-        self.assertIn("OAMS_CLEAR_FAULT", result.message)
+        self.assertIn("Clear errors", result.message)
 
     def test_load_bay_under_lane_fault_settled_immediately(self):
         runtime, reactor, oam, events = self._runtime_with_fault()

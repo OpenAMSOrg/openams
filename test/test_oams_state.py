@@ -781,7 +781,7 @@ class FirmwareFaultLatchTests(unittest.TestCase):
         result = settles[0].result
         self.assertFalse(result.ok)
         self.assertIn("firmware fault", result.message)
-        self.assertIn("OAMS_CLEAR_FAULT", result.message)
+        self.assertIn("Clear errors", result.message)
         # No op should have started
         self.assertFalse(has(fx, S.StartLoad))
         self.assertFalse(has(fx, S.StartUnload))
