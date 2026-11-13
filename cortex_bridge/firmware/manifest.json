@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 28,
+   "file": "bridge-28.oac2",
+   "sha256": "d3600d2527af1294b444dad839952e4b57c4f30abe0ec1780bfbbd9e08652c59",
+   "released": "2026-11-12",
+   "notes": "After an AMS or the bridge restarts with filament still loaded (a power cycle, an AMS or bridge firmware update), the bridge picks the loaded spool up again by itself, so the next print keeps feeding with the AMS's assist instead of reporting a runout. The AMS HT reports one consistent filament sensor reading."
+  },
+  {
    "version": 26,
    "file": "bridge-26.oac2",
    "sha256": "acb922565a169159106188a6be61fe388c4915b59d9199049af2d0500be2642b",

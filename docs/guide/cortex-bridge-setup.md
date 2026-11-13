@@ -586,7 +586,7 @@ so OpenAMS doesn't load from an AMS while it dries with its spools turning.
 
 ### Dry while printing
 
-An AMS HT on its firmware 04.x or later, with bridge firmware 26, dries with
+An AMS HT on its firmware 04.x or later, with bridge firmware 26 or later, dries with
 filament loaded and keeps feeding the print, and loads during a dry. Start the dry before the print
 or during it, without rotation. On the bench an AMS HT on 05.00.22.19 printed
 PA while drying at 80 °C. An AMS 2 Pro, and an AMS HT on firmware 03.x,

@@ -2188,11 +2188,21 @@ class OAMS(oams_ext.UnitHooks):
         # This legacy response describes one feed path, not all AMS2 bays.
         # Only the full oams_cmd_stats snapshot may update the four-bay state.
         if self.device_family == "ams_ht":
-            self._note_f1s(
-                [int(bool(data["filament_present"])), 0, 0, 0],
-                params.get("#receive_time", self.reactor.monotonic()))
-            self.hub_hes_value = [
-                int(bool(data["hub_filament_present"])), 0, 0, 0]
+            now = params.get("#receive_time", self.reactor.monotonic())
+            # While oams_cmd_stats arrive they carry the unit's own inlet and
+            # outlet sensors, and they alone set the bay state. This answer's
+            # hub bit can come from elsewhere: a Cortex Bridge reports in it
+            # whether it thinks the bay is loaded, which it forgets when the
+            # HT goes silent (a power cycle, a firmware update) with the
+            # filament still out. Overwriting the outlet sensor with it every
+            # poll read as a runout during the next print. Without recent
+            # stats this answer is all there is, so it still counts.
+            last_stats = getattr(self, "_cmd_stats_time", None)
+            if last_stats is None or now - last_stats > self.BOARD_STATS_FRESH_S:
+                self._note_f1s(
+                    [int(bool(data["filament_present"])), 0, 0, 0], now)
+                self.hub_hes_value = [
+                    int(bool(data["hub_filament_present"])), 0, 0, 0]
             was_ready = getattr(self, "hardware_snapshot_ready", False)
             self.hardware_snapshot_ready = True
             tag_reader = getattr(self, "tag_reader", None)
@@ -2201,6 +2211,10 @@ class OAMS(oams_ext.UnitHooks):
             self.last_stats_time = params.get("#receive_time",
                                               self.reactor.monotonic())
         self._publish_telemetry("board", data)
+
+    #: How recent an oams_cmd_stats must be for an AMS HT's board status not
+    #: to set its bay sensors (stats come several times a second).
+    BOARD_STATS_FRESH_S = 3.0
 
     #: Dryer states that mean a cycle is in progress (C1 §4.4).
     _DRYER_RUNNING_STATES = ("preheat", "hold", "timed_dry", "cooldown")
@@ -3624,6 +3638,7 @@ class OAMS(oams_ext.UnitHooks):
             tag_reader.note_hardware_ready()
         self.last_stats_time = params.get("#receive_time",
                                           self.reactor.monotonic())
+        self._cmd_stats_time = self.last_stats_time
 
     def _oams_cmd_current_stats(self, params):
         self.i_value = self.u32_to_float(params["current_value"])

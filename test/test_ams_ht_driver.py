@@ -421,6 +421,29 @@ class DryerControlTests(unittest.TestCase):
         self.assertEqual(driver.hub_hes_value, [1, 0, 0, 0])
 
 
+    def test_board_status_does_not_overwrite_the_stats_sensors(self):
+        # Bench, 2026-11-12: after an AMS HT power cycle with T0 loaded, a
+        # Cortex Bridge's board status said hub 0 (it forgot the loaded bay)
+        # while the HT's own outlet sensor in oams_cmd_stats said 1. The board
+        # poll overwrote it every 1.3 s, and the next print read a runout.
+        driver = make_driver()
+        stats = {"fps_value": 0, "encoder_clicks": 0, "#receive_time": 100.0}
+        for b in range(4):
+            stats["f1s_hes_value_%d" % b] = 1 if b == 0 else 0
+            stats["hub_hes_value_%d" % b] = 1 if b == 0 else 0
+        driver._oams_cmd_stats(stats)
+        driver._board_status_received({
+            "filament_present": 1, "hub_filament_present": 0,
+            "#receive_time": 101.3})
+        self.assertEqual(driver.hub_hes_value, [1, 0, 0, 0])
+        self.assertEqual(driver.f1s_hes_value, [1, 0, 0, 0])
+        self.assertEqual(driver._telemetry["board"]["hub_filament_present"], 0)
+        # With no stats for a while, the board status is all there is.
+        driver._board_status_received({
+            "filament_present": 1, "hub_filament_present": 0,
+            "#receive_time": 100.0 + driver.BOARD_STATS_FRESH_S + 1.0})
+        self.assertEqual(driver.hub_hes_value, [0, 0, 0, 0])
+
     def test_domain_status_publishes_fault_names(self):
         driver = make_driver()
         driver.capabilities["firmware_capability_schema"] = 5

@@ -762,6 +762,25 @@ class OAMSManager(oams_ext.ManagerHooks):
                 oam.unreachable = None
                 oam.capabilities.pop("unreachable", None)
                 logging.info("OAMS %s: reachable again", name)
+                self._rearm_followers_of_unit(oam.oams_idx)
+
+    def _rearm_followers_of_unit(self, oams_idx):
+        """A unit back after a silence (a power cycle, a firmware update)
+        lost its follower with the session; re-arm the forward follower on
+        every LOADED lane it feeds, through the bounded re-arm loop, as after a
+        restart. A Cortex Bridge from firmware 28 picks the loaded bay up
+        again from the unit's own sensors when asked; an older one refuses,
+        and the loop gives up after its tries as it does today."""
+        get_state = getattr(getattr(self, "runtime", None), "get_state", None)
+        if get_state is None:
+            return
+        pending = self.__dict__.setdefault("_follower_rearm", {})
+        gave_up = self.__dict__.setdefault("_follower_gave_up", set())
+        for fps, lane in get_state().lanes.items():
+            if (lane.op == S.OP_LOADED and lane.unit is not None
+                    and lane.unit[0] == oams_idx and lane.following is not True):
+                gave_up.discard(fps)
+                pending[fps] = {"tries": 0, "next": 0.0}
 
     def check_unit_reachability(self, now):
         """Run the reachability rule now, e.g. when a unit reports its link
