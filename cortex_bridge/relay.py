@@ -64,6 +64,12 @@ STATUS_FILE = "status.json"
 CONTROL_SOCKET = "control.sock"
 AMS_UPDATE_METHOD = "ams_update"
 AMS_LISTEN_METHOD = "ams_listen"
+# The control methods this relay answers, listed in its status file. A command
+# from a newer checkout tells by it that the relay still runs older code (it
+# was not restarted after an OpenAMS update) before asking it for something
+# it lacks; a relay from before this list writes none.
+CONTROL_METHODS = ("status", "update", bridge_snapshot.SNAPSHOT_METHOD,
+                   AMS_UPDATE_METHOD, AMS_LISTEN_METHOD)
 AMS_IMAGE_MAX = 512 * 1024
 AMS_UNITS_WAIT_S = 5.0
 
@@ -252,6 +258,7 @@ class StatusFile:
             "firmware": None,
             "units": [],
             "update": None,
+            "methods": list(CONTROL_METHODS),
         }
 
     def set(self, **fields) -> None:

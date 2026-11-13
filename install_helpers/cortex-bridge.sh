@@ -239,13 +239,23 @@ cortex_bridge_updater_services()
     moonraker_has_section "update_manager openams" || return 0
     local tmp
     tmp="$(mktemp)"
+    # An entry written before OpenAMS managed it (by hand, or for
+    # klipper_openams) may have no managed_services line at all: then
+    # Moonraker restarts nothing after an update, and the relay keeps running
+    # the old code. Such an entry gets the template's line with the relay.
     awk -v unit="$CORTEX_BRIDGE_UNIT" '
-        /^\[update_manager openams\][ \t]*$/ { inside=1; print; next }
-        /^\[/ { inside=0 }
-        inside && /^managed_services[ \t]*:/ && index($0, unit) == 0 {
-            sub(/:[ \t]*/, ": " unit " ")
+        function add_missing() {
+            if (inside && !seen) print "managed_services: " unit " klipper"
+            inside=0
+        }
+        /^\[update_manager openams\][ \t]*$/ { inside=1; seen=0; print; next }
+        /^\[/ { add_missing() }
+        inside && /^managed_services[ \t]*:/ {
+            seen=1
+            if (index($0, unit) == 0) sub(/:[ \t]*/, ": " unit " ")
         }
         { print }
+        END { add_missing() }
     ' "$cfg" > "$tmp"
     if ! cmp -s "$tmp" "$cfg"; then
         cat "$tmp" > "$cfg"

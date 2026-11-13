@@ -217,6 +217,7 @@ Or downgrade the AMS with OpenAMS before you move it (step 6), to the version th
 | The command says | What to do |
 |---|---|
 | `Klipper is printing: ...` or `Klipper is paused: ...` | Let the print finish, or cancel it, then run the update again. |
+| `The bridge relay (the cortex-bridge service) still runs the OpenAMS code it started with ...`, or `Update failed: unknown method 'ams_update'` | The relay was not restarted after OpenAMS was updated. Answer `y` and the command restarts it and Klipper. Or run `sudo systemctl restart cortex-bridge`, press **FIRMWARE RESTART** in Mainsail, and run the update again. |
 | `the bridge is busy: an AMS is loading, unloading, drying or moving, or another update runs` | Wait until every AMS is idle, then run the update again. |
 | `bridge firmware ... cannot update an AMS` or `... cannot resume an AMS waiting in its loader` | Update the bridge first (step 1). |
 | `... comes in Bambu Lab's offline package ..., not as a download` | Import that package first (step 3). |

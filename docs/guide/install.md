@@ -126,7 +126,7 @@ is the customer guide; this is what it changes:
 | `dialout` group | Adds you to it, if you are not already a member |
 | `~/moonraker/moonraker/components/openams_bridge` | Symlink to `moonraker/openams_bridge`, plus `[openams_bridge]` in `moonraker.conf` |
 | `moonraker.asvc` | Allows Moonraker to restart `cortex-bridge` |
-| `[update_manager openams]` | `managed_services` gains `cortex-bridge`, so an update restarts the relay |
+| `[update_manager openams]` | `managed_services` gains `cortex-bridge` (an entry without the line gets `managed_services: cortex-bridge klipper`), so an update restarts the relay |
 | `oams.cfg` | On a printer without one: copied from [`oams_cortex_bridge_sample.cfg`](../../oams_cortex_bridge_sample.cfg), then the connected AMS units are added by `tools/cortex-bridge.py config --write` |
 
 On every printer, the installer also keeps its last run's output in

@@ -110,6 +110,24 @@ class CortexBridgeInstallTests(unittest.TestCase):
         self.assertNotIn("canbus_uuid", oams)
         self.assertIn("config --write --yes", result.stdout)
 
+    def test_an_update_entry_without_managed_services_gets_the_relay(self):
+        # Written by hand (or for klipper_openams) without managed_services:
+        # Moonraker would restart nothing after an update, and the relay would
+        # keep running the old code ("unknown method 'ams_update'").
+        (self.config / "moonraker.conf").write_text(
+            "[server]\n\n[update_manager openams]\ntype: git_repo\n"
+            "path: %s\norigin: https://github.com/OpenAMSOrg/openams.git\n"
+            "primary_branch: main\n\n[update_manager mainsail]\n"
+            "type: web\n" % ROOT)
+        self.plug_in_bridge()
+        self.assertInstalled(self.install())
+        conf = (self.config / "moonraker.conf").read_text()
+        section = conf.split("[update_manager openams]")[1].split("\n[")[0]
+        self.assertEqual(section.count("managed_services:"), 1, section)
+        self.assertIn("managed_services: cortex-bridge klipper", section)
+        self.assertNotIn("managed_services",
+                         conf.split("[update_manager mainsail]")[1])
+
     def test_a_bridge_waiting_for_firmware_also_counts(self):
         self.plug_in_bridge(pid="fe10", product="Cortex Updater")
         self.assertInstalled(self.install())

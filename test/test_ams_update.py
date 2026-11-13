@@ -549,5 +549,110 @@ class RelayTests(unittest.TestCase):
         self.assertEqual(result["code"], "host-lost")
 
 
+
+class StaleRelayTests(unittest.TestCase):
+    """The tools run from the checkout each time; the relay keeps the code it
+    started with until its service restarts. A customer's relay that was not
+    restarted after an update answered `unknown method 'ams_update'`."""
+
+    def setUp(self):
+        import json
+        import tempfile
+        import types
+        from unittest import mock
+        from cortex_bridge import cli, relay
+        self.cli, self.relay, self.mock, self.json = cli, relay, mock, json
+        self.tmp = tempfile.TemporaryDirectory()
+        self.run_dir = Path(self.tmp.name)
+        self.args = types.SimpleNamespace(run_dir=str(self.run_dir),
+                                          moonraker="http://moonraker",
+                                          yes=False)
+        self.calls = []
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write_status(self, **fields):
+        status = {"state": "running", "started": "2026-11-01T09:30:12Z"}
+        status.update(fields)
+        (self.run_dir / "status.json").write_text(self.json.dumps(status))
+
+    def old_relay(self):
+        self.write_status()      # a relay from before the methods list
+
+    def new_relay(self):
+        self.write_status(methods=list(self.relay.CONTROL_METHODS))
+
+    def test_the_relay_lists_what_it_answers(self):
+        status = self.relay.StatusFile(None).state
+        for method in ("status", "update", "support_snapshot", "ams_update",
+                       "ams_listen"):
+            self.assertIn(method, status["methods"])
+
+    def test_old_and_new_relays_are_told_apart(self):
+        self.assertTrue(self.cli.relay_lacks({"state": "running"}, "ams_update"))
+        self.assertFalse(self.cli.relay_lacks(
+            {"state": "running", "methods": ["ams_update"]}, "ams_update"))
+        # A relay that is not running is a different problem.
+        self.assertFalse(self.cli.relay_lacks(None, "ams_update"))
+        self.assertFalse(self.cli.relay_lacks({"state": "stopped"}, "ams_update"))
+
+    def ensure(self, *, answer="y", state="standby", restart_ok=True,
+               comes_back=True):
+        def fake_moonraker(url, path, post=False, timeout=5.0):
+            self.calls.append(path)
+            if not restart_ok:
+                raise OSError("400 Bad Request")
+            if comes_back:
+                self.new_relay()
+            return {"result": "ok"}
+        clock = [0.0]
+
+        def sleep(seconds):
+            clock[0] += seconds
+        mock = self.mock
+        with mock.patch.object(self.cli, "moonraker", fake_moonraker), \
+                mock.patch.object(self.cli, "printer_state", lambda url: state), \
+                mock.patch.object(self.cli, "restart_klipper",
+                                  lambda url, **kw: self.calls.append("FIRMWARE_RESTART")), \
+                mock.patch("builtins.input", lambda prompt: answer), \
+                mock.patch("sys.stdout"), mock.patch("sys.stderr"):
+            return self.cli.ensure_relay_current(
+                self.args, "ams_update", sleep=sleep, clock=lambda: clock[0])
+
+    def test_a_current_relay_is_left_alone(self):
+        self.new_relay()
+        self.assertTrue(self.ensure())
+        self.assertEqual(self.calls, [])
+
+    def test_an_old_relay_is_restarted_then_klipper(self):
+        self.old_relay()
+        self.assertTrue(self.ensure())
+        self.assertEqual(self.calls, [
+            "/machine/services/restart?service=cortex-bridge",
+            "FIRMWARE_RESTART"])
+
+    def test_no_restart_without_a_yes(self):
+        self.old_relay()
+        self.assertFalse(self.ensure(answer="n"))
+        self.assertEqual(self.calls, [])
+
+    def test_no_restart_during_a_print(self):
+        self.old_relay()
+        for state in ("printing", "paused"):
+            self.assertFalse(self.ensure(state=state))
+        self.assertEqual(self.calls, [])
+
+    def test_moonraker_refusing_the_restart_says_what_to_do(self):
+        self.old_relay()
+        self.assertFalse(self.ensure(restart_ok=False))
+        self.assertNotIn("FIRMWARE_RESTART", self.calls)
+
+    def test_a_relay_that_comes_back_old_is_not_trusted(self):
+        self.old_relay()
+        self.assertFalse(self.ensure(comes_back=False))
+        self.assertNotIn("FIRMWARE_RESTART", self.calls)
+
+
 if __name__ == "__main__":
     unittest.main()

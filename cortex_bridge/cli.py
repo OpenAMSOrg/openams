@@ -569,6 +569,80 @@ def cmd_ptfe(args) -> int:
 RELAY_ANSWER_WAIT = 20.0        # how long `version` waits for the relay's query
 
 
+RELAY_SERVICE = "cortex-bridge"
+RELAY_RESTART_WAIT = 60.0       # how long the relay gets to come back running
+
+
+def relay_lacks(status, method: str) -> bool:
+    """True when the running relay is older than this checkout. Tools run from
+    the checkout each time, but the relay keeps the code it started with until
+    its service restarts (an OpenAMS update through Moonraker restarts it; a
+    plain `git pull`, or an update entry without `managed_services`, does not).
+    The relay lists the control methods it answers in its status file, and a
+    relay from before that list writes none. A stopped relay is not older."""
+    if not status or status.get("state") in (None, "stopped"):
+        return False
+    return method not in (status.get("methods") or ())
+
+
+def restart_relay(args, method: str, *, sleep=time.sleep,
+                  clock=time.monotonic) -> bool:
+    """Restart the relay through Moonraker (moonraker.asvc allows it) and
+    wait until it runs the new code; False, with what to do, otherwise."""
+    by_hand = ("Run: sudo systemctl restart %s, then FIRMWARE RESTART in "
+               "Mainsail, then this command again." % RELAY_SERVICE)
+    try:
+        moonraker(args.moonraker,
+                  "/machine/services/restart?service=" + RELAY_SERVICE,
+                  post=True, timeout=RELAY_RESTART_WAIT)
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        print("Moonraker could not restart it (%s). %s" % (exc, by_hand),
+              file=sys.stderr)
+        return False
+    deadline = clock() + RELAY_RESTART_WAIT
+    while clock() < deadline:
+        status = read_status(Path(args.run_dir))
+        if status and status.get("state") == "running" \
+                and method in (status.get("methods") or ()):
+            print("The relay restarted with the new code.")
+            return True
+        sleep(1.0)
+    print("The relay has not come back running the new code. %s" % by_hand,
+          file=sys.stderr)
+    return False
+
+
+def ensure_relay_current(args, method: str, *, sleep=time.sleep,
+                         clock=time.monotonic) -> bool:
+    """True when the relay answers `method`. A relay that still runs older
+    code is restarted, after a yes and never during a print, then Klipper is
+    restarted to reconnect to the AMS units."""
+    status = read_status(Path(args.run_dir))
+    if not relay_lacks(status, method):
+        return True
+    started = (status.get("started") or "")[:16].replace("T", " ")
+    print("The bridge relay (the %s service) still runs the OpenAMS code it "
+          "started with%s, from before OpenAMS was updated, so it cannot do "
+          "this yet. A restart loads the new code."
+          % (RELAY_SERVICE, " at %s UTC" % started if started else ""))
+    state = printer_state(args.moonraker)
+    if state in ("printing", "paused"):
+        print("Klipper is %s: when no print runs, run: sudo systemctl restart "
+              "%s, then FIRMWARE RESTART in Mainsail, then this command again."
+              % (state, RELAY_SERVICE), file=sys.stderr)
+        return False
+    if not confirm("Restart the relay now? Klipper reconnects to the AMS "
+                   "units afterwards.", args.yes):
+        print("Nothing was changed. To do it yourself: sudo systemctl restart "
+              "%s, then FIRMWARE RESTART in Mainsail." % RELAY_SERVICE)
+        return False
+    if not restart_relay(args, method, sleep=sleep, clock=clock):
+        return False
+    restart_klipper(args.moonraker, why=" to reconnect to the AMS units",
+                    sleep=sleep, clock=clock)
+    return True
+
+
 def relay_running(run_dir: Path) -> bool:
     try:
         control_request({"method": "status"}, run_dir=run_dir, timeout=10)
@@ -885,6 +959,8 @@ def probe_board(args, unit: dict, chosen: list):
 
 
 def ams_firmware_update(args, images: list) -> int:
+    if not ensure_relay_current(args, "ams_update"):
+        return 1
     units = ams_units(args)
     if not units and not args.resume:
         print("The bridge did not report its AMS units (cortex-bridge.py "
@@ -1048,12 +1124,18 @@ def ams_firmware_update(args, images: list) -> int:
     print("Update failed: %s" % (result.get("message") or
                                  result.get("code") or "no answer"),
           file=sys.stderr)
+    if result.get("error") == "unknown-method":
+        print("The bridge relay runs older OpenAMS code: run sudo systemctl "
+              "restart %s, then FIRMWARE RESTART in Mainsail, then this "
+              "command again." % RELAY_SERVICE, file=sys.stderr)
     return 1
 
 
 def ams_firmware_listen(args) -> int:
     """Show every AMS loader line on the bus for a while: an AMS that waits
     in its loader (after an interrupted update) prints one every second."""
+    if not ensure_relay_current(args, "ams_listen"):
+        return 1
     started = time.monotonic()
     heard = {"lines": 0, "result": None}
 
