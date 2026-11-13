@@ -113,7 +113,8 @@ class Mfrc522:
 
     # FM17580 VersionReg is a production-version byte with no fixed reset
     # value. OpenAMS hardware has been observed with both A1 and EE.
-    VALID_VERSIONS = (0x88, 0x90, 0x91, 0x92, 0xA1, 0xB2, 0xEE)
+    # A clone reader reports A2 (customer report, 2026-11-12).
+    VALID_VERSIONS = (0x88, 0x90, 0x91, 0x92, 0xA1, 0xA2, 0xB2, 0xEE)
     def __init__(self, spi, reactor=None):
         self.spi = spi
         self.reactor = reactor

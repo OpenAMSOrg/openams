@@ -136,6 +136,15 @@ def test_fm17580_production_versions_are_accepted():
         assert (reader.COMMAND, reader.CMD_SOFT_RESET) in writes
 
 
+def test_clone_reader_version_a2_is_accepted():
+    reader = mfrc522.Mfrc522(FakeSpi())
+    writes = []
+    reader.reg_write = lambda reg, value: writes.append((reg, value))
+    reader.reg_read = lambda reg: 0xA2 if reg == reader.VERSION else 0
+
+    assert reader.initialize() == 0xA2
+    assert (reader.COMMAND, reader.CMD_SOFT_RESET) in writes
+
 def test_one_driver_owns_and_serializes_both_readers():
     class PairSpi:
         def __init__(self, mcu, queue):
@@ -633,6 +642,7 @@ def load_tests(loader, tests, pattern):
         unittest.FunctionTestCase(test_ready_serializes_dual_reader_drivers),
         unittest.FunctionTestCase(test_soft_reset_timeout_reports_command_register),
         unittest.FunctionTestCase(test_fm17580_production_versions_are_accepted),
+        unittest.FunctionTestCase(test_clone_reader_version_a2_is_accepted),
         unittest.FunctionTestCase(test_one_driver_owns_and_serializes_both_readers),
         unittest.FunctionTestCase(test_firmware_debug_decodes_shared_bus_state),
     ])
