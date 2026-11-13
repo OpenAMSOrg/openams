@@ -338,9 +338,15 @@ class SimTag:
 
 class SimChip(mfrc522.Mfrc522):
     """An MFRC522 whose transceive answers from simulated tags: REQA, WUPA,
-    bit-wise anticollision with the chip's collision position, SELECT and
-    HLTA. ``convention`` is how CollPos counts once known bits were sent
-    (the open hardware question, design G4)."""
+    bit-wise anticollision with the chip's collision position, SELECT,
+    HLTA, and MIFARE Classic AUTH and READ (a block reads as its number 16
+    times). ``convention`` is how CollPos counts once known bits were sent
+    (the open hardware question, design G4).
+
+    As a real MIFARE Classic tag, an authenticated tag ("AUTH") takes only
+    encrypted frames: with the reader's cipher off (stop_crypto()) any
+    frame, a second plaintext AUTH too, is noise to it. It stays silent and
+    drops back to IDLE."""
 
     LEVELS = {0x93: 0, 0x95: 1, 0x97: 2}
 
@@ -349,16 +355,33 @@ class SimChip(mfrc522.Mfrc522):
         self.tags = list(tags)
         self.convention = convention
         self.coll = 0
+        self.crypto = False  # Status2Reg MFCrypto1On
 
     def reg_write(self, reg, value):
-        pass
+        if reg == self.STATUS2:
+            self.crypto = bool(value & 0x08)
 
     def reg_read(self, reg):
+        if reg == self.STATUS2:
+            return 0x08 if self.crypto else 0
         return 0
 
     def _communicate(self, command, send_data, tx_last_bits=0, rx_align=0,
                      check_crc=False, collision=False):
         data = list(send_data)
+        authed = [t for t in self.tags if t.state == "AUTH"]
+        if command == self.CMD_MF_AUTHENT:
+            active = [t for t in self.tags if t.state == "ACTIVE"]
+            if authed and not self.crypto:
+                for tag in authed:
+                    tag.state = "IDLE"
+                raise mfrc522.Mfrc522NoCard("no card detected")
+            chosen = authed or active
+            if not chosen:
+                raise mfrc522.Mfrc522NoCard("no card detected")
+            chosen[0].state = "AUTH"
+            self.crypto = True
+            return [], 0
         if data[0] in (0x26, 0x52) and tx_last_bits == 7:
             woken = ("IDLE",) if data[0] == 0x26 else ("IDLE", "HALT")
             answering = [t for t in self.tags if t.state in woken]
@@ -367,11 +390,29 @@ class SimChip(mfrc522.Mfrc522):
             for tag in answering:
                 tag.state, tag.level = "READY", 0
             return [0x04, 0x00], 16
+        if authed:
+            if not self.crypto:
+                for tag in authed:
+                    tag.state = "IDLE"
+                raise mfrc522.Mfrc522NoCard("no card detected")
+            if data[0] == 0x30:
+                frame = [data[1]] * 16
+                return frame + self._calculate_crc(frame), 144
+            if data[0] == 0x50:
+                for tag in authed:
+                    tag.state = "HALT"
+                raise mfrc522.Mfrc522NoCard("no answer")
         if data[0] == 0x50:
             for tag in self.tags:
                 if tag.state == "ACTIVE":
                     tag.state = "HALT"
             raise mfrc522.Mfrc522NoCard("no answer")
+        if data[0] == 0x30:
+            # READ before AUTH: refused, the tag goes back to IDLE.
+            for tag in self.tags:
+                if tag.state == "ACTIVE":
+                    tag.state = "IDLE"
+            raise mfrc522.Mfrc522NoCard("no card detected")
         level = self.LEVELS[data[0]]
         ready = [t for t in self.tags
                  if t.state == "READY" and t.level == level]
@@ -480,6 +521,38 @@ class ReadUidsTests(unittest.TestCase):
         chip.read_uids()
         self.assertEqual(chip.select_uid(b), 0x18)
         self.assertEqual([t.state for t in tags], ["IDLE", "ACTIVE"])
+
+
+class BlockReadTests(unittest.TestCase):
+    """Mfrc522.read_block across sectors: each block authenticates with its
+    own sector key from the tag's plain selected state."""
+
+    KEY = [0xFF] * 6
+
+    def test_blocks_of_several_sectors_all_read(self):
+        # Customer report 2026-11-12: Bambu tags gave their UID, block 9
+        # (the identity read) read, then block 2 failed with "no card
+        # detected" every time. After block 9 the tag was still
+        # authenticated and ignored the plaintext AUTH for sector 0.
+        uid = bytes.fromhex("11223344")
+        tag = SimTag(uid)
+        chip = SimChip([tag])
+        self.assertEqual(chip.read_uids(), [uid])
+        chip.select_uid(uid)
+        for block in (9, 2, 4, 5, 8, 9, 12, 14):
+            with self.subTest(block=block):
+                self.assertEqual(
+                    chip.read_block(block, self.KEY, uid),
+                    bytes([block]) * 16)
+        self.assertFalse(chip.crypto)
+
+    def test_a_read_from_a_halted_tag_wakes_it(self):
+        uid = bytes.fromhex("04112233445566")
+        tag = SimTag(uid)
+        chip = SimChip([tag])
+        chip.read_uids()
+        self.assertEqual(tag.state, "HALT")
+        self.assertEqual(chip.read_block(6, self.KEY, uid), bytes([6]) * 16)
 
 
 class FakeMutex(object):
@@ -636,6 +709,7 @@ def load_tests(loader, tests, pattern):
     del tests, pattern
     return unittest.TestSuite([
         loader.loadTestsFromTestCase(ReadUidsTests),
+        loader.loadTestsFromTestCase(BlockReadTests),
         loader.loadTestsFromTestCase(FieldHandoffTests),
         unittest.FunctionTestCase(test_register_framing_and_crc),
         unittest.FunctionTestCase(test_oamsm_rfid_read_command),

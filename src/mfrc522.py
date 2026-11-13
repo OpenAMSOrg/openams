@@ -417,6 +417,20 @@ class Mfrc522:
         self._clear_bits(self.STATUS2, 0x08)
 
     def read_block(self, block, key, uid, key_b=False):
+        """One 16-byte block, authenticated with its sector's key.
+
+        A MIFARE Classic tag takes a plaintext AUTH only in its plain
+        selected state. After a block of another sector it is still
+        authenticated: stop_crypto() turns the cipher off in the reader
+        only, and the tag ignores a plaintext AUTH, which then times out as
+        "no card detected". So the tag is halted, woken and selected again
+        first. (The other way, a nested AUTH sent with the cipher still on,
+        is not relied on: clone readers may not do it.)"""
+        try:
+            self.halt()
+        except Mfrc522Error:
+            pass
+        self.select_uid(uid)
         self.authenticate(block, key, uid, key_b)
         try:
             frame = [self.PICC_MF_READ, block]
