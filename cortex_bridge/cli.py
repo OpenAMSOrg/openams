@@ -860,6 +860,10 @@ def cmd_ams_firmware(args) -> int:
                       "the new version after its next restart" % (
                           unit["uid"], name, done, done))
                 continue
+            if ams_firmware.version_unsupported(unit):
+                print("  %-12s %-10s %-12s no update available for this "
+                      "version" % (unit["uid"], name, unit["version"]))
+                continue
             if unit["version"] and listed:
                 step = ams_firmware.compare(unit["version"], listed[0])
                 note = {"same": "the newest listed",
@@ -979,6 +983,13 @@ def ams_firmware_update(args, images: list) -> int:
     if unit is None:
         print(why, file=sys.stderr)
         return 2
+    if ams_firmware.version_unsupported(unit):
+        # An unknown or garbled version reading: refused whatever the
+        # options (the bridge may refuse too, unsupported-version).
+        print("%s reports firmware version %s; no update is available for "
+              "it. Nothing was changed." % (unit["uid"], unit["version"]),
+              file=sys.stderr)
+        return 1
     family = unit["family"]
     name = ams_firmware.FAMILIES.get(family, "unknown AMS")
     if family is None:

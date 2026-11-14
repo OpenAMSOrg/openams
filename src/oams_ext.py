@@ -69,6 +69,10 @@ class UnitHooks(object):
     def _ext_capabilities_resolved(self):
         """After the unit's capabilities were resolved at connect."""
 
+    def _ext_session_reattached(self):
+        """After the unit's session was configured again over the same link
+        (reattach_session), before it counts as back."""
+
     def _ext_reset_commands(self):
         """Start of the telemetry setup: forget extension command handles."""
 

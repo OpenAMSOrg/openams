@@ -366,6 +366,22 @@ def units_from_snapshot(snapshot: dict) -> list:
     return units
 
 
+# Bambu Lab's AMS firmware versions have a small first part (single digits
+# to date). A reading outside that range is unknown or garbled, and no update
+# is offered for it.
+MAX_KNOWN_MAJOR = 9
+
+
+def version_unsupported(unit: dict) -> bool:
+    """True when the unit reports a firmware version whose first part is
+    outside the known range: an unknown or garbled reading, for which no
+    update is offered. An absent or malformed version is not this case."""
+    try:
+        return parse_version(unit.get("version") or "")[0] > MAX_KNOWN_MAJOR
+    except AmsFirmwareError:
+        return False
+
+
 def compare(installed: str, target: str) -> str:
     """"upgrade", "downgrade" or "same"."""
     a, b = parse_version(installed), parse_version(target)

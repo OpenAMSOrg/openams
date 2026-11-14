@@ -34,6 +34,9 @@ OAMS_OP_CODE_UNCALIBRATED = 8
 OAMS_OP_CODE_SESSION_LOST = 9
 SESSION_LOST_TEXT = ("host communication lost: the unit stopped and needs "
                      "FIRMWARE_RESTART")
+# A unit whose session OpenAMS re-establishes by itself (H9e).
+SESSION_LOST_REATTACH_TEXT = ("host communication lost: the unit stopped;"
+                              " OpenAMS is reconnecting it")
 
 
 def describe_code(code, fault=None):

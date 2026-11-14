@@ -68,7 +68,7 @@ CODES = ("ok", "no-session", "busy", "not-master", "confirm", "no-unit",
          "family", "model-mismatch", "model-unknown", "bad-image",
          "too-large", "block-size", "no-loader", "loader-silent",
          "host-stalled", "verify-timeout", "aborted", "host-lost",
-         "master-lost", "no-rejoin", "isolation")
+         "master-lost", "no-rejoin", "isolation", "unsupported-version")
 CODE_TEXT = {
     "no-session": "the bridge has no update session for this request",
     "busy": "the bridge is busy: an AMS is loading, unloading, drying or "
@@ -95,6 +95,8 @@ CODE_TEXT = {
                  "60 s; power it off and on",
     "isolation": "another AMS stopped answering or entered its loader "
                  "too, so the bridge stopped before erasing anything",
+    "unsupported-version": "no update is available for the firmware "
+                           "version this AMS reports; nothing was changed",
 }
 UNIT_STATES = ("empty", "application", "silent", "loader")
 

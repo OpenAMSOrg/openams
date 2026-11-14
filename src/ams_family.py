@@ -356,6 +356,10 @@ def resolve_capabilities(configured, constants):
             ("host_unload_clear", "AMS_CAP_HOST_UNLOAD_CLEAR"),
             ("board_telemetry", "AMS_CAP_BOARD_TELEMETRY"),
             ("link_status", "AMS_CAP_LINK_STATUS"),
+            # A unit whose session OpenAMS may re-establish after its host
+            # watchdog fired (H9e): it keeps running, and takes Klipper's
+            # config_reset and a new configuration, or keeps its own.
+            ("session_reattach", "AMS_CAP_SESSION_REATTACH"),
             # A unit that decodes its spools' tags itself (C1 section 4.7.1);
             # absent means 0, and the key is then not published at all.
             ("tray_info", "AMS_CAP_TRAY_INFO"),

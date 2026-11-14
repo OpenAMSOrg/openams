@@ -24,6 +24,9 @@ Everything in it passes through one ``Redactor`` first, which replaces:
   stays on the printer, so two reports from the same printer name the same
   unit the same way, and nobody else can reverse it;
 - RFID tag UIDs and tag payloads;
+- the byte fields Klipper's message dumps print as Python bytes literals
+  (``data=b'...'``), whose content no rule here can tell apart from an
+  identifier or a secret, with ``<bytes>``;
 - Spoolman spool contents, except the IDs.
 
 Kept as they are (the owner's decisions of 2026-11-08): the bridge's own USB
@@ -162,6 +165,11 @@ _SERIAL_WORD = re.compile(
     r"(?P<value>[0-9A-Fa-f]{24})(?![0-9A-Za-z])")
 _IDENTITY_REPLY = re.compile(r"\buid0=(\d+)[ ,]+uid1=(\d+)[ ,]+uid2=(\d+)")
 BRIDGE_SERIAL = re.compile(r"^CB[0-9A-Fa-f]{6,}$")
+
+# A bytes literal as Klipper's message dumps print a message's byte fields:
+# ``data=b'\x01\x02'`` in "Sent"/"Receive" lines, ``'data': b'...'`` in a
+# "got {...}" line. An empty one is left alone.
+_BYTES_LITERAL = re.compile(r"\bb(?P<q>['\"])(?:\\.|(?!(?P=q))[^\\\n])+(?P=q)")
 
 _HEX32 = re.compile(r"\b[0-9a-fA-F]{32}\b")
 _HEX_LONG = re.compile(r"\b[0-9a-fA-F]{48,}\b")
@@ -584,6 +592,7 @@ class Redactor:
         if not text:
             return text
         text = self._scrub_known(text)
+        text = self._sub_count(_BYTES_LITERAL, "<bytes>", text, "byte fields")
         text = self._secrets_and_keys(text)
         text = _URL.sub(self.url, text)
         text = _USERPASS_AT.sub(self._userpass, text)

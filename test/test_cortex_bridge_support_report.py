@@ -777,6 +777,29 @@ class RedactorTests(unittest.TestCase):
                          "findings are masked")
         self.assertEqual(redactor.counts, {}, "checking counts nothing")
 
+    def test_byte_fields_in_klipper_message_dumps(self):
+        """Klipper's message dumps print byte fields as Python bytes literals.
+        Their content can be anything, so each one is replaced whole, in both
+        forms Klipper prints, and the last check finds what is left."""
+        redactor = self.redactor()
+        for value in (b"\x01\x02'\"\\abc\n", b"it's", bytes(range(256)),
+                      b"\xd0" * 20):
+            sent = ("Sent 5 1234.5 1234.5 30: seq: 1b, some_command data=%r"
+                    " bay=1" % (value,))
+            self.assertEqual(redactor.redact_text(sent),
+                             "Sent 5 1234.5 1234.5 30: seq: 1b, some_command"
+                             " data=<bytes> bay=1")
+            got = "mcu 'oams1': got %r" % ({"#name": "some_response",
+                                            "data": value, "part": 0},)
+            redacted = redactor.redact_text(got)
+            self.assertNotIn(repr(value), redacted)
+            self.assertIn("'data': <bytes>", redacted)
+            self.assertEqual(redactor.redact_text(redacted), redacted)
+            self.assertEqual([kind for kind, _, _ in redactor.find_leaks(sent)],
+                             ["byte fields"])
+        self.assertEqual(redactor.redact_text("empty data=b'' and Klipper's"),
+                         "empty data=b'' and Klipper's")
+
     def test_tag_uids_in_free_text(self):
         """Finding 1: every format the host code logs a tag in."""
         redactor = self.redactor()

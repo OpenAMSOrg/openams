@@ -2168,20 +2168,180 @@ class OAMS(oams_ext.UnitHooks):
             data[key + "_name"] = self._controller_fault_name(data[key])
         self._publish_telemetry("domain", data)
         # H9c: the unit's host-communication watchdog fired and it
-        # deconfigured itself; hand off to the reactor thread once.
+        # deconfigured itself; hand off to the reactor thread once. A frame
+        # the unit sent before OpenAMS re-established its session is stale.
         if (data.get("system_fault_name") == "host_communication_lost"
-                and getattr(self, "session_lost", None) is None):
+                and getattr(self, "session_lost", None) is None
+                and not self._session_just_restored(data["timestamp"])):
             self.reactor.register_async_callback(
                 lambda eventtime: self._on_session_lost())
 
     def _on_session_lost(self):
-        self.session_lost = S.SESSION_LOST_TEXT
+        if getattr(self, "session_lost", None) is not None:
+            return
+        reattach = self.session_reattach_supported()
+        self.session_lost = (S.SESSION_LOST_REATTACH_TEXT if reattach
+                             else S.SESSION_LOST_TEXT)
         logging.error("OAMS unit %s: %s", self.oams_idx, self.session_lost)
         self.capabilities["session_lost"] = self.session_lost
+        # Kept to restore when the session comes back (H9e).
+        self._normal_motion_before_loss = self.capabilities.get(
+            "normal_motion", True)
         self.capabilities["normal_motion"] = False
         mgr = self.printer.lookup_object("oams_manager", None)
         if mgr is not None and hasattr(mgr, "unit_session_lost"):
             mgr.unit_session_lost(self.oams_idx, self.session_lost)
+
+    # ------------------------------------------------- session re-attach (H9e)
+
+    #: After a re-established session, a session-lost report the unit sent
+    #: before it (a queued telemetry frame or a held terminal) is stale.
+    REATTACH_GRACE_S = 2.0
+    #: Klipper's get_config query, which every firmware answers.
+    GET_CONFIG_FORMATS = (
+        "get_config",
+        "config is_config=%c crc=%u is_shutdown=%c move_count=%hu")
+
+    def _session_just_restored(self, when):
+        restored = getattr(self, "_session_restored_at", None)
+        return (restored is not None and when is not None
+                and when - restored < self.REATTACH_GRACE_S)
+
+    def _mcu_session_config(self):
+        """The commands Klipper configured this unit's MCU with at connect
+        (allocate_oids, every config command, finalize_config, then the init
+        commands) and the call that sends one, or None when this Klipper
+        does not keep them where OpenAMS can find them."""
+        helper = getattr(self.mcu, "_config_helper", None) or self.mcu
+        config = list(getattr(helper, "_config_cmds", None) or ())
+        init = list(getattr(helper, "_init_cmds", None) or ())
+        serial = (getattr(helper, "_serial", None)
+                  or getattr(self.mcu, "_serial", None))
+        send = getattr(serial, "send", None)
+        if (not callable(send) or not config
+                or not config[0].startswith("allocate_oids")
+                or not config[-1].startswith("finalize_config")):
+            return None
+        return config + init, send
+
+    def session_reattach_supported(self):
+        """Whether OpenAMS can re-establish this unit's session after its
+        host watchdog fired, without FIRMWARE_RESTART (H9e).
+
+        A firmware that says so (AMS_CAP_SESSION_REATTACH) can. So can a
+        relaying firmware (AMS_CAP_LINK_STATUS: a Cortex Bridge's virtual
+        MCU), whose session after a watchdog trip takes Klipper's
+        config_reset and a new configuration while the bridge keeps
+        running. A firmware that is a real Klipper MCU would shut down on a
+        config_reset outside shutdown, so no other unit is tried."""
+        caps = getattr(self, "capabilities", None) or {}
+        if not (caps.get("session_reattach") or caps.get("link_status")):
+            return False
+        if getattr(self, "connect_refusal", None):
+            return False
+        try:
+            self.mcu.lookup_command("config_reset")
+            self.mcu.lookup_query_command(*self.GET_CONFIG_FORMATS)
+        except Exception:
+            return False
+        return self._mcu_session_config() is not None
+
+    #: The follower's stop after a re-established session is confirmed by
+    #: the unit's reply. A Cortex Bridge refuses it while an operation or a
+    #: dryer transaction is still in flight on the unit (bridge firmware 28
+    #: also until its next loop had seen the new session), so it is tried a
+    #: few times a little apart; the manager tries the whole re-attach again
+    #: later if it never is.
+    REATTACH_STOP_TRIES = 5
+    REATTACH_STOP_WAIT_S = 0.2
+
+    def _stop_follower_after_reattach(self):
+        if self.oams_follower_cmd is None:
+            return True
+        for _attempt in range(self.REATTACH_STOP_TRIES):
+            self._follower_reply = None
+            self.oams_follower_cmd.send([0, FOLLOWER_REVERSE])
+            reply = self._await_follower_reply(self.REATTACH_STOP_WAIT_S,
+                                               OAMS_STATUS_STOPPED)
+            if reply is self._NO_WAIT:
+                return False
+            if reply is not None and reply["code"] == OAMS_OP_CODE_SUCCESS:
+                return True
+            if reply is not None:
+                # Refused at once: give the unit a moment before the next.
+                self.reactor.pause(self.reactor.monotonic()
+                                   + self.REATTACH_STOP_WAIT_S)
+        return False
+
+    #: reattach_session results.
+    REATTACHED = "reattached"      # configured again, and in sync
+    SESSION_INTACT = "intact"      # the unit's session never went away
+    REATTACH_FAILED = "failed"     # try again later
+
+    def reattach_session(self):
+        """Re-establish the unit's session after its host watchdog fired
+        (H9e). Runs on the reactor in a callback of its own: it queries the
+        unit and waits for the replies. Returns REATTACHED once the unit is
+        configured again and in sync, SESSION_INTACT when its session was
+        never lost (a unit merely silent), REATTACH_FAILED to try again.
+
+        Only motion-free steps: Klipper's get_config, then config_reset and
+        the same configuration as at connect (the unit's session, its PTFE
+        length), then the state read back from the unit (CLEAR_ERRORS'
+        resync: which bay is loaded). Nothing moves: the follower is sent its
+        stop, which must be confirmed (a firmware may hold it again with a
+        new session), the manager re-arms a loaded lane's follower through
+        its normal re-arm path, and a paused print continues with RESUME."""
+        if not self.session_reattach_supported():
+            return self.REATTACH_FAILED
+        get_config = self.mcu.lookup_query_command(*self.GET_CONFIG_FORMATS)
+        params = get_config.send() or {}
+        configured = params.get("is_config") and not params.get("is_shutdown")
+        if (configured and getattr(self, "session_lost", None) is None
+                and not getattr(self, "reattach_stop_pending", False)):
+            return self.SESSION_INTACT
+        if not configured:
+            commands, send = self._mcu_session_config()
+            self.mcu.lookup_command("config_reset").send()
+            for command in commands:
+                send(command)
+            params = get_config.send() or {}
+            if not params.get("is_config") or params.get("is_shutdown"):
+                logging.warning("OAMS unit %s: the session did not come back"
+                                " (configured=%s, shutdown=%s); trying again",
+                                self.oams_idx, params.get("is_config"),
+                                params.get("is_shutdown"))
+                return self.REATTACH_FAILED
+            self._session_restored_at = self.reactor.monotonic()
+            self.reattach_stop_pending = True
+        # The host recorded the follower stopped when the session was lost;
+        # the unit must match before the session counts as back (bridge
+        # firmware 28 held its standing follower again by itself once a
+        # session was configured). Only the manager's re-arm loop may turn it
+        # on.
+        if not self._stop_follower_after_reattach():
+            logging.warning("OAMS unit %s: the follower's stop was not"
+                            " confirmed after the session came back; trying"
+                            " again", self.oams_idx)
+            return self.REATTACH_FAILED
+        self.reattach_stop_pending = False
+        self._session_restored_at = self.reactor.monotonic()
+        if getattr(self, "session_lost", None) is not None:
+            self.session_lost = None
+            self.capabilities.pop("session_lost", None)
+            self.capabilities["normal_motion"] = getattr(
+                self, "_normal_motion_before_loss", True)
+        self.clear_errors()
+        try:
+            self._ext_session_reattached()
+        except Exception:
+            # An extension's hook never fails the re-attach: the session is
+            # back, and the manager still re-arms the unit's lanes.
+            logging.exception("OAMS unit %s: the extension's re-attach hook"
+                              " failed", self.oams_idx)
+        logging.info("OAMS unit %s: session re-established after its host"
+                     " watchdog fired", self.oams_idx)
+        return self.REATTACHED
 
     def _board_status_received(self, params):
         data = self._telemetry_data(params)
@@ -3751,7 +3911,9 @@ class OAMS(oams_ext.UnitHooks):
         # FIRMWARE_RESTART reason and blocks motion); the completion below
         # then finds nothing in flight.
         if (code == S.OAMS_OP_CODE_SESSION_LOST
-                and getattr(self, "session_lost", None) is None):
+                and getattr(self, "session_lost", None) is None
+                and not self._session_just_restored(
+                    params.get("#receive_time", self.reactor.monotonic()))):
             self._on_session_lost()
         # Publish the completion sentinel last, then notify the store (if
         # bound). The gen is the firmware echo (wire_gen) under the *2 protocol,
@@ -3787,7 +3949,9 @@ class OAMS(oams_ext.UnitHooks):
             return
         value = params["value"] if calibrating else None
         if (code == S.OAMS_OP_CODE_SESSION_LOST
-                and getattr(self, "session_lost", None) is None):
+                and getattr(self, "session_lost", None) is None
+                and not self._session_just_restored(
+                    params.get("#receive_time", self.reactor.monotonic()))):
             self._on_session_lost()
         if (self._active_action is not None and gen == self._active_gen
                 and action in (self._active_action, self.status_error)):

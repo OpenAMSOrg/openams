@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 29,
+   "file": "bridge-29.oac2",
+   "sha256": "e01ec6c11ee19ed4cd9603cfa6191b97f3a43eb1462f853284fae2b4cf0f5a52",
+   "released": "2026-11-13",
+   "notes": "After a host stall trips the bridge's host watchdog (a slow print start, for example), each AMS reconnects by itself, without FIRMWARE_RESTART, and OpenAMS re-arms its follower; after any restart the follower comes back only when OpenAMS re-arms it, so update OpenAMS with this firmware. AMS units that read their own tags can send OpenAMS each read in full."
+  },
+  {
    "version": 28,
    "file": "bridge-28.oac2",
    "sha256": "d3600d2527af1294b444dad839952e4b57c4f30abe0ec1780bfbbd9e08652c59",

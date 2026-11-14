@@ -289,6 +289,53 @@ class SnapshotTests(unittest.TestCase):
                           ("ams2", "", True)])
 
 
+class UnsupportedVersionTests(unittest.TestCase):
+    """No update is offered for a version outside the known range: an
+    unknown or garbled reading."""
+
+    def test_out_of_range_versions(self):
+        units = fw.units_from_snapshot({"units": [
+            {"uid": "d4", "index": 128, "link": "online", "family": "ams_ht",
+             "ams_version": [0, 0, 0, 12]},
+            {"uid": "e5", "index": 129, "link": "online", "family": "ams_ht",
+             "ams_version": [19, 22, 0, 5]},
+        ]})
+        self.assertEqual(units[0]["version"], "12.00.00.00")
+        self.assertTrue(fw.version_unsupported(units[0]))
+        self.assertFalse(fw.version_unsupported(units[1]))
+        for version in ("10.00.00.00", "12.00.00.00", "42.01.02.03",
+                        "77.00.00.01", "255.00.00.00"):
+            self.assertTrue(fw.version_unsupported({"version": version}), version)
+        for version in ("00.00.06.40", "01.00.07.00", "03.00.21.29",
+                        "05.00.22.19", "09.99.99.99"):
+            self.assertFalse(fw.version_unsupported({"version": version}), version)
+
+    def test_unknown_versions(self):
+        self.assertFalse(fw.version_unsupported({"version": ""}))
+        self.assertFalse(fw.version_unsupported({"version": None}))
+        self.assertFalse(fw.version_unsupported({"version": "not a version"}))
+        self.assertFalse(fw.version_unsupported({}))
+
+
+class UnsupportedVersionUpdateTests(unittest.TestCase):
+    def test_update_stops_before_anything_is_fetched_or_sent(self):
+        import argparse
+        from unittest import mock
+        from cortex_bridge import cli
+        args = argparse.Namespace(unit="128", resume=False, family=None,
+                                  version="latest", board=None, force=True,
+                                  yes=True, verbose=False, wait_loader=0,
+                                  run_dir="/nonexistent", moonraker="")
+        unit = {"uid": "d4", "index": 128, "family": "ams_ht",
+                "online": True, "version": "12.00.00.00"}
+        with mock.patch.object(cli, "ams_units", return_value=[unit]), \
+                mock.patch.object(cli, "control_request") as request, \
+                mock.patch.object(fw, "fetch") as fetch:
+            self.assertEqual(cli.ams_firmware_update(args, []), 1)
+        request.assert_not_called()
+        fetch.assert_not_called()
+
+
 class InstalledTests(unittest.TestCase):
     def test_record_and_read(self):
         cache = Path(tempfile.mkdtemp())

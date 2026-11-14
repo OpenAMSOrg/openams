@@ -728,14 +728,16 @@ class OAMSManager(oams_ext.ManagerHooks):
             self.runtime.dispatch(
                 S.UnitSessionLost(fps, oams_idx, reason, printing))
 
-    def _check_unit_silence(self, now):
+    def _check_unit_silence(self, now, defer=False):
         """C1 §6.2: a unit that stops sending its stats frames is unreachable.
 
         Silence longer than that unit's host watchdog plus a slack second
         settles its in-flight work and stops the host operating it, until its
         frames return. A relaying firmware that reports its device's link
         (C1 §7.2 AMS_CAP_LINK_STATUS) as down is unreachable the same way,
-        at once and without waiting for any silence.
+        at once and without waiting for any silence. With ``defer`` the
+        settling (and the PAUSE it may issue) runs in a reactor callback of
+        its own instead of in the caller.
         """
         for name, oam in self.oams.items():
             watchdog = getattr(oam, "host_watchdog_ms", None)
@@ -756,13 +758,92 @@ class OAMSManager(oams_ext.ManagerHooks):
                 oam.capabilities["unreachable"] = oam.unreachable
                 (logging.error if silent else logging.warning)(
                     "OAMS %s: %s", name, oam.unreachable)
-                self.unit_session_lost(oam.oams_idx, oam.unreachable)
+                if defer:
+                    self.reactor.register_callback(
+                        lambda eventtime, idx=oam.oams_idx,
+                        reason=oam.unreachable:
+                        self.unit_session_lost(idx, reason))
+                else:
+                    self.unit_session_lost(oam.oams_idx, oam.unreachable)
             elif (not silent and not link_down
                     and getattr(oam, "unreachable", None) is not None):
                 oam.unreachable = None
                 oam.capabilities.pop("unreachable", None)
                 logging.info("OAMS %s: reachable again", name)
                 self._rearm_followers_of_unit(oam.oams_idx)
+
+    #: H9e: the first try to re-establish a lost session comes this long
+    #: after the loss; each failed try doubles the wait, up to the cap.
+    REATTACH_FIRST_S = 1.0
+    REATTACH_MAX_S = 30.0
+
+    def _reattach_lost_sessions(self, now):
+        """H9e: re-establish the session of a unit whose host watchdog fired
+        (C1 §6.2), so a host stall needs no FIRMWARE_RESTART.
+
+        Only a unit that can (``session_reattach_supported``: a Cortex
+        Bridge's virtual MCU, or a firmware that says so) is tried. Each try
+        runs in a reactor callback of its own, because it queries the unit
+        and waits for the replies; the monitor tick never waits for it."""
+        tries = self.__dict__.setdefault("_reattach", {})
+        for name, oam in self.oams.items():
+            # A unit whose watchdog latched (its telemetry or a terminal said
+            # so), or one silent past its watchdog whose relay still reports
+            # the device reachable: a bridge slot that lost its session sends
+            # no stats, and a probe tells which it is.
+            silent = (getattr(oam, "unreachable", None) is not None
+                      and getattr(oam, "link_reachable", None) is not False)
+            # A unit configured again whose follower stop is unconfirmed.
+            unstopped = getattr(oam, "reattach_stop_pending", False) is True
+            if (getattr(oam, "session_lost", None) is None and not silent
+                    and not unstopped):
+                tries.pop(name, None)
+                continue
+            supported = getattr(oam, "session_reattach_supported", None)
+            if not callable(supported) or not supported():
+                continue
+            entry = tries.get(name)
+            if entry is None:
+                entry = tries[name] = {"next": now + self.REATTACH_FIRST_S,
+                                       "wait": self.REATTACH_FIRST_S,
+                                       "running": False, "tries": 0}
+            if entry["running"] or now < entry["next"]:
+                continue
+            entry["running"] = True
+            self.reactor.register_callback(
+                lambda eventtime, name=name: self._reattach_unit(name))
+
+    def _reattach_unit(self, name):
+        oam = self.oams.get(name)
+        entry = self.__dict__.setdefault("_reattach", {}).get(name)
+        result = None
+        try:
+            result = oam.reattach_session() if oam is not None else None
+        except Exception:
+            logging.exception("OAMS %s: re-establishing the session failed",
+                              name)
+        ok = result == getattr(oam, "REATTACHED", object())
+        if entry is not None:
+            entry["running"] = False
+            entry["tries"] += 1
+            if not ok:
+                # Failed, or the session was intact (the unit is silent for
+                # another reason): look again later, less and less often.
+                entry["wait"] = min(entry["wait"] * 2, self.REATTACH_MAX_S)
+                entry["next"] = self.reactor.monotonic() + entry["wait"]
+        if not ok:
+            return
+        self._reattach.pop(name, None)
+        # The loaded lane's follower comes back through the bounded re-arm
+        # loop, as after a silence or a restart; nothing else moves.
+        self._rearm_followers_of_unit(oam.oams_idx)
+        gcode = self.printer.lookup_object("gcode", None)
+        respond = getattr(gcode, "respond_info", None)
+        if callable(respond):
+            paused = getattr(self.printer.lookup_object("pause_resume", None),
+                             "is_paused", False)
+            respond("OpenAMS: %s is connected again after the host stalled%s"
+                    % (name, "; RESUME continues the print" if paused else ""))
 
     def _rearm_followers_of_unit(self, oams_idx):
         """A unit back after a silence (a power cycle, a firmware update)
@@ -776,11 +857,20 @@ class OAMSManager(oams_ext.ManagerHooks):
             return
         pending = self.__dict__.setdefault("_follower_rearm", {})
         gave_up = self.__dict__.setdefault("_follower_gave_up", set())
+        reactor = getattr(self, "reactor", None)
+        printing = self._print_job_active(
+            reactor.monotonic() if reactor is not None else 0.0)
         for fps, lane in get_state().lanes.items():
             if (lane.op == S.OP_LOADED and lane.unit is not None
                     and lane.unit[0] == oams_idx and lane.following is not True):
                 gave_up.discard(fps)
-                pending[fps] = {"tries": 0, "next": 0.0}
+                # A lane is never "settled" while a print job runs, so the
+                # re-arm keeps the print's arming: a print resumed before
+                # the unit came back already queued it, and one running now
+                # needs it.
+                print_arm = printing or bool(
+                    (pending.get(fps) or {}).get("print"))
+                pending[fps] = {"tries": 0, "next": 0.0, "print": print_arm}
 
     def check_unit_reachability(self, now):
         """Run the reachability rule now, e.g. when a unit reports its link
@@ -944,6 +1034,7 @@ class OAMSManager(oams_ext.ManagerHooks):
 
     def start_monitor(self):
         self.stop_monitor()
+        self._monitor_due = None
         self.monitor_timer = self.reactor.register_timer(
             self._monitor, self.reactor.NOW)
         for name, oam in self.oams.items():
@@ -1109,27 +1200,44 @@ class OAMSManager(oams_ext.ManagerHooks):
             self.monitor_timer = None
 
     def _monitor(self, eventtime):
+        # H9d: a monitor tick that starts late by more than half a unit's
+        # host watchdog means Klipper's reactor itself stalled (C1 §6.2), so
+        # that unit's watchdog may have fired while nothing was watching.
+        # Lateness is measured against the time this timer asked for, not
+        # against the previous tick: a tick that ran long (a query waiting
+        # on its reply) delays the next one without any stall, and on
+        # 2026-11-13 that read as a 24.8 s "host stall".
+        due = getattr(self, "_monitor_due", None)
+        if due is not None:
+            late = eventtime - due
+            watchdogs = [getattr(oam, "host_watchdog_ms", None)
+                         for oam in self.oams.values()]
+            watchdogs = [ms for ms in watchdogs if ms is not None]
+            if watchdogs and late > min(watchdogs) / 2000.0:
+                logging.warning(
+                    "OpenAMS: the host stalled for %.1f s; a unit's host"
+                    " watchdog may have fired", late)
+        waketime = self._monitor_tick(eventtime)
+        # A tick that returns past its own wake time fires again at once;
+        # that is the tick's length, not a stall.
+        reactor = getattr(self, "reactor", None)
+        self._monitor_due = (max(waketime, reactor.monotonic())
+                             if reactor is not None else waketime)
+        return waketime
+
+    def _monitor_tick(self, eventtime):
         # An opt-in capture may wait on Klipper's reactor. Nested timer
         # dispatch must not start another capture or run a stale world tick.
         if getattr(self, "_monitor_busy", False):
             return eventtime + self.monitor_interval
         self._monitor_busy = True
         try:
-            # H9d: a monitor tick late by more than half a unit's host
-            # watchdog means the host itself stalled (C1 §6.2), so that
-            # unit's watchdog may have fired while nothing was watching.
-            previous = getattr(self, "_last_monitor_time", None)
-            if previous is not None:
-                gap = eventtime - previous
-                watchdogs = [getattr(oam, "host_watchdog_ms", None)
-                             for oam in self.oams.values()]
-                watchdogs = [ms for ms in watchdogs if ms is not None]
-                if watchdogs and gap > min(watchdogs) / 2000.0:
-                    logging.warning(
-                        "OpenAMS: the host stalled for %.1f s; a unit's host"
-                        " watchdog may have fired", gap)
             self._last_monitor_time = eventtime
-            self._check_unit_silence(eventtime)
+            # The effects of a unit found silent (a PAUSE that waits for the
+            # G-code mutex while the print runs a long command) run in their
+            # own reactor callback, so this tick never waits for them.
+            self._check_unit_silence(eventtime, defer=True)
+            self._reattach_lost_sessions(eventtime)
             refresh_ok = True
             has_refresh = False
             due = self._snapshot_refresh_due = getattr(
@@ -1551,6 +1659,15 @@ class OAMSManager(oams_ext.ManagerHooks):
                 self._stop_followers([fps])
                 after = get_state().lanes.get(fps)
             if rec["tries"] > len(FOLLOWER_RETRY_BACKOFF):
+                if printing and self._print_job_active(now):
+                    # A failure pauses the print, never prints on without
+                    # the follower (owner's rule). It is tried again while
+                    # paused, where the lane is settled, and RESUME queues
+                    # the print's arming again.
+                    self._pause_for_follower(fps, lane)
+                    pending[fps] = {"tries": 0,
+                                    "next": now + FOLLOWER_RETRY_BACKOFF[0]}
+                    continue
                 pending.pop(fps, None)
                 if after is not None and after.following is None:
                     gave_up.add(fps)
@@ -1561,6 +1678,20 @@ class OAMSManager(oams_ext.ManagerHooks):
                 continue
             pending[fps] = rec
             rec["next"] = now + FOLLOWER_RETRY_BACKOFF[rec["tries"] - 1]
+
+    def _pause_for_follower(self, fps, lane):
+        """Pause the print because the lane's forward follower could not be
+        armed. The PAUSE runs in a reactor callback of its own: from the
+        monitor tick it would wait for the G-code mutex behind the print."""
+        idx = lane.unit[0] if lane.unit is not None else None
+        name = next((n for n, oam in self.oams.items()
+                     if oam.oams_idx == idx), "lane %s" % fps)
+        reason = ("%s: the follower could not be re-armed; RESUME retries"
+                  % name)
+        logging.warning("OpenAMS: %s (lane %s)", reason, fps)
+        runtime = self.runtime
+        self.reactor.register_callback(
+            lambda eventtime: runtime._pause(reason))
 
     def _print_arm_eligible(self, fps, lane):
         """A LOADED lane with nothing running on it, so a print may arm the
