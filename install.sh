@@ -992,6 +992,46 @@ remove_stale_klipper_openams_symlinks()
     fi
 }
 
+# The update entry's managed_services: only what Moonraker accepts (the
+# entry's name, klipper, moonraker), klipper and moonraker included, so an
+# update restarts Klipper and the OpenAMS Moonraker components load. An
+# earlier installer wrote "cortex-bridge klipper", which Moonraker warns
+# about; the old file is kept as moonraker.conf.bak-<date>. The bridge relay
+# is restarted by the openams_bridge component when its code changed.
+fix_updater_services()
+{
+    local cfg="${MOONRAKER_CONFIG_DIR}/moonraker.conf"
+    [ -f "$cfg" ] || return 0
+    local said
+    if ! said="$(cd "$SCRIPT_DIR" && python3 -m cortex_bridge.moonraker_conf "$cfg")"; then
+        echo "[WARNING] Could not check managed_services in [update_manager openams]."
+        return 0
+    fi
+    if [ -n "$said" ]; then
+        echo "$said"
+        MOONRAKER_COMPONENT_CHANGED=1
+    fi
+}
+
+# An earlier installer appended the relay's name to moonraker.asvc without
+# a newline before it, gluing it to the last service ("crowsnestcortex-bridge":
+# Moonraker then allowed neither). Split exactly that back, one name per line,
+# repeats dropped (the old file is kept as moonraker.asvc.bak-<date>).
+repair_moonraker_asvc()
+{
+    local asvc="${MOONRAKER_CONFIG_DIR%/config}/moonraker.asvc"
+    [ -f "$asvc" ] || return 0
+    local said
+    said="$(cd "$SCRIPT_DIR" && python3 -m cortex_bridge.moonraker_asvc repair "$asvc")" || {
+        echo "[WARNING] Could not check ${asvc}."
+        return 0
+    }
+    if [ -n "$said" ]; then
+        echo "$said"
+        MOONRAKER_COMPONENT_CHANGED=1
+    fi
+}
+
 # Add OpenAMS update manager section to moonraker.conf.
 # Uses the real checkout location (SCRIPT_DIR) for the path field, so
 # non-standard install paths (not ~/openams) are handled correctly.
@@ -1421,9 +1461,8 @@ if [[ -z "${UNINSTALL:-}" ]]; then
     fi
     link_scripts
     add_updater
-    if [ "$CORTEX_BRIDGE_INSTALLED" = "1" ]; then
-        cortex_bridge_updater_services
-    fi
+    fix_updater_services
+    repair_moonraker_asvc
     install_config
     add_printer_includes
     add_menu_include

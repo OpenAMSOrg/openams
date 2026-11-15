@@ -36,8 +36,12 @@ if __package__ in (None, ""):
 from cortex_bridge import ams_firmware  # noqa: E402
 from cortex_bridge import ams_update  # noqa: E402
 from cortex_bridge import bridge_info  # noqa: E402
+from cortex_bridge import code_version  # noqa: E402
 from cortex_bridge import config as bridge_config  # noqa: E402
 from cortex_bridge import firmware as bridge_firmware  # noqa: E402
+from cortex_bridge import moonraker_asvc  # noqa: E402
+from cortex_bridge import moonraker_conf  # noqa: E402
+from cortex_bridge import reconnect  # noqa: E402
 from cortex_bridge import update_messages  # noqa: E402
 
 OPENAMS_DIR = Path(__file__).resolve().parents[1]
@@ -186,6 +190,16 @@ def configured_uids(config_dir: Path) -> set:
     for path in config_dir.glob("*.cfg"):
         uids |= bridge_config.configured_uids(_read(path))
     return uids
+
+
+def unit_labels(config_dir: Path) -> dict:
+    """{uid: "AMS HT"} for the bridge units the printer config describes."""
+    from cortex_bridge.identify import FAMILY_NAMES
+    labels = {}
+    for path in Path(config_dir).glob("*.cfg"):
+        for uid, kind in bridge_config.configured_kinds(_read(path)).items():
+            labels[uid] = FAMILY_NAMES.get(kind, kind)
+    return labels
 
 
 # ---------------------------------------------------------------------------
@@ -406,15 +420,6 @@ def cmd_status(args) -> int:
 # config
 # ---------------------------------------------------------------------------
 
-def wait_for_units(run_dir: Path, seconds: float) -> list:
-    deadline = time.monotonic() + seconds
-    while True:
-        units = online_units(read_status(run_dir))
-        if units or time.monotonic() >= deadline:
-            return units
-        time.sleep(1.0)
-
-
 def sudo_systemctl(action: str, service: str) -> None:
     print("  sudo systemctl %s %s" % (action, service))
     subprocess.run(["sudo", "systemctl", action, service], check=True)
@@ -440,7 +445,18 @@ def cmd_config(args) -> int:
     from cortex_bridge import identify
 
     run_dir = Path(args.run_dir)
-    units = wait_for_units(run_dir, args.wait)
+    # Every configured unit and every one online, and any still coming back
+    # (after a bridge restart they return one by one): the first one online
+    # is not all of them.
+    expected = sorted(set(reconnect.online_uids(read_status(run_dir))) |
+                      configured_uids(Path(args.config_dir)))
+    seen = wait_units_back(run_dir, expected, seconds=args.wait,
+                           settle=reconnect.SETTLE_SECONDS, show=False,
+                           sleep=time.sleep, clock=time.monotonic)
+    for uid in seen["missing"]:
+        print("  %s: not online after %d s; left out"
+              % (uid, round(seen["waited"])))
+    units = online_units(read_status(run_dir))
     # An AMS the bridge no longer hears is left out (bridge firmware 9 and
     # later say so in their snapshot); the relay's roster may still list it.
     silent = silent_units({"snapshot": status_snapshot(args)}) if units \
@@ -585,12 +601,14 @@ def relay_lacks(status, method: str) -> bool:
     return method not in (status.get("methods") or ())
 
 
-def restart_relay(args, method: str, *, sleep=time.sleep,
+def restart_relay(args, method=None, *, by_hand=None, sleep=time.sleep,
                   clock=time.monotonic) -> bool:
     """Restart the relay through Moonraker (moonraker.asvc allows it) and
-    wait until it runs the new code; False, with what to do, otherwise."""
-    by_hand = ("Run: sudo systemctl restart %s, then FIRMWARE RESTART in "
-               "Mainsail, then this command again." % RELAY_SERVICE)
+    wait until it runs the new code (it answers `method`, or with none, its
+    code matches the checkout); False, with what to do, otherwise."""
+    if by_hand is None:
+        by_hand = ("Run: sudo systemctl restart %s, then FIRMWARE RESTART in "
+                   "Mainsail, then this command again." % RELAY_SERVICE)
     try:
         moonraker(args.moonraker,
                   "/machine/services/restart?service=" + RELAY_SERVICE,
@@ -602,8 +620,9 @@ def restart_relay(args, method: str, *, sleep=time.sleep,
     deadline = clock() + RELAY_RESTART_WAIT
     while clock() < deadline:
         status = read_status(Path(args.run_dir))
-        if status and status.get("state") == "running" \
-                and method in (status.get("methods") or ()):
+        if status and status.get("state") == "running" and (
+                method in (status.get("methods") or ()) if method
+                else code_version.outdated(status) is False):
             print("The relay restarted with the new code.")
             return True
         sleep(1.0)
@@ -1418,6 +1437,33 @@ def cmd_update(args) -> int:
         return 1
     if not relayed:
         return update_direct(package_path, version, running)
+    # The units to wait for once the bridge is back: all that run now.
+    expected = reconnect.expected_uids(read_status(run_dir),
+                                       configured_uids(Path(args.config_dir)))
+    # Moonraker's update entry from an earlier install restarted Klipper only
+    # (Moonraker refused the relay in it): correct it once.
+    conf = moonraker_conf.fix_file(Path(args.config_dir) / "moonraker.conf")
+    if conf["changed"]:
+        print("moonraker.conf: the OpenAMS update entry now has '%s' (the old "
+              "file is kept as %s)." % (conf["line"], conf["backup"]))
+    # An earlier installer could glue the relay's name to the last service
+    # in moonraker.asvc: split it back.
+    asvc = moonraker_asvc.repair(Path(args.config_dir).parent /
+                                 "moonraker.asvc")
+    if asvc["changed"]:
+        print("moonraker.asvc: one service name per line again (the old file "
+              "is kept as %s)." % asvc["backup"])
+    # A relay still running the code from before an OpenAMS update is
+    # restarted first; Klipper loses the AMS for the install anyway. The old
+    # relay installs the firmware just as well, so a restart Moonraker
+    # refuses does not stop the update.
+    if code_version.outdated(read_status(run_dir)):
+        print("The bridge relay still runs OpenAMS code from before an "
+              "update; restarting it first.")
+        restart_relay(args, by_hand="The update goes on with the running "
+                      "relay; restart it later with: sudo systemctl restart "
+                      "%s" % RELAY_SERVICE, sleep=time.sleep,
+                      clock=time.monotonic)
 
     def show(line):
         event = line.get("event")
@@ -1446,19 +1492,98 @@ def cmd_update(args) -> int:
         print_explanation(explanation)
         return 0
     print("Installed. Waiting for the AMS to come back...")
-    units = wait_for_units(run_dir, 90)
-    print("  %d AMS online" % len(units))
-    code = confirm_installed(version, wait_for_firmware(run_dir, 30))
+    restarted_at = None
     if not args.no_restart:
-        restart_klipper(args.moonraker)
+        # Restart Klipper now, before the AMS are back. The Klipper that ran
+        # through the install shut down when the bridge left, and it keeps
+        # sending to the AMS ports: restarted only once the AMS were back, it
+        # reached them first and left one stopped, and the new Klipper
+        # stopped with "Can not update MCU '...' config as it is shutdown"
+        # (a customer's update to bridge 29). Started now, Klipper finds each
+        # AMS as the bridge restarted it, waiting for its port to answer.
+        if send_firmware_restart(args.moonraker):
+            restarted_at = time.monotonic()
+            print("Klipper restarted (FIRMWARE_RESTART); it connects to each "
+                  "AMS as it comes back.")
+        else:
+            print("Moonraker did not take FIRMWARE_RESTART: once the AMS are "
+                  "back, press FIRMWARE RESTART in Mainsail.")
+    labels = unit_labels(Path(args.config_dir))
+    seen = wait_units_back(run_dir, expected, labels=labels,
+                           sleep=time.sleep, clock=time.monotonic)
+    for line in reconnect.summary(expected, seen, seen["waited"], labels):
+        print(line)
+    code = confirm_installed(version, wait_for_firmware(run_dir, 30))
+    if restarted_at is not None:
+        klipper_after_restart(args.moonraker, sent_at=restarted_at,
+                              missing=seen["missing"], labels=labels,
+                              sleep=time.sleep, clock=time.monotonic)
+    elif args.no_restart:
+        print("Klipper was not restarted (--no-restart): press FIRMWARE "
+              "RESTART in Mainsail to reconnect it to the AMS.")
+    if conf["changed"] or asvc["changed"]:
+        # Moonraker reads both files only when it starts.
+        try:
+            moonraker(args.moonraker, "/server/restart", post=True)
+            print("Moonraker restarted to read the corrected files.")
+        except (OSError, ValueError, urllib.error.URLError):
+            print("Restart Moonraker (or the printer) so it reads the "
+                  "corrected files.")
     return code
+
+
+def wait_units_back(run_dir: Path, expected: list, *, labels=None,
+                    seconds=None, settle=0.0, show=True, sleep=time.sleep,
+                    clock=time.monotonic) -> dict:
+    """Wait until every unit in ``expected`` is online at once, or
+    ``seconds`` pass, printing each as it first comes back (``show``). The
+    units return one by one after a bridge restart, so the first is not the
+    end. With ``settle``, a set that changed during the wait must then stay
+    the same that long (units nobody expected may still be arriving); with
+    none expected, the first unit online starts that settle. With neither,
+    look for units the whole time. Returns ``reconnect.progress()`` at the
+    end, with ``waited`` in seconds."""
+    if seconds is None:
+        seconds = reconnect.UNITS_BACK_WAIT if expected \
+            else reconnect.ANY_UNIT_WAIT
+    start = clock()
+    shown = set()
+    online = None
+    changed = None          # when the online set last changed in the wait
+    while True:
+        seen = reconnect.progress(read_status(run_dir), expected)
+        now = clock()
+        waited = now - start
+        current = set(seen["back"] + seen["extra"])
+        if online is not None and current != online:
+            changed = now
+        online = current
+        for uid in sorted(current - shown):
+            shown.add(uid)
+            if show:
+                print("  %s is back (%d s)" % (reconnect.label(uid, labels),
+                                                round(waited)), flush=True)
+        settled = changed is None or now - changed >= settle
+        if expected:
+            done = not seen["missing"] and settled
+        else:
+            done = settle > 0 and bool(current) and (
+                now - (changed or start) >= settle)
+        if done or waited >= seconds:
+            seen["waited"] = waited
+            return seen
+        sleep(1.0)
 
 
 # ---------------------------------------------------------------------------
 # klipper-started
 # ---------------------------------------------------------------------------
 
-SHUTDOWN_AT_START = "config as it is shutdown"
+SHUTDOWN_AT_START = reconnect.SHUTDOWN_AT_START
+RESTART_SETTLE = 5.0        # the old Klipper exits, Moonraker reconnects
+KLIPPER_READY_WAIT = 60.0
+KLIPPER_STATES = {"error": "in error", "shutdown": "shut down",
+                  "startup": "still starting", None: "not answering"}
 
 
 def klipper_info(url: str):
@@ -1483,30 +1608,68 @@ def wait_klipper_settled(url: str, seconds: float, *, sleep=time.sleep,
         sleep(2.0)
 
 
-def restart_klipper(url: str, *, why: str = "", sleep=time.sleep,
-                    clock=time.monotonic) -> bool:
-    """FIRMWARE_RESTART, then wait for Klipper; when it is not ready (the
-    restart came while an AMS was still coming back, and Mainsail still asks
-    for FIRMWARE_RESTART), send it once more. True when Klipper is ready."""
+def send_firmware_restart(url: str) -> bool:
+    try:
+        moonraker(url, "/printer/firmware_restart", post=True)
+    except (OSError, ValueError, urllib.error.URLError):
+        return False
+    return True
+
+
+def klipper_after_restart(url: str, *, sent_at: float, missing=(),
+                          labels=None, sleep=time.sleep,
+                          clock=time.monotonic) -> bool:
+    """Wait for Klipper after a FIRMWARE_RESTART sent at ``sent_at``. When it
+    stops in a way one more FIRMWARE_RESTART fixes (an AMS port that still
+    reports an earlier Klipper's stop: the bridge keeps it until a connected
+    Klipper resets it) and no AMS is ``missing``, send that one, once. True
+    when Klipper is ready."""
     for attempt in (1, 2):
-        try:
-            moonraker(url, "/printer/firmware_restart", post=True)
-        except (OSError, ValueError, urllib.error.URLError):
-            print("Restart Klipper from Mainsail (FIRMWARE RESTART).")
-            return False
-        if attempt == 1:
-            print("Klipper restarted (FIRMWARE_RESTART)%s." % why)
-        else:
-            print("Klipper was not ready yet; sent FIRMWARE_RESTART again.")
-        sleep(5.0)
-        state, message = wait_klipper_settled(url, 60.0, sleep=sleep,
-                                              clock=clock)
+        settle = sent_at + RESTART_SETTLE - clock()
+        if settle > 0:
+            sleep(settle)
+        state, message = wait_klipper_settled(url, KLIPPER_READY_WAIT,
+                                              sleep=sleep, clock=clock)
         if state == "ready":
             print("Klipper is ready.")
             return True
-    print("Klipper is %s. If Mainsail still asks for FIRMWARE_RESTART, press "
-          "FIRMWARE RESTART there." % (state or "not answering"))
+        if attempt == 2 or missing or \
+                not reconnect.restart_clears(state, message) or \
+                not send_firmware_restart(url):
+            break
+        sent_at = clock()
+        print("Klipper stopped with \"%s\": %s. Sent FIRMWARE_RESTART once "
+              "more." % (reconnect.first_line(message),
+                         reconnect.restart_reason(message)))
+    said = KLIPPER_STATES.get(state, state)
+    text = reconnect.first_line(message)
+    if text:
+        said += ": " + text
+    if missing:
+        print("Klipper is %s. It starts once every AMS in its config answers: "
+              "when %s is back, press FIRMWARE RESTART in Mainsail."
+              % (said, ", ".join(reconnect.label(uid, labels)
+                                 for uid in missing)))
+    elif state in (None, "startup"):
+        print("Klipper is %s. Look at Mainsail in a minute; if it asks for "
+              "FIRMWARE_RESTART, press FIRMWARE RESTART there." % said)
+    else:
+        print("Klipper is %s. Press FIRMWARE RESTART in Mainsail; if it stops "
+              "the same way again, run `cortex-bridge.py support`." % said)
     return False
+
+
+def restart_klipper(url: str, *, why: str = "", sleep=time.sleep,
+                    clock=time.monotonic) -> bool:
+    """FIRMWARE_RESTART, then wait for Klipper, with one more when it stops
+    in a way that one fixes (see klipper_after_restart). True when Klipper is
+    ready."""
+    if not send_firmware_restart(url):
+        print("Restart Klipper from Mainsail (FIRMWARE RESTART).")
+        return False
+    print("Klipper restarted (FIRMWARE_RESTART)%s." % why)
+    return klipper_after_restart(url, sent_at=clock(), sleep=sleep,
+                                 clock=clock)
 
 
 def cmd_klipper_started(args, *, sleep=time.sleep, clock=time.monotonic) -> int:

@@ -320,6 +320,7 @@ class OAMSManager(oams_ext.ManagerHooks):
         # become OpCompleted actions on its lane.
         self.runtime = Runtime(self.printer, list(self.fpss.keys()),
                                self.build_world, self.oam_by_idx.get)
+        self.runtime.before_motion = self._wait_for_fault_clears
         for oam in self.oams.values():
             oam.bind_runtime(self.runtime, oam.fps_name)
 
@@ -771,6 +772,7 @@ class OAMSManager(oams_ext.ManagerHooks):
                 oam.capabilities.pop("unreachable", None)
                 logging.info("OAMS %s: reachable again", name)
                 self._rearm_followers_of_unit(oam.oams_idx)
+                self._queue_light_clears([name])
 
     #: H9e: the first try to re-establish a lost session comes this long
     #: after the loss; each failed try doubles the wait, up to the cap.
@@ -837,6 +839,7 @@ class OAMSManager(oams_ext.ManagerHooks):
         # The loaded lane's follower comes back through the bounded re-arm
         # loop, as after a silence or a restart; nothing else moves.
         self._rearm_followers_of_unit(oam.oams_idx)
+        self._queue_light_clears([name])
         gcode = self.printer.lookup_object("gcode", None)
         respond = getattr(gcode, "respond_info", None)
         if callable(respond):
@@ -1030,7 +1033,98 @@ class OAMSManager(oams_ext.ManagerHooks):
         self._startup_resync_pending = False
         self.ready = True
         logging.info("OAMS: initial hardware snapshot resync complete")
+        self._queue_light_clears(list(self.oams))
         return True
+
+    # A stock AMS keeps its slot lights flashing red ("not connected") after
+    # its Cortex Bridge restarted, with its error back at 0, until the
+    # printer's retry arm runs, which bridge firmware 31 sends with a fault
+    # clear of an idle unit. So once the units are back (Klipper ready after
+    # a start, a re-attached session, a unit reachable again), the clear
+    # Reset sends goes to each idle one by itself: this long after, to let
+    # them settle, and not after this long.
+    LIGHT_CLEAR_SETTLE_S = 5.0
+    LIGHT_CLEAR_GIVE_UP_S = 60.0
+
+    def _queue_light_clears(self, names):
+        reactor = getattr(self, "reactor", None)
+        if reactor is None:
+            return
+        now = reactor.monotonic()
+        queue = self.__dict__.setdefault("_light_clears", {})
+        for name in names:
+            caps = getattr(self.oams.get(name), "capabilities", None) or {}
+            if caps.get("link_status"):
+                queue[name] = {"due": now + self.LIGHT_CLEAR_SETTLE_S,
+                               "until": now + self.LIGHT_CLEAR_GIVE_UP_S}
+
+    def _auto_light_clears(self, now):
+        """Monitor tick: start the clears that are due, in a reactor
+        callback of their own (each one waits for its unit's answer)."""
+        queue = self.__dict__.get("_light_clears")
+        if not queue or self.__dict__.get("_light_clear_running"):
+            return
+        due = [name for name, entry in queue.items() if now >= entry["due"]]
+        if not due:
+            return
+        self._light_clear_running = True
+        self.reactor.register_callback(
+            lambda eventtime, names=due: self._run_light_clears(names))
+
+    # Reasons a unit is never cleared by itself (Reset still can): it dries,
+    # or it cannot take the clear at all.
+    _LIGHT_CLEAR_NEVER = ("drying", "not behind a Cortex Bridge",
+                          "no fault clear")
+
+    def _run_light_clears(self, names):
+        try:
+            queue = self.__dict__.setdefault("_light_clears", {})
+            now = self.reactor.monotonic()
+            printing = self._print_state() in ("printing", "paused")
+            cleared = []
+            for name in names:
+                oam = self.oams.get(name)
+                entry = queue.get(name)
+                if oam is None or entry is None:
+                    continue
+                skip = oam.reset_clear_skip_reason()
+                # A print running, a unit drying, or a real fault latched
+                # (it stays shown until the user's Reset): never by itself.
+                if (printing or skip in self._LIGHT_CLEAR_NEVER
+                        or self._latched_faults(name)):
+                    queue.pop(name, None)
+                    continue
+                # Moving, not connected or not settled yet: look again.
+                if (skip is not None
+                        or not getattr(oam, "hardware_snapshot_ready", True)
+                        or oam.fault_clear_in_flight(now)):
+                    if now >= entry["until"]:
+                        queue.pop(name, None)
+                    continue
+                queue.pop(name, None)
+                try:
+                    answer = oam.send_fault_clear()
+                except Exception:
+                    logging.exception("OpenAMS: the slot-light clear to %s"
+                                      " failed", name)
+                    continue
+                if answer == "accepted":
+                    cleared.append(name)
+                else:
+                    logging.info("OpenAMS: %s did not take the slot-light"
+                                 " clear: %s", name, answer)
+            if cleared:
+                message = ("OpenAMS: cleared slot lights after the bridge"
+                           " reconnected: %s" % ", ".join(cleared))
+                logging.info(message)
+                gcode = self.printer.lookup_object("gcode", None)
+                respond = getattr(gcode, "respond_info", None)
+                if callable(respond):
+                    respond(message)
+        except Exception:
+            logging.exception("OpenAMS: the slot-light clears failed")
+        finally:
+            self._light_clear_running = False
 
     def start_monitor(self):
         self.stop_monitor()
@@ -1238,6 +1332,7 @@ class OAMSManager(oams_ext.ManagerHooks):
             # own reactor callback, so this tick never waits for them.
             self._check_unit_silence(eventtime, defer=True)
             self._reattach_lost_sessions(eventtime)
+            self._auto_light_clears(eventtime)
             refresh_ok = True
             has_refresh = False
             due = self._snapshot_refresh_due = getattr(
@@ -1576,7 +1671,8 @@ class OAMSManager(oams_ext.ManagerHooks):
         return domain.get("motion_stage_name")
 
     def _follower_unit_ok(self, fps, lane):
-        """The lane's units can take a follower command right now."""
+        """The lane's units can take a follower command right now. A unit
+        still running a fault clear answers Busy: wait for it."""
         unit = self.oam_by_idx.get(lane.unit[0]) if lane.unit else None
         if unit is None or ams_family.motion_block_reason(
                 getattr(unit, "capabilities", None) or {}) is not None:
@@ -1584,7 +1680,46 @@ class OAMSManager(oams_ext.ManagerHooks):
         return not any(not getattr(oam, "hardware_snapshot_ready", True)
                        or getattr(oam, "motion_available", True) is False
                        or not oam.connected
+                       or self._clearing(oam)
                        for oam in self.lane_oams.get(fps, []))
+
+    @staticmethod
+    def _clearing(oam):
+        in_flight = getattr(oam, "fault_clear_in_flight", None)
+        return bool(callable(in_flight) and in_flight())
+
+    # A load, unload or calibration waits at most this long for a fault clear
+    # of its lane's units to end (OAMS.FAULT_CLEAR_BUSY_S, about 2.5 s on an
+    # idle unit behind Cortex Bridge 31).
+    FAULT_CLEAR_MOTION_WAIT_S = 4.0
+
+    def _wait_for_fault_clears(self, fps):
+        """Runtime.request's hook before a load, unload or calibration
+        starts: while a unit of the lane runs a fault clear this host sent,
+        wait for it to end (bounded), yielding to the reactor. Returns the
+        reason to give up instead (a Stop meanwhile), or None."""
+        units = [oam for oam in self.lane_oams.get(fps, [])
+                 if callable(getattr(oam, "fault_clear_remaining", None))]
+        reactor = self.reactor
+        deadline = reactor.monotonic() + self.FAULT_CLEAR_MOTION_WAIT_S
+        waited = False
+        while True:
+            now = reactor.monotonic()
+            left = max([oam.fault_clear_remaining(now) for oam in units]
+                       or [0.0])
+            if left <= 0.0 or now >= deadline:
+                break
+            if not waited:
+                logging.info("OpenAMS: lane %s waits %.1f s for a fault clear"
+                             " to end before it moves", fps, left)
+                waited = True
+            try:
+                reactor.pause(min(deadline, now + min(left, 0.1)))
+            except Exception:
+                break       # where pausing is not allowed: send it now
+        if waited and fps in getattr(self, "_stop_requested", ()):
+            return STOPPED_TEXT
+        return None
 
     def _reestablish_followers_after_restart(self):
         """Resolve an unknown follower on a LOADED lane, and finish a pending
@@ -2857,11 +2992,32 @@ class OAMSManager(oams_ext.ManagerHooks):
 
     def _clear_unit_faults(self, gcmd, names):
         """Send each unit with a latched fault its own OAMS_CLEAR_FAULT, then
-        wait for the latches to go. Returns the units still latched."""
+        wait for the latches to go. Returns the units still latched.
+
+        A connected unit behind a Cortex Bridge that is neither drying nor
+        moving gets a clear too, latched fault or not: a past fault can leave
+        a stock AMS's slot lights in their error pattern with its error back
+        at 0, and from bridge firmware 31 the clear resets them. Those clears
+        are not waited for (one takes about 2.5 s on an idle unit; a load
+        meanwhile waits for it, see _wait_for_fault_clears)."""
         pending = []
+        lights = []
         for name in names:
             codes = self._latched_faults(name)
             if not codes:
+                oam = self.oams[name]
+                skip = getattr(oam, "reset_clear_skip_reason", None)
+                if callable(skip) and skip() is None:
+                    try:
+                        answer = oam.send_fault_clear()
+                    except Exception:
+                        logging.exception("OpenAMS: the fault clear to %s"
+                                          " failed", name)
+                        continue
+                    logging.info("OpenAMS: Reset sent %s a fault clear (no"
+                                 " fault latched): %s", name, answer)
+                    if answer == "accepted":
+                        lights.append(name)
                 continue
             gcode = self.printer.lookup_object("gcode")
             idx = self.topo.idx_of(name)
@@ -2873,6 +3029,9 @@ class OAMSManager(oams_ext.ManagerHooks):
                 gcmd.respond_info("OAMSM_CLEAR_ERRORS: %s refused the clear: %s"
                                   % (name, self._error_reason(exc)))
             pending.append(name)
+        if lights:
+            gcmd.respond_info("OAMSM_CLEAR_ERRORS: reset %s (no fault latched;"
+                              " clears the slot lights)" % ", ".join(lights))
         if not pending:
             return []
         start = self.reactor.monotonic()

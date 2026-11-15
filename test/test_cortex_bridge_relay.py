@@ -352,6 +352,11 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(reply["event"], "status")
         self.assertEqual(reply["units"][0]["uid"], UID.hex())
         self.assertTrue(reply["units"][0]["online"])
+        # The code it runs, so an OpenAMS update that changes it is noticed.
+        from cortex_bridge import code_version
+        self.assertIn("cortex_bridge/relay.py", reply["code"]["files"])
+        self.assertIs(code_version.outdated(reply), False)
+        self.assertFalse(reply["ams_update"])
 
     def test_update_request_releases_the_port_and_runs_the_updater(self):
         calls = []

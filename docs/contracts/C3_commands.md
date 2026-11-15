@@ -110,6 +110,28 @@ recovery on every AMS behind it. It is now left alone and named:
 `"OAMSM_CLEAR_ERRORS: skipped read-only box; it holds no error state to
 clear"`, after the units that could be cleared are. The hardware-snapshot
 guard still applies to those (`"OpenAMS hardware snapshot unavailable for %s"`).
+**Reset reaches every idle unit behind a Cortex Bridge (2026-11-14).** A
+connected unit with `AMS_CAP_LINK_STATUS` that is neither drying nor moving
+(load, follow, unload or positioning) gets `ams_ht_clear_fault` too, latched
+fault or not: a stock AMS keeps its slot lights in their error pattern after a
+past fault with its error back at 0, and from bridge firmware 31 the clear
+runs the printer's retry arm that resets them. Those clears are not waited for
+(`"OAMSM_CLEAR_ERRORS: reset <units> (no fault latched; clears the slot
+lights)"`). On an idle unit such a clear runs about 2.5 s and the unit answers
+other commands Busy meanwhile, so the host keeps a window after every clear it
+sends to such a unit (`OAMS.FAULT_CLEAR_BUSY_S`, 3 s): a load, unload or
+calibration of that lane waits for it before it is dispatched (at most 4 s,
+yielding to the reactor; a Stop meanwhile starts nothing), the follower re-arm
+waits too, and a load the unit still answers Busy within 4 s of a clear is sent
+again once, after the window. **The same clear goes by itself after a bridge
+reconnects (2026-11-14):** a stock AMS's slot lights flash red ("not
+connected") after its bridge restarted until such a clear, so 5 s after the
+units are back (Klipper ready after a start, a re-attached session, a unit
+reachable again) each idle bridge unit gets it once (`"OpenAMS: cleared slot
+lights after the bridge reconnected: <units>"`). Never one that is drying or
+has a real fault latched (that stays for Reset), nor while a print is
+printing or paused; a unit still moving or settling is tried again for up to
+60 s.
 **Reset clears latched unit faults first (2026-11-08).** Each unit with a
 latched firmware fault that offers an action (§5.7 of C2) gets its own
 `OAMS_CLEAR_FAULT OAMS=<idx>`. The command returns as soon as every unit has

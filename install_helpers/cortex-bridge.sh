@@ -165,14 +165,23 @@ warn_competing_gateway()
     done
 }
 
-# Let Moonraker restart the relay (its update manager and the Machine page).
+# Let Moonraker restart the relay (the openams_bridge component and the
+# Machine page). Moonraker reads moonraker.asvc one name per line and writes
+# its default list without a final newline, so the name is never appended
+# blindly: cortex_bridge.moonraker_asvc first repairs a name an earlier
+# installer glued on ("crowsnestcortex-bridge"), adds a newline, and adds the
+# relay only when it is missing.
 allow_moonraker_service()
 {
     local asvc="${MOONRAKER_CONFIG_DIR%/config}/moonraker.asvc"
     [ -f "$asvc" ] || return 0
-    if ! grep -qx "$CORTEX_BRIDGE_UNIT" "$asvc"; then
-        echo "$CORTEX_BRIDGE_UNIT" >> "$asvc"
-        echo "Allowed Moonraker to manage the ${CORTEX_BRIDGE_UNIT} service."
+    local said
+    said="$(cd "$SCRIPT_DIR" && python3 -m cortex_bridge.moonraker_asvc allow "$asvc" "$CORTEX_BRIDGE_UNIT")" || {
+        echo "[WARNING] Could not add ${CORTEX_BRIDGE_UNIT} to ${asvc}."
+        return 0
+    }
+    if [ -n "$said" ]; then
+        echo "$said"
         MOONRAKER_COMPONENT_CHANGED=1
     fi
 }
@@ -181,13 +190,8 @@ disallow_moonraker_service()
 {
     local asvc="${MOONRAKER_CONFIG_DIR%/config}/moonraker.asvc"
     [ -f "$asvc" ] || return 0
-    if grep -qx "$CORTEX_BRIDGE_UNIT" "$asvc"; then
-        local tmp
-        tmp="$(mktemp)"
-        grep -vx "$CORTEX_BRIDGE_UNIT" "$asvc" > "$tmp"
-        cat "$tmp" > "$asvc"
-        rm -f "$tmp"
-    fi
+    (cd "$SCRIPT_DIR" && python3 -m cortex_bridge.moonraker_asvc disallow "$asvc" "$CORTEX_BRIDGE_UNIT") || \
+        echo "[WARNING] Could not take ${CORTEX_BRIDGE_UNIT} out of ${asvc}."
 }
 
 link_bridge_moonraker_component()
@@ -228,41 +232,6 @@ unlink_bridge_moonraker_component()
         ' "$cfg" > "$tmp" && cat "$tmp" > "$cfg"
         rm -f "$tmp"
     fi
-}
-
-# After an OpenAMS update, Moonraker restarts the relay before Klipper, so
-# both run the new code.
-cortex_bridge_updater_services()
-{
-    local cfg="${MOONRAKER_CONFIG_DIR}/moonraker.conf"
-    [ -f "$cfg" ] || return 0
-    moonraker_has_section "update_manager openams" || return 0
-    local tmp
-    tmp="$(mktemp)"
-    # An entry written before OpenAMS managed it (by hand, or for
-    # klipper_openams) may have no managed_services line at all: then
-    # Moonraker restarts nothing after an update, and the relay keeps running
-    # the old code. Such an entry gets the template's line with the relay.
-    awk -v unit="$CORTEX_BRIDGE_UNIT" '
-        function add_missing() {
-            if (inside && !seen) print "managed_services: " unit " klipper"
-            inside=0
-        }
-        /^\[update_manager openams\][ \t]*$/ { inside=1; seen=0; print; next }
-        /^\[/ { add_missing() }
-        inside && /^managed_services[ \t]*:/ {
-            seen=1
-            if (index($0, unit) == 0) sub(/:[ \t]*/, ": " unit " ")
-        }
-        { print }
-        END { add_missing() }
-    ' "$cfg" > "$tmp"
-    if ! cmp -s "$tmp" "$cfg"; then
-        cat "$tmp" > "$cfg"
-        echo "The OpenAMS update entry now restarts the bridge relay too."
-        MOONRAKER_COMPONENT_CHANGED=1
-    fi
-    rm -f "$tmp"
 }
 
 install_cortex_bridge()

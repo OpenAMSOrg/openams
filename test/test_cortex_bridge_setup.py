@@ -706,5 +706,411 @@ class CommandLineTests(unittest.TestCase):
         self.assertIn("ptfe_length: 2337", output.getvalue())
 
 
+FAST_UID = "0b55800206c9"     # an AMS 2 Pro, back first after the restart
+SLOW_UID = "c5bc6f8de4ae"     # the second unit, back later
+TWO_UNITS_CFG = """\
+[mcu ams2]
+serial: /dev/oams/%s
+restart_method: command
+
+[oams ams2]
+mcu: ams2
+device_kind: ams2
+
+[mcu ams1]
+serial: /dev/oams/%s  # the older AMS
+restart_method: command
+
+[oams ams1]
+mcu: ams1
+device_kind: ams1
+""" % (FAST_UID, SLOW_UID)
+SHUT_DOWN = {"state": "error", "state_message":
+             "Can not update MCU 'ams2' config as it is shutdown\n"
+             "Once the underlying issue is corrected, use the\n"}
+
+
+class UpdateReconnectTests(unittest.TestCase):
+    """`update` after the install: it waits for every AMS that ran before it,
+    and restarts Klipper once, before the AMS are back (a customer's update
+    to bridge 29 printed "1 AMS online" with two units, and needed a second
+    FIRMWARE_RESTART)."""
+
+    def run_update(self, back_at, after_restart=(), extra=(), before=None,
+                   relay_outdated=False, moonraker_conf=None, asvc=None):
+        """`update` with the relay, its status file, Moonraker and the clock
+        faked. ``back_at``: seconds after the install at which each unit is
+        online again (None: never). ``after_restart``: per FIRMWARE_RESTART,
+        the printer.info answers Moonraker gives after it, the last repeated.
+        ``before``: the units online before the update (default: all).
+        ``relay_outdated``: the relay runs code from before an OpenAMS
+        update until Moonraker restarts it. ``moonraker_conf``: the text of
+        moonraker.conf. Returns (code, output, restart times, the POSTs to
+        Moonraker, moonraker.conf afterwards)."""
+        import contextlib
+        import io
+        from unittest import mock
+        from cortex_bridge import updater
+        now = [0.0]
+        installed_at = [None]
+        restarts = []
+        posts = []
+        outdated = [relay_outdated]
+        before = list(back_at) if before is None else before
+
+        def status(run_dir=None):
+            if installed_at[0] is None:
+                online = set(before)
+                firmware = known(29)
+            else:
+                since = now[0] - installed_at[0]
+                online = {uid for uid, at in back_at.items()
+                          if at is not None and since >= at}
+                firmware = known(30)
+            return {"state": "running", "firmware": firmware,
+                    "units": [{"uid": uid, "online": uid in online,
+                               "path": "/dev/oams/" + uid}
+                              for uid in sorted(back_at)]}
+
+        def control(request, **kwargs):
+            if request["method"] == "status":
+                return {"event": "status"}
+            now[0] += 11.0      # the install
+            installed_at[0] = now[0]
+            return {"event": "result", "ok": True, "changed": True,
+                    "version": 30}
+
+        def moonraker(url, path, post=False, timeout=5.0):
+            if post:
+                posts.append(path)
+                if path == "/machine/services/restart?service=cortex-bridge":
+                    self.assertIsNone(installed_at[0], "before the install")
+                    outdated[0] = False
+                    return {"result": "ok"}
+                if path == "/server/restart":
+                    return {"result": "ok"}
+                self.assertEqual(path, "/printer/firmware_restart")
+                restarts.append(now[0] - installed_at[0])
+                return {"result": {}}
+            if not restarts:
+                return {"result": {"state": "shutdown"}}
+            answers = list(after_restart[len(restarts) - 1]) \
+                if len(restarts) <= len(after_restart) else [{"state": "ready"}]
+            seen = asked.setdefault(len(restarts), [])
+            seen.append(1)
+            return {"result": answers[min(len(seen), len(answers)) - 1]}
+        asked = {}
+
+        def sleep(seconds):
+            now[0] += seconds
+
+        clock = types.SimpleNamespace(sleep=sleep, monotonic=lambda: now[0])
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as data:
+            # printer_data/config, with moonraker.asvc in printer_data
+            tmp = os.path.join(data, "config")
+            os.mkdir(tmp)
+            Path(tmp, "oams.cfg").write_text(TWO_UNITS_CFG)
+            if moonraker_conf is not None:
+                Path(tmp, "moonraker.conf").write_text(moonraker_conf)
+            if asvc is not None:
+                Path(data, "moonraker.asvc").write_text(asvc)
+            package = Path(tmp, "bridge-30.oac2")
+            package.write_bytes(b"OAC2 package")
+            with mock.patch.object(cli, "control_request",
+                                   side_effect=control), \
+                    mock.patch.object(cli, "read_status", side_effect=status), \
+                    mock.patch.object(cli, "moonraker", side_effect=moonraker), \
+                    mock.patch.object(cli, "printer_state", return_value=None), \
+                    mock.patch.object(cli, "installed_firmware",
+                                      return_value=found_with(29)), \
+                    mock.patch.object(updater, "inspect_package",
+                                      return_value={"version": 30}), \
+                    mock.patch.object(cli, "time", clock), \
+                    mock.patch.object(cli.code_version, "outdated",
+                                      side_effect=lambda status: outdated[0]), \
+                    contextlib.redirect_stdout(out):
+                code = cli.main(["--run-dir", tmp, "--config-dir", tmp,
+                                 "--moonraker", "http://x", "update",
+                                 "--file", str(package), "--yes"]
+                                + list(extra))
+            conf = Path(tmp, "moonraker.conf")
+            conf_after = conf.read_text() if conf.exists() else None
+            services = Path(data, "moonraker.asvc")
+            self.asvc_after = services.read_text() \
+                if services.exists() else None
+        self.result = (posts, conf_after)
+        return code, out.getvalue(), restarts
+
+    def test_the_wait_counts_every_unit_that_was_online(self):
+        # The early exit: the second unit came back after the first, and the
+        # update said "1 AMS online" while `status` showed both moments
+        # later. The older AMS re-admits more slowly here.
+        code, out, _ = self.run_update({FAST_UID: 1.8, SLOW_UID: 9.0})
+        self.assertEqual(code, 0)
+        self.assertNotIn("1 AMS online", out)
+        self.assertIn("  %s (AMS 2 Pro) is back (2 s)" % FAST_UID, out)
+        self.assertIn("  %s (AMS 1) is back (9 s)" % SLOW_UID, out)
+        self.assertIn("2 of 2 AMS back online.", out)
+        lines = out.splitlines()
+        self.assertLess(lines.index("2 of 2 AMS back online."),
+                        lines.index("The bridge now runs version 30."))
+
+    def test_the_customers_timing_also_waits_for_the_second(self):
+        # The customer's relay log: an AMS 2 Pro back 1.8 s after the
+        # install, an AMS HT 1 s later. The status file is read once a
+        # second, so the first read saw one.
+        code, out, _ = self.run_update({FAST_UID: 1.8, SLOW_UID: 2.8})
+        self.assertIn("2 of 2 AMS back online.", out)
+
+    def test_klipper_is_restarted_once_before_the_units_are_back(self):
+        code, out, restarts = self.run_update(
+            {FAST_UID: 1.8, SLOW_UID: 9.0},
+            after_restart=[[{"state": "startup"}, {"state": "ready"}]])
+        self.assertEqual(code, 0)
+        self.assertEqual(len(restarts), 1, out)
+        self.assertLess(restarts[0], 1.8, "sent before any AMS was back")
+        self.assertIn("Klipper restarted (FIRMWARE_RESTART); it connects to "
+                      "each AMS as it comes back.", out)
+        self.assertIn("Klipper is ready.", out)
+        self.assertNotIn("once more", out)
+        self.assertNotIn("again", out)
+
+    def test_a_stop_left_on_an_ams_gets_one_more_restart(self):
+        # The customer's second FIRMWARE_RESTART: both units were back, and
+        # the restarted Klipper found the AMS 2 Pro's port still stopped.
+        code, out, restarts = self.run_update(
+            {FAST_UID: 1.8, SLOW_UID: 2.8},
+            after_restart=[[{"state": "startup"}, SHUT_DOWN],
+                           [{"state": "startup"}, {"state": "ready"}]])
+        self.assertEqual(code, 0)
+        self.assertEqual(len(restarts), 2)
+        self.assertIn("Klipper stopped with \"Can not update MCU 'ams2' config "
+                      "as it is shutdown\": an AMS still held the stop from "
+                      "before the restart. Sent FIRMWARE_RESTART once more.",
+                      out)
+        self.assertIn("Klipper is ready.", out)
+
+    def test_a_second_stop_is_left_to_the_user(self):
+        code, out, restarts = self.run_update(
+            {FAST_UID: 1.8, SLOW_UID: 2.8},
+            after_restart=[[SHUT_DOWN], [SHUT_DOWN]])
+        self.assertEqual(len(restarts), 2, "bounded: one retry")
+        self.assertIn("Klipper is in error: Can not update MCU 'ams2' config "
+                      "as it is shutdown. Press FIRMWARE RESTART in Mainsail; "
+                      "if it stops the same way again, run "
+                      "`cortex-bridge.py support`.", out)
+
+    def test_a_unit_still_missing_is_named_and_klipper_not_retried(self):
+        lost = {"state": "error",
+                "state_message": "mcu 'ams1': Unable to connect\n"}
+        code, out, restarts = self.run_update(
+            {FAST_UID: 1.8, SLOW_UID: None}, after_restart=[[lost]])
+        self.assertEqual(code, 0, "the install itself succeeded")
+        self.assertIn("1 of 2 AMS back after 60 s: %s (AMS 1) not yet."
+                      % SLOW_UID, out)
+        self.assertIn("run `cortex-bridge.py status` in a minute", out)
+        self.assertIn("power that AMS off and on", out)
+        self.assertNotIn("2 of 2", out)
+        self.assertEqual(len(restarts), 1, "no retry while an AMS is missing")
+        self.assertIn("Klipper is in error: mcu 'ams1': Unable to connect. "
+                      "It starts once every AMS in its config answers: when "
+                      "%s (AMS 1) is back, press FIRMWARE RESTART in Mainsail."
+                      % SLOW_UID, out)
+
+    def test_other_klipper_errors_are_not_retried(self):
+        code, out, restarts = self.run_update(
+            {FAST_UID: 1.0, SLOW_UID: 2.0}, after_restart=[[
+                {"state": "error",
+                 "state_message": "Option 'x' in section 'y' must be set"}]])
+        self.assertEqual(len(restarts), 1)
+        self.assertIn("Klipper is in error: Option 'x' in section 'y' must be "
+                      "set.", out)
+
+    def test_no_restart_leaves_klipper_and_says_so(self):
+        code, out, restarts = self.run_update(
+            {FAST_UID: 1.0, SLOW_UID: 2.0}, extra=["--no-restart"])
+        self.assertEqual(restarts, [])
+        self.assertIn("2 of 2 AMS back online.", out)
+        self.assertIn("press FIRMWARE RESTART in Mainsail", out)
+
+    def test_with_none_online_before_the_configured_units_are_awaited(self):
+        # A bridge that ran no firmware (an interrupted update) lists none.
+        code, out, _ = self.run_update({FAST_UID: 1.0, SLOW_UID: 4.0},
+                                       before=[])
+        self.assertIn("2 of 2 AMS back online.", out)
+
+    def test_a_new_unit_is_listed_beside_the_count(self):
+        code, out, _ = self.run_update({FAST_UID: 1.0, SLOW_UID: 2.0},
+                                       before=[FAST_UID])
+        self.assertIn("1 of 1 AMS back online.", out)
+
+    def test_a_relay_on_old_code_is_restarted_before_the_install(self):
+        code, out, restarts = self.run_update(
+            {FAST_UID: 1.0, SLOW_UID: 2.0}, relay_outdated=True)
+        posts, _ = self.result
+        self.assertEqual(code, 0)
+        self.assertEqual(posts[0],
+                         "/machine/services/restart?service=cortex-bridge")
+        self.assertIn("The bridge relay still runs OpenAMS code from before "
+                      "an update; restarting it first.", out)
+        self.assertIn("The relay restarted with the new code.", out)
+        self.assertEqual(len(restarts), 1)
+
+    def test_the_update_entry_is_corrected_once_and_moonraker_restarted(self):
+        entry = ("[server]\n\n[update_manager openams]\ntype: git_repo\n"
+                 "managed_services: cortex-bridge klipper\n")
+        code, out, _ = self.run_update({FAST_UID: 1.0, SLOW_UID: 2.0},
+                                       moonraker_conf=entry)
+        posts, conf = self.result
+        self.assertIn("managed_services: klipper moonraker\n", conf)
+        self.assertNotIn("cortex-bridge", conf)
+        self.assertIn("moonraker.conf: the OpenAMS update entry now has "
+                      "'managed_services: klipper moonraker'", out)
+        self.assertEqual(posts[-1], "/server/restart", "after everything")
+        code, out, _ = self.run_update({FAST_UID: 1.0, SLOW_UID: 2.0},
+                                       moonraker_conf=conf)
+        posts, again = self.result
+        self.assertEqual(again, conf)
+        self.assertNotIn("/server/restart", posts)
+        self.assertNotIn("moonraker.conf:", out)
+
+    def test_a_glued_allowed_service_is_repaired_and_moonraker_restarted(
+            self):
+        code, out, _ = self.run_update(
+            {FAST_UID: 1.0, SLOW_UID: 2.0},
+            asvc="klipper_mcu\ncrowsnestcortex-bridge\n")
+        posts, _ = self.result
+        self.assertEqual(self.asvc_after,
+                         "klipper_mcu\ncrowsnest\ncortex-bridge\n")
+        self.assertIn("moonraker.asvc: one service name per line again", out)
+        self.assertEqual(posts[-1], "/server/restart")
+
+    def test_a_relay_restart_moonraker_refuses_does_not_stop_the_update(
+            self):
+        import contextlib
+        import io
+        from unittest import mock
+        err = io.StringIO()
+        with mock.patch.object(cli, "restart_relay", return_value=False), \
+                contextlib.redirect_stderr(err):
+            code, out, restarts = self.run_update(
+                {FAST_UID: 1.0, SLOW_UID: 2.0}, relay_outdated=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(restarts), 1)
+        self.assertIn("2 of 2 AMS back online.", out)
+
+    def test_restart_klipper_retries_only_what_a_restart_fixes(self):
+        # Also used after a relay restart and after an AMS update.
+        import contextlib
+        import io
+        for answers, posts in (([{"state": "startup"}] * 40, 1),
+                               ([SHUT_DOWN, {"state": "ready"}], 2),
+                               ([{"state": "ready"}], 1)):
+            sent = []
+            replies = iter(answers)
+
+            def fake(url, path, post=False, timeout=5.0):
+                if post:
+                    sent.append(path)
+                    return {"result": {}}
+                return {"result": next(replies, answers[-1])}
+            now = [0.0]
+            original = cli.moonraker
+            cli.moonraker = fake
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    cli.restart_klipper(
+                        "http://x", sleep=lambda s: now.__setitem__(
+                            0, now[0] + s), clock=lambda: now[0])
+            finally:
+                cli.moonraker = original
+            self.assertEqual(len(sent), posts, answers[0])
+
+
+class ConfigWaitTests(unittest.TestCase):
+    """`config --write` waits for every AMS like `update`, so it never
+    writes one of two units that are still coming back."""
+
+    def run_config(self, online_at, configured=""):
+        """`config` with the relay status and the clock faked; returns the
+        units it went on to write and its output. ``online_at``: seconds at
+        which each unit is online (None: never)."""
+        import contextlib
+        import io
+        from unittest import mock
+        now = [0.0]
+        written = []
+
+        def status(run_dir=None):
+            return {"state": "running", "units": [
+                {"uid": uid, "online": at is not None and now[0] >= at,
+                 "path": "/dev/oams/" + uid}
+                for uid, at in sorted(online_at.items())]}
+
+        def write(args, units, target, identify):
+            written.extend(unit["uid"] for unit in units)
+            return 0
+
+        def sleep(seconds):
+            now[0] += seconds
+
+        clock = types.SimpleNamespace(sleep=sleep, monotonic=lambda: now[0])
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "oams.cfg").write_text(configured)
+            with mock.patch.object(cli, "read_status", side_effect=status), \
+                    mock.patch.object(cli, "status_snapshot",
+                                      return_value=None), \
+                    mock.patch.object(cli, "service_state",
+                                      return_value="inactive"), \
+                    mock.patch.object(cli, "_write_config",
+                                      side_effect=write), \
+                    mock.patch.object(cli, "time", clock), \
+                    contextlib.redirect_stdout(out), \
+                    contextlib.redirect_stderr(out):
+                code = cli.main(["--run-dir", tmp, "--config-dir", tmp,
+                                 "config", "--write", "--yes"])
+        return code, sorted(written), out.getvalue(), now[0]
+
+    def test_units_coming_back_one_by_one_are_all_written(self):
+        # A bridge that just started: nothing online or configured yet, the
+        # second unit about 4 s after the first.
+        code, written, _, took = self.run_config({FAST_UID: 1.0,
+                                                  SLOW_UID: 5.0})
+        self.assertEqual(code, 0)
+        self.assertEqual(written, [FAST_UID, SLOW_UID])
+        self.assertLess(took, 20.0)
+
+    def test_a_configured_unit_is_waited_for(self):
+        code, written, _, _ = self.run_config(
+            {FAST_UID: 0.0, SLOW_UID: 12.0}, configured=TWO_UNITS_CFG)
+        self.assertEqual(written, [FAST_UID, SLOW_UID])
+
+    def test_units_all_online_are_written_at_once(self):
+        code, written, _, took = self.run_config({FAST_UID: 0.0,
+                                                  SLOW_UID: 0.0})
+        self.assertEqual(written, [FAST_UID, SLOW_UID])
+        self.assertEqual(took, 0.0)
+
+    def test_a_configured_unit_that_never_comes_is_left_out_and_said(self):
+        code, written, out, took = self.run_config(
+            {FAST_UID: 0.0, SLOW_UID: None}, configured=TWO_UNITS_CFG)
+        self.assertEqual(written, [FAST_UID])
+        self.assertIn("%s: not online after 30 s; left out" % SLOW_UID, out)
+
+
+class ConfiguredKindsTests(unittest.TestCase):
+    def test_each_bridge_port_gets_its_device_kind(self):
+        self.assertEqual(config.configured_kinds(TWO_UNITS_CFG),
+                         {FAST_UID: "ams2", SLOW_UID: "ams1"})
+
+    def test_a_unit_without_a_kind_or_port_is_left_out(self):
+        text = ("[mcu main]\nserial: /dev/ttyACM0\n\n[oams x]\nmcu: main\n"
+                "device_kind: ams2\n\n[mcu a]\nserial: /dev/oams/%s\n\n"
+                "[oams a]\nmcu: a\n" % FAST_UID)
+        self.assertEqual(config.configured_kinds(text), {})
+
+
 if __name__ == "__main__":
     unittest.main()

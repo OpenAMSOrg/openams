@@ -49,6 +49,7 @@ from cortex_bridge.cortexd import (  # noqa: E402
 )
 from cortex_bridge import ams_update  # noqa: E402
 from cortex_bridge import bridge_info, bridge_snapshot  # noqa: E402
+from cortex_bridge import code_version  # noqa: E402
 from cortex_bridge import update_messages  # noqa: E402
 from cortex_bridge.support_log import GatewaySupportLog  # noqa: E402
 
@@ -259,6 +260,11 @@ class StatusFile:
             "units": [],
             "update": None,
             "methods": list(CONTROL_METHODS),
+            # The code this relay runs (code_version.snapshot()): an OpenAMS
+            # update that changes it needs a relay restart.
+            "code": None,
+            # An AMS firmware update or listen session is running.
+            "ams_update": False,
         }
 
     def set(self, **fields) -> None:
@@ -453,6 +459,7 @@ class Relay:
             "configured", pty_directory=str(self.pty_dir.resolve()))
         self.core = CortexCore(self.pty_dir.resolve(),
                                report_event=self.log.record)
+        self.status.set(code=code_version.snapshot())
         try:
             while True:
                 try:
@@ -620,6 +627,7 @@ class Relay:
             seconds = 10.0
         listener = ams_update.AmsListener(now=time.monotonic(),
                                           seconds=seconds)
+        self.status.set(ams_update=True)
         self.ams = {"driver": listener, "connection": connection,
                     "finished_at": None, "listen": True}
         self.core.ams_update_handler = \
@@ -681,6 +689,7 @@ class Relay:
                                   model)
         except ams_update.AmsUpdateError as exc:
             return refuse("bad-request", str(exc))
+        self.status.set(ams_update=True)
         self.ams = {"driver": driver, "connection": connection,
                     "finished_at": None}
         self.core.ams_update_handler = \
@@ -732,6 +741,7 @@ class Relay:
         state, self.ams = self.ams, None
         if state is None:
             return
+        self.status.set(ams_update=False)
         if self.core is not None:
             self.core.ams_update_handler = None
         driver = state["driver"]

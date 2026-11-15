@@ -12,6 +12,7 @@
 # action; otherwise the blocking helpers below provide a standalone fallback for
 # the low-level OAMS_* commands.
 
+import json
 import logging
 import os
 import struct
@@ -142,6 +143,10 @@ DRYER_START2_COMMAND = (
 # [oams NAME] option -> (wire scale, minimum, maximum), in the wire order. The
 # ranges are the unit's own clamps, so a value outside them is a config error
 # here instead of a silent change there.
+# A dry's vent tuning, kept per unit beside the OpenAMS config so it can be
+# sent again after a Cortex Bridge restart (which restarts Klipper too).
+DRYER_VENT_FILE = "openams_dryer_vents.json"
+
 DRYER_VENT_OPTIONS = (
     ("dryer_vent_rise", 1000, 0.001, 65.0),        # g/m3 -> mg/m3
     ("dryer_vent_flat", 1000, 0.001, 65.0),        # g/m3 per minute
@@ -734,7 +739,7 @@ class OAMS(oams_ext.UnitHooks):
         if (dryer and self.capabilities.get("heater_control", True)
                 and self.ams_ht_dryer_start_cmd is not None
                 and self._adapter_status() is not False
-                and not self._dryer_cycle_running()
+                and not self._dryer_heating()
                 and self._dryer_blocked_by_load() is None):
             actions.append("dryer_start")
         if (dryer and "dryer_start" in actions
@@ -2332,6 +2337,8 @@ class OAMS(oams_ext.UnitHooks):
             self.capabilities["normal_motion"] = getattr(
                 self, "_normal_motion_before_loss", True)
         self.clear_errors()
+        # A running dry's vent tuning goes again with the next dryer status.
+        self._dryer_vents_sent = False
         try:
             self._ext_session_reattached()
         except Exception:
@@ -2428,8 +2435,9 @@ class OAMS(oams_ext.UnitHooks):
     def _dryer_rotating(self):
         """True while a dry this session started with ROTATE=1 runs. Its
         spools turn freely, so its filament is back out of the first stage
-        and the unit cannot feed."""
-        if not self._dryer_cycle_running():
+        and the unit cannot feed. It ends with the drying (not the
+        cooldown after it)."""
+        if not self._dryer_heating():
             self._dryer_rotate_started = False
         return bool(getattr(self, "_dryer_rotate_started", False))
 
@@ -2439,7 +2447,7 @@ class OAMS(oams_ext.UnitHooks):
         None. Only a unit publishing AMS_CAP_DRYER_FEEDS_WHILE_DRYING feeds
         during a dry, and only without rotation."""
         rotating = self._dryer_rotating()     # also forgets an ended cycle
-        if not self._dryer_cycle_running():
+        if not self._dryer_heating():
             return None
         if rotating:
             return "rotating"
@@ -2449,9 +2457,26 @@ class OAMS(oams_ext.UnitHooks):
 
     def _dryer_cycle_running(self):
         """True while the firmware reports a dryer cycle in progress, whether
-        this session started it or adopted it from an earlier one."""
+        this session started it or adopted it from an earlier one, the
+        cooldown after it included. What it blocks is _dryer_heating's."""
         data = (getattr(self, "_telemetry", None) or {}).get("dryer") or {}
         return data.get("state_name") in self._DRYER_RUNNING_STATES
+
+    _DRYER_HEATING_STATES = ("preheat", "hold", "timed_dry")
+
+    def _dryer_heating(self):
+        """True while the unit dries, which blocks a new dry start, a load
+        from a unit that does not feed while it dries, and Reset's light
+        clear. The cooldown a Cortex Bridge reports after a dry blocks none
+        of them (2026-11-14): the bridge drives nothing then and the unit is
+        off; an AMS 2 Pro cannot feed while drying because its heater PWM
+        shares the BLDC pins, and its heater is off. A cooldown in which the
+        unit still reports its heater on still counts as drying."""
+        data = (getattr(self, "_telemetry", None) or {}).get("dryer") or {}
+        state = data.get("state_name")
+        if state in self._DRYER_HEATING_STATES:
+            return True
+        return state == "cooldown" and (data.get("heater_permille") or 0) > 0
 
     def _dryer_status_received(self, params):
         data = self._telemetry_data(params)
@@ -2481,6 +2506,115 @@ class OAMS(oams_ext.UnitHooks):
                 data.get("remaining_s"))
         self._dryer_seen = True
         self._publish_telemetry("dryer", data)
+        self._dryer_vents_follow(data["state_name"])
+
+    # The states in which the bridge's vent loop drives a dry. "cooldown" is
+    # not one: the unit ends it by itself.
+    _DRYER_VENT_STATES = ("preheat", "hold", "timed_dry")
+
+    def _dryer_vents_follow(self, state):
+        """A Cortex Bridge drives the vents of a dry it adopted after its own
+        restart only once the host sends the vent tuning again (bridge
+        ops_dryer vent_step), and a restart of the bridge restarts this
+        session too. So the first status of a session (or after a re-attach)
+        that shows a dry running sends the dry's own tuning again, once: the
+        one its start sent, kept per unit. A dry this host did not start has
+        none, and its vents stay the unit's. A dry that ended is forgotten."""
+        if state in self._DRYER_VENT_STATES:
+            if getattr(self, "_dryer_vents_sent", False):
+                return
+            self._dryer_vents_sent = True
+            self.reactor.register_async_callback(
+                lambda eventtime: self._resend_dryer_vents())
+        elif state in ("off", "fault"):
+            self._dryer_vents_sent = False
+            if (getattr(self, "_dryer_vent_args", None) is not None
+                    or not getattr(self, "_dryer_vents_checked", False)):
+                self._forget_dryer_vents()
+
+    def _resend_dryer_vents(self):
+        tuning_cmd = getattr(self, "ams_dryer_vent_tuning_cmd", None)
+        args = self._recall_dryer_vents()
+        if tuning_cmd is None or args is None:
+            return
+        try:
+            params = tuning_cmd.send(list(args))
+        except Exception:
+            logging.exception("OAMS[%s]: sending the dryer vent tuning again"
+                              " failed", self.oams_idx)
+            return
+        result = -1 if params is None else params.get("result", -1)
+        logging.info("OAMS[%s]: dryer vent tuning sent again for the running"
+                     " dry (%s): %s", self.oams_idx,
+                     "the bridge drives the vents" if args[-1]
+                     else "the unit moves its vents",
+                     self._AMS_HT_RESULTS.get(result, "unknown"))
+
+    def _dryer_vent_key(self):
+        name = getattr(self, "name", None)
+        return name.split()[-1] if isinstance(name, str) else None
+
+    def _dryer_vent_path(self):
+        printer = getattr(self, "printer", None)
+        if printer is None or self._dryer_vent_key() is None:
+            return None
+        mgr = printer.lookup_object("oams_manager", None)
+        start = getattr(printer, "get_start_args", None)
+        main = (start() or {}).get("config_file") if callable(start) else None
+        for config in (getattr(mgr, "openams_config_path", None), main):
+            if isinstance(config, str) and os.path.isfile(config):
+                return os.path.join(os.path.dirname(config), DRYER_VENT_FILE)
+        return None
+
+    def _dryer_vent_file(self, update=None):
+        """The per-unit records of the file, after `update(records)` when
+        given (then written back). {} when there is no file or it cannot be
+        read."""
+        path = self._dryer_vent_path()
+        if path is None:
+            return {}
+        try:
+            with open(path) as handle:
+                records = json.load(handle)
+            if not isinstance(records, dict):
+                records = {}
+        except (OSError, ValueError):
+            records = {}
+        if update is not None:
+            update(records)
+            tmp = path + ".tmp"
+            try:
+                with open(tmp, "w") as handle:
+                    json.dump(records, handle, sort_keys=True)
+                os.replace(tmp, path)
+            except OSError:
+                logging.info("OAMS[%s]: the dryer vent record was not saved"
+                             " to %s", self.oams_idx, path)
+        return records
+
+    def _remember_dryer_vents(self, args):
+        self._dryer_vent_args = list(args)
+        self._dryer_vents_checked = True
+        key = self._dryer_vent_key()
+        self._dryer_vent_file(
+            lambda records: records.__setitem__(key, list(args)))
+
+    def _recall_dryer_vents(self):
+        args = getattr(self, "_dryer_vent_args", None)
+        if args is None and not getattr(self, "_dryer_vents_checked", False):
+            self._dryer_vents_checked = True
+            stored = self._dryer_vent_file().get(self._dryer_vent_key())
+            if (isinstance(stored, list)
+                    and len(stored) == len(DRYER_VENT_OPTIONS) + 1):
+                args = self._dryer_vent_args = [int(v) for v in stored]
+        return args
+
+    def _forget_dryer_vents(self):
+        self._dryer_vent_args = None
+        self._dryer_vents_checked = True
+        key = self._dryer_vent_key()
+        if key is not None and key in self._dryer_vent_file():
+            self._dryer_vent_file(lambda records: records.pop(key, None))
 
     def clear_errors(self):
         for i in range(self.bay_count):
@@ -2705,6 +2839,11 @@ class OAMS(oams_ext.UnitHooks):
             if length_cmd is not None:
                 length_cmd.send([int(length)])
         cmd.send(args)
+        reactor = getattr(self, "reactor", None)
+        self._last_load = {"bay": spool_idx, "gen": gen,
+                           "at": (reactor.monotonic() if reactor is not None
+                                  else 0.0),
+                           "retried": False, "cancelled": False}
         if hasattr(self, "filament_path_length"):
             self._selected_path_length = self._ptfe_length_for_bay(spool_idx)
             self._selected_ptfe_bay = spool_idx
@@ -2718,6 +2857,7 @@ class OAMS(oams_ext.UnitHooks):
 
     def start_unload_spool(self, gen=None):
         self._require_motion()
+        self._last_load = None
         if self._use_wide_gen_protocol:
             cmd = self._require_cmd(
                 self.oams_unload_spool4_cmd, "protocol-v4 unload command")
@@ -2735,6 +2875,7 @@ class OAMS(oams_ext.UnitHooks):
 
     def start_calibrate(self, kind, bay, gen=None):
         self._require_motion()
+        self._last_load = None
         if self._use_wide_gen_protocol:
             cmd = self._require_cmd(
                 self.oams_calibrate_hub_hes4_cmd if kind == "hub_hes"
@@ -2769,6 +2910,8 @@ class OAMS(oams_ext.UnitHooks):
         self._note_active(self.status_calibrating, gen)
 
     def load_spool_cancel(self):
+        if getattr(self, "_last_load", None) is not None:
+            self._last_load["cancelled"] = True
         if self._use_wide_gen_protocol:
             return self.cancel_operation(self.status_loading, 0)
         if self.oams_load_spool_cancel_cmd is None:
@@ -3077,10 +3220,11 @@ class OAMS(oams_ext.UnitHooks):
         self._require_dryer(gcmd)
         if self.capabilities.get("heater_control") is False:
             raise gcmd.error("This firmware does not support heater control")
-        if self._dryer_cycle_running():
+        if self._dryer_heating():
             # One cycle at a time: a new temperature, time or Rotate means
             # stopping this one first (a start mid-print to switch the
-            # spools turning on is told the same).
+            # spools turning on is told the same). The cooldown after a dry
+            # is not one: a new dry replaces it.
             data = self._telemetry.get("dryer") or {}
             left = data.get("remaining_s")
             raise gcmd.error(
@@ -3130,12 +3274,14 @@ class OAMS(oams_ext.UnitHooks):
         if vent not in ("auto", "unit"):
             raise gcmd.error("VENT must be auto (the bridge drives the vents) "
                              "or unit (the unit moves them itself)")
-        running = self._dryer_cycle_running()
+        running = self._dryer_heating()
         vents = ""
         tuning_cmd = getattr(self, "ams_dryer_vent_tuning_cmd", None)
+        tuning = None
         if tuning_cmd is not None and not running:
+            tuning = self._dryer_vent_tuning_args(vent == "auto")
             self._send_ams_ht_control(
-                tuning_cmd, self._dryer_vent_tuning_args(vent == "auto"),
+                tuning_cmd, tuning,
                 "%s dryer vent tuning" % self._unit_label(), gcmd)
             vents = ("; the bridge drives the vents" if vent == "auto"
                      else "; the unit moves its vents")
@@ -3161,6 +3307,13 @@ class OAMS(oams_ext.UnitHooks):
                     " first (%s)" % (
                         data.get("state_name"),
                         "" if left is None else ", %d s left" % left, exc))
+            if "busy" in str(exc) and self._dryer_cycle_running():
+                # A unit that refuses a new dry in the cooldown after the
+                # last one (the host allows it there).
+                raise gcmd.error(
+                    "%s is still cooling down after its last dry and would"
+                    " not start a new one; try again once the cooldown ends"
+                    " (%s)" % (self._unit_label(), exc))
             if "busy" in str(exc):
                 # No cycle of ours: the unit itself is not idle. A stock AMS
                 # drops a start while it feeds, holds a loaded spool, shows a
@@ -3194,6 +3347,10 @@ class OAMS(oams_ext.UnitHooks):
                        clear, exc))
             raise
         self._dryer_rotate_started = bool(rotate)
+        if tuning is not None:
+            # Sent with this start; kept to send again after a bridge reset.
+            self._dryer_vents_sent = True
+            self._remember_dryer_vents(tuning)
         gcmd.respond_info(
             "%s: dryer started at %.1fC for %ds (hold_after=%d)%s%s"
             % (self._unit_label(), target, duration, hold_after, vents,
@@ -3208,7 +3365,74 @@ class OAMS(oams_ext.UnitHooks):
         self._send_ams_ht_control(
             self.ams_ht_dryer_stop_cmd, [], "%s dryer stop" % label, gcmd)
         self._dryer_rotate_started = False
+        self._forget_dryer_vents()
         gcmd.respond_info("%s: dryer stopped" % label)
+
+    # A Cortex Bridge from firmware 31 answers a fault clear on an idle unit
+    # with the printer's retry arm (0f, then 0e for about 2 s, then a command
+    # on the bay), which resets slot lights a past fault left in their error
+    # pattern; the clear ends about 2.5 s later and the unit answers other
+    # commands Busy until then. A drying or moving unit clears at once. The
+    # unit says nothing when the clear ends, so the host keeps this window
+    # after each clear it sends to a relaying firmware.
+    FAULT_CLEAR_BUSY_S = 3.0
+    # A load the unit answers Busy this soon after a clear is sent again,
+    # once, when the window has passed.
+    FAULT_CLEAR_BUSY_RETRY_S = 4.0
+
+    def _note_fault_clear_sent(self):
+        caps = getattr(self, "capabilities", None) or {}
+        reactor = getattr(self, "reactor", None)
+        if not caps.get("link_status") or reactor is None:
+            return
+        now = reactor.monotonic()
+        self._fault_clear_sent_at = now
+        self._fault_clear_busy_until = now + self.FAULT_CLEAR_BUSY_S
+
+    def fault_clear_remaining(self, now=None):
+        """Seconds left of a fault clear this host sent (0 when none)."""
+        until = getattr(self, "_fault_clear_busy_until", None)
+        if until is None:
+            return 0.0
+        if now is None:
+            now = self.reactor.monotonic()
+        return max(0.0, until - now)
+
+    def fault_clear_in_flight(self, now=None):
+        return self.fault_clear_remaining(now) > 0.0
+
+    def reset_clear_skip_reason(self):
+        """None when Reset should send this unit a fault clear although no
+        fault of it is latched (a Cortex Bridge resets an idle unit's slot
+        lights with it), else why it should not."""
+        caps = getattr(self, "capabilities", None) or {}
+        if not caps.get("link_status"):
+            return "not behind a Cortex Bridge"
+        if getattr(self, "ams_ht_clear_fault_cmd", None) is None:
+            return "no fault clear"
+        if (not getattr(self, "connected", True)
+                or getattr(self, "unreachable", None) is not None
+                or getattr(self, "session_lost", None) is not None
+                or getattr(self, "link_reachable", None) is False):
+            return "not connected"
+        domain = (getattr(self, "_telemetry", None) or {}).get("domain") or {}
+        if self._dryer_heating() or domain.get("dryer_state") in (1, 2, 3):
+            return "drying"
+        # load, follow, unload or positioning (a Cortex Bridge reports its
+        # standing follower as idle: nothing runs then)
+        if (getattr(self, "action_status", None) is not None
+                or domain.get("motion_state") in (1, 2, 3, 5)):
+            return "moving"
+        return None
+
+    def send_fault_clear(self):
+        """Send the unit one fault clear now. Returns the name of its
+        answer ("accepted" when it took it)."""
+        params = self.ams_ht_clear_fault_cmd.send([])
+        result = -1 if params is None else params.get("result", -1)
+        if result == 0:
+            self._note_fault_clear_sent()
+        return self._AMS_HT_RESULTS.get(result, "unknown")
 
     cmd_OAMS_CLEAR_FAULT_help = "Clear a recoverable unit firmware fault"
 
@@ -3222,6 +3446,7 @@ class OAMS(oams_ext.UnitHooks):
         label = self._unit_label()
         self._send_ams_ht_control(
             self.ams_ht_clear_fault_cmd, [], "%s fault clear" % label, gcmd)
+        self._note_fault_clear_sent()
         gcmd.respond_info(
             "%s: fault clear accepted; checking the result in %.0fs"
             % (label, self.CLEAR_FAULT_CHECK_S))
@@ -3282,6 +3507,7 @@ class OAMS(oams_ext.UnitHooks):
             return self.reactor.NEVER
         result = -1 if params is None else params.get("result", -1)
         if result == 0:
+            self._note_fault_clear_sent()
             message = ("%s: cleared the %s fault left by an earlier failure;"
                        " the unload that just finished worked" % (label, name))
         else:
@@ -3854,6 +4080,8 @@ class OAMS(oams_ext.UnitHooks):
         if self._use_wide_gen_protocol and wire_gen is not None:
             self._apply_action_status4(params, wire_gen)
             return
+        if self._retry_busy_load(params, wire_gen):
+            return
         if action == self.status_calibrating:
             self.action_status_value = params["value"]
             self.action_status_code = code
@@ -3931,6 +4159,47 @@ class OAMS(oams_ext.UnitHooks):
         if self.on_action_complete is not None:
             self.on_action_complete(self.action_status_code,
                                     self.action_status_value, gen)
+
+    def _retry_busy_load(self, params, wire_gen):
+        """A load the unit refused Busy while a fault clear this host sent
+        was still running (FAULT_CLEAR_BUSY_S): hold the refusal back and
+        send the same load again once the clear has ended, one time. True
+        when the refusal was held. The *2 protocol only, where the unit
+        echoes the generation; a cancelled or superseded load is not sent
+        again, and its refusal then goes on as usual."""
+        load = getattr(self, "_last_load", None)
+        sent = getattr(self, "_fault_clear_sent_at", None)
+        if (params["action"] != self.status_loading
+                or params["code"] != OAMS_OP_CODE_ERROR_BUSY
+                or wire_gen is None or load is None or sent is None
+                or load["retried"] or load["cancelled"]
+                or wire_gen != self._wire_gen(load["gen"])
+                or not 0.0 <= load["at"] - sent
+                <= self.FAULT_CLEAR_BUSY_RETRY_S):
+            return False
+        load["retried"] = True
+        now = self.reactor.monotonic()
+        when = now + max(0.1, self.fault_clear_remaining(now) + 0.1)
+        logging.info("OAMS[%s]: the load of %s was refused busy while a fault"
+                     " clear ran; sending it again in %.1f s", self.oams_idx,
+                     self.spool_label(load["bay"]), when - now)
+
+        def resend(eventtime, load=load, params=dict(params)):
+            current = getattr(self, "_last_load", None)
+            if current is load and not load["cancelled"]:
+                try:
+                    self.start_load_spool(load["bay"], load["gen"])
+                    self._last_load["retried"] = True
+                    return self.reactor.NEVER
+                except Exception:
+                    logging.exception("OAMS[%s]: sending the load again"
+                                      " failed", self.oams_idx)
+            # Not sent again: the refusal ends the load as it would have.
+            self._apply_action_status(params, wire_gen)
+            return self.reactor.NEVER
+
+        self.reactor.register_timer(resend, when)
+        return True
 
     def _apply_action_status4(self, params, gen):
         """Protocol-v4 completion: the echoed generation is exact. Every

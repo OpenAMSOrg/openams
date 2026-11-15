@@ -157,6 +157,16 @@ class Runtime:
             # firmware reply can ever complete.
             completion.complete(self._session_ended_result())
             return completion
+        # A unit still running a fault clear answers Busy: the manager's hook
+        # waits for it (yielding) before anything is dispatched, so nothing
+        # has changed if a Stop came meanwhile.
+        hook = getattr(self, "before_motion", None)
+        if hook is not None and isinstance(
+                action, (S.Load, S.LoadBay, S.Unload, S.Calibrate)):
+            refusal = hook(fps)
+            if refusal:
+                completion.complete(S.OpResult(False, None, refusal))
+                return completion
         self._pending[fps] = completion
         getattr(self, "_terminal_stop_pending", {}).pop(fps, None)
         getattr(self, "_terminal_stop_proof", {}).pop(fps, None)

@@ -581,7 +581,9 @@ class InstallShTests(unittest.TestCase):
         # No install_script: Moonraker must never run the installer (it uses sudo and restarts Klipper).
         self.assertNotIn("install_script", conf)
         self.assertIn("path: %s" % ROOT, conf)
-        self.assertIn("managed_services: klipper", conf)
+        # Klipper for the Klipper code, Moonraker for the OpenAMS components;
+        # Moonraker refuses an update while printing.
+        self.assertIn("managed_services: klipper moonraker\n", conf)
         self.assertIn("OpenAMSOrg/openams.git", conf)
         self.assertTrue((ROOT / "klipper_mmu").is_dir(), "the updated checkout holds klipper_mmu/")
 

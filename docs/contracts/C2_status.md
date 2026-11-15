@@ -631,7 +631,7 @@ its `identity.board` is `"oams-stm32f072"`.
 
 | Key | Type | Unit | Mapping from today's telemetry |
 |---|---|---|---|
-| `state` | string | — | `telemetry.dryer.state_name`: `off`, `preheat`, `hold`, `timed_dry`, `cooldown`, `fault` (`src/oams.py:1424-1427`); `unknown` (the host's own seventh value, in the schema's enum) before the first frame or for a state number the host does not know. **RESOLVED (review, C2 12): this is the final vocabulary** — the firmware owns the dryer states and reports exactly these six names; the host passes them through unchanged |
+| `state` | string | — | `telemetry.dryer.state_name`: `off`, `preheat`, `hold`, `timed_dry`, `cooldown`, `fault` (`src/oams.py:1424-1427`). `cooldown` (2026-11-14) is shown and blocks nothing: loads and toolchanges, `dryer_start` (a new dry replaces it) and Reset's clear all go on, unless the unit still reports its heater on (`heater_permille` above 0); `unknown` (the host's own seventh value, in the schema's enum) before the first frame or for a state number the host does not know. **RESOLVED (review, C2 12): this is the final vocabulary** — the firmware owns the dryer states and reports exactly these six names; the host passes them through unchanged |
 | `target_c` | number or null | °C | `telemetry.dryer.target_c` (`src/oams.py:1419-1423`; `null` when the firmware sends the -32768 sentinel) |
 | `remaining_s` | int or null | s | `telemetry.dryer.remaining_s` |
 | `heater_pct` | number or null | % | `heater_permille / 10` |

@@ -125,8 +125,8 @@ is the customer guide; this is what it changes:
 | `/etc/tmpfiles.d/cortex-bridge.conf` | Creates `/dev/oams`, where the relay links one port per AMS |
 | `dialout` group | Adds you to it, if you are not already a member |
 | `~/moonraker/moonraker/components/openams_bridge` | Symlink to `moonraker/openams_bridge`, plus `[openams_bridge]` in `moonraker.conf` |
-| `moonraker.asvc` | Allows Moonraker to restart `cortex-bridge` |
-| `[update_manager openams]` | `managed_services` gains `cortex-bridge` (an entry without the line gets `managed_services: cortex-bridge klipper`), so an update restarts the relay |
+| `moonraker.asvc` | Allows Moonraker to restart `cortex-bridge`, on a line of its own. An earlier installer could glue the name to the last service (`crowsnestcortex-bridge`, when the file had no final newline); the installer and the `openams_bridge` component split it back once, keeping the old file as `moonraker.asvc.bak-<date>` |
+| `[update_manager openams]` | `managed_services: klipper moonraker`, so an update restarts Klipper and loads the new OpenAMS Moonraker components. An entry without the line gets it; the `cortex-bridge klipper` an earlier install wrote (Moonraker refuses the relay there and warns) is corrected, the old file kept as `moonraker.conf.bak-<date>`. The relay is restarted by the `openams_bridge` component when an update changed its code |
 | `oams.cfg` | On a printer without one: copied from [`oams_cortex_bridge_sample.cfg`](../../oams_cortex_bridge_sample.cfg), then the connected AMS units are added by `tools/cortex-bridge.py config --write` |
 
 On every printer, the installer also keeps its last run's output in

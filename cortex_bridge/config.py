@@ -24,8 +24,10 @@ BEGIN_MARK = "# >>> Cortex Bridge units"
 END_MARK = "# <<< Cortex Bridge units"
 
 _SECTION = re.compile(r"^\s*\[([^\]]+)\]", re.MULTILINE)
+# A bridge unit's port; Klipper allows an inline comment after it.
 _SERIAL = re.compile(
-    r"^\s*serial\s*[:=]\s*/dev/(?:serial/by-id/)?oams/([0-9a-f]{12})\s*$",
+    r"^\s*serial\s*[:=]\s*/dev/(?:serial/by-id/)?oams/([0-9a-f]{12})"
+    r"(?:\s+[#;].*)?\s*$",
     re.MULTILINE)
 _OAMS_IDX = re.compile(r"^\s*oams_idx\s*[:=]\s*(\d+)", re.MULTILINE)
 _TOOL_GROUP = re.compile(r"^\s*\[filament_group\s+T(\d+)\s*\]", re.MULTILINE)
@@ -127,6 +129,37 @@ def render_units(units: list, *, taken: set | None = None,
 
 def configured_uids(text: str) -> set:
     return set(_SERIAL.findall(text))
+
+
+def _option(section: dict, name: str) -> str:
+    return section["options"].get(name, "").split("#")[0].strip()
+
+
+def bridge_ports(text: str) -> dict:
+    """{mcu name: uid} for the `[mcu NAME]` sections on /dev/oams/<uid>."""
+    ports = {}
+    for section in _sections(text.splitlines()):
+        words = section["name"].split()
+        if words[0] == "mcu" and len(words) == 2:
+            found = _SERIAL.findall("serial: %s" % _option(section, "serial"))
+            if found:
+                ports[words[1]] = found[0]
+    return ports
+
+
+def configured_kinds(text: str) -> dict:
+    """{uid: device_kind} for the bridge units a config file describes: an
+    `[mcu NAME]` on /dev/oams/<uid> and the `[oams ...]` with `mcu: NAME`."""
+    ports = bridge_ports(text)
+    kinds = {}
+    for section in _sections(text.splitlines()):
+        if section["name"].split()[0] != "oams":
+            continue
+        uid = ports.get(_option(section, "mcu"))
+        kind = _option(section, "device_kind")
+        if uid and kind:
+            kinds[uid] = kind
+    return kinds
 
 
 # ---------------------------------------------------------------------------

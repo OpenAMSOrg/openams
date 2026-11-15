@@ -554,7 +554,9 @@ the bridge drives them the way a Bambu printer does:
   ends.
 - When the dry time is up, the heater stops and the vents close until the
   chamber is below 45 °C (`dryer_cooldown_below:` in `[oams <name>]` changes
-  that; see [the reference](reference.md#oams-name)).
+  that; see [the reference](reference.md#oams-name)). The panel shows that
+  cooldown, but nothing waits for it: you can load, change tools or start a
+  new dry meanwhile.
 
 Bridge firmware 10 opened them once the moisture in the chamber stopped
 rising instead. The bridge does this by itself, so a dry finishes the same
@@ -609,8 +611,14 @@ need to power the AMS off.
 ## Keep it up to date
 
 - **OpenAMS**, including the bridge relay, updates from Mainsail's
-  **Machine → Update Manager**, entry `openams`. It restarts the relay and
-  Klipper for you.
+  **Machine → Update Manager**, entry `openams`. The update restarts Klipper
+  and Moonraker (never during a print: Moonraker refuses to update then).
+  When the update changed the relay's code, OpenAMS restarts the relay as
+  soon as the printer is idle (no print printing or paused, no firmware
+  update running), then sends `FIRMWARE_RESTART` so Klipper reconnects to
+  the AMS. If Klipper comes up with `Can not update MCU '...' config as it is
+  shutdown` for an AMS (the bridge stops an AMS while Klipper restarts), it
+  sends that `FIRMWARE_RESTART` too.
 - **The bridge's own firmware** comes as signed packages with OpenAMS
   updates. After updating OpenAMS, `python3 ~/openams/tools/cortex-bridge.py
   version` says whether the bridge is up to date.

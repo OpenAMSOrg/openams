@@ -93,7 +93,10 @@ class CortexBridgeInstallTests(unittest.TestCase):
             "/etc/tmpfiles.d/cortex-bridge.conf").read_text())
         conf = (self.config / "moonraker.conf").read_text()
         self.assertEqual(conf.count("[openams_bridge]"), 1)
-        self.assertIn("managed_services: cortex-bridge klipper", conf)
+        # Moonraker accepts only the entry's name, klipper and moonraker; the
+        # relay is restarted by the openams_bridge component instead.
+        self.assertIn("managed_services: klipper moonraker\n", conf)
+        self.assertNotIn("managed_services: cortex-bridge", conf)
         link = self.moonraker / "moonraker/components/openams_bridge"
         self.assertEqual(link.resolve(), (ROOT / "moonraker/openams_bridge"))
         asvc = (self.printer_data / "moonraker.asvc").read_text().split()
@@ -110,10 +113,10 @@ class CortexBridgeInstallTests(unittest.TestCase):
         self.assertNotIn("canbus_uuid", oams)
         self.assertIn("config --write --yes", result.stdout)
 
-    def test_an_update_entry_without_managed_services_gets_the_relay(self):
+    def test_an_update_entry_without_managed_services_gets_the_line(self):
         # Written by hand (or for klipper_openams) without managed_services:
-        # Moonraker would restart nothing after an update, and the relay would
-        # keep running the old code ("unknown method 'ams_update'").
+        # Moonraker would restart a service named "openams", which does not
+        # exist, and nothing would load the new code.
         (self.config / "moonraker.conf").write_text(
             "[server]\n\n[update_manager openams]\ntype: git_repo\n"
             "path: %s\norigin: https://github.com/OpenAMSOrg/openams.git\n"
@@ -124,9 +127,59 @@ class CortexBridgeInstallTests(unittest.TestCase):
         conf = (self.config / "moonraker.conf").read_text()
         section = conf.split("[update_manager openams]")[1].split("\n[")[0]
         self.assertEqual(section.count("managed_services:"), 1, section)
-        self.assertIn("managed_services: cortex-bridge klipper", section)
+        self.assertIn("managed_services: klipper moonraker", section)
         self.assertNotIn("managed_services",
                          conf.split("[update_manager mainsail]")[1])
+
+    def test_the_relay_an_earlier_install_listed_is_taken_out_once(self):
+        # An earlier installer wrote "cortex-bridge klipper"; Moonraker warned
+        # and restarted Klipper only. The old file is kept as a dated backup.
+        old = ("[server]\n\n[update_manager openams]\ntype: git_repo\n"
+               "path: %s\norigin: https://github.com/OpenAMSOrg/openams.git\n"
+               "primary_branch: main\nmanaged_services: cortex-bridge klipper"
+               "\n" % ROOT)
+        (self.config / "moonraker.conf").write_text(old)
+        self.plug_in_bridge()
+        result = self.install()
+        self.assertInstalled(result)
+        self.assertIn("The OpenAMS update entry now has 'managed_services: "
+                      "klipper moonraker'", result.stdout)
+        backups = list(self.config.glob("moonraker.conf.bak-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertIn("managed_services: cortex-bridge klipper\n",
+                      backups[0].read_text())
+        self.assertInstalled(self.install())
+        self.assertEqual(len(list(self.config.glob("moonraker.conf.bak-*"))),
+                         1, "nothing to correct the second time")
+
+    def test_the_relay_is_never_glued_to_the_last_service(self):
+        # Moonraker writes its default list without a final newline.
+        (self.printer_data / "moonraker.asvc").write_text(
+            "klipper_mcu\nwebcamd\nsonar\ncrowsnest")
+        self.plug_in_bridge()
+        self.assertInstalled(self.install())
+        self.assertEqual((self.printer_data / "moonraker.asvc").read_text(),
+                         "klipper_mcu\nwebcamd\nsonar\ncrowsnest\n"
+                         "cortex-bridge\n")
+
+    def test_a_glued_relay_name_is_repaired_once(self):
+        # What an earlier installer left after two runs on such a file.
+        glued = ("klipper_mcu\nwebcamd\nsonar\ncrowsnestcortex-bridge\n"
+                 "cortex-bridge\n")
+        (self.printer_data / "moonraker.asvc").write_text(glued)
+        self.plug_in_bridge()
+        result = self.install()
+        self.assertInstalled(result)
+        self.assertEqual((self.printer_data / "moonraker.asvc").read_text(),
+                         "klipper_mcu\nwebcamd\nsonar\ncrowsnest\n"
+                         "cortex-bridge\n")
+        self.assertIn("moonraker.asvc: one service name per line again",
+                      result.stdout)
+        backups = list(self.printer_data.glob("moonraker.asvc.bak-*"))
+        self.assertEqual([b.read_text() for b in backups], [glued])
+        self.assertInstalled(self.install())
+        self.assertEqual(
+            len(list(self.printer_data.glob("moonraker.asvc.bak-*"))), 1)
 
     def test_a_bridge_waiting_for_firmware_also_counts(self):
         self.plug_in_bridge(pid="fe10", product="Cortex Updater")

@@ -25,12 +25,39 @@ class FakeKlippy:
     def __init__(self, state="standby"):
         self.state = state
         self.restarts = []
+        # printer.info after each FIRMWARE_RESTART (the last one repeats);
+        # "ready" when not scripted.
+        self.after_restart = []
+        self.on_restart = None
 
     async def query_objects(self, objects):
         return {"print_stats": {"state": self.state}}
 
     async def do_restart(self, gcode):
         self.restarts.append(gcode)
+        if self.on_restart is not None:
+            self.on_restart()
+
+    async def get_klippy_info(self):
+        index = len(self.restarts) - 1
+        if index < 0 and self.before_restart is not None:
+            return self.before_restart
+        if 0 <= index < len(self.after_restart):
+            return self.after_restart[index]
+        return {"state": "ready", "state_message": "Printer is ready"}
+
+    before_restart = None
+
+
+class FakeMachine:
+    def __init__(self, on_restart=None):
+        self.actions = []
+        self.on_restart = on_restart
+
+    async def do_service_action(self, action, service):
+        self.actions.append((action, service))
+        if self.on_restart is not None:
+            self.on_restart()
 
 
 class FakeServer:
@@ -50,8 +77,18 @@ class FakeServer:
     def send_event(self, event, *args):
         self.events.append((event, args))
 
+    machine = None
+    app_args = {}
+
     def lookup_component(self, name, default=None):
-        return self.klippy if name == "klippy_apis" else default
+        if name == "klippy_apis":
+            return self.klippy
+        if name == "machine" and self.machine is not None:
+            return self.machine
+        return default
+
+    def get_app_args(self):
+        return self.app_args
 
     def get_event_loop(self):
         return asyncio.get_event_loop()
@@ -85,7 +122,9 @@ class Request:
         return self.args.get(key, default)
 
 
-class ComponentTests(unittest.TestCase):
+class ComponentCase(unittest.TestCase):
+    """The component against the fakes; no tests of its own."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -106,17 +145,28 @@ class ComponentTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.component = bridge_component.OpenAmsBridge(
             FakeConfig(self.server, self.run_dir))
+        for name, value in (("POLL_SECONDS", 0.01),
+                            ("KLIPPER_SETTLE_SECONDS", 0.0)):
+            patcher = mock.patch.object(bridge_component, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
+
+class ComponentTests(ComponentCase):
     def write_status(self, online, version=None, state="known",
-                     reason=""):
+                     reason="", second=None):
+        """One unit, or two with ``second`` (the other unit's online)."""
         firmware = None
         if version is not None or state != "known":
             firmware = {"state": state, "reason": reason, "version": version}
+        units = [("0a1b2c3d4e5f", online)]
+        if second is not None:
+            units.append(("5f4e3d2c1b0a", second))
         (self.run_dir / "status.json").write_text(json.dumps({
             "state": "running",
             "firmware": firmware,
-            "units": [{"uid": "0a1b2c3d4e5f", "online": online,
-                       "path": "/dev/oams/0a1b2c3d4e5f"}]}))
+            "units": [{"uid": uid, "online": up, "path": "/dev/oams/" + uid}
+                      for uid, up in units]}))
 
     def call(self, path, **args):
         return self.loop.run_until_complete(
@@ -198,7 +248,7 @@ class ComponentTests(unittest.TestCase):
                 await self.component.update_task
             return result
 
-        self.write_status(False)
+        self.write_status(True, version=4)
         result = self.loop.run_until_complete(scenario())
         self.assertEqual(result, {"started": True, "version": 7})
         self.assertEqual(requests[0]["method"], "update")
@@ -208,6 +258,212 @@ class ComponentTests(unittest.TestCase):
         self.assertEqual(self.klippy.restarts, ["FIRMWARE_RESTART"])
         self.assertTrue(self.component.last_result["ok"])
         self.assertEqual(self.component.last_result["installed_version"], 7)
+        self.assertEqual(self.component.last_result["units_text"],
+                         "1 of 1 AMS back online.")
+        self.assertEqual(self.component.last_result["klipper_state"], "ready")
+
+    def run_update(self):
+        """An update whose relay leaves both units offline at its result;
+        the test brings them back."""
+        async def relay(reader, writer):
+            await reader.readline()
+            writer.write((json.dumps({"event": "result", "ok": True,
+                                      "version": 7}) + "\n").encode())
+            await writer.drain()
+            writer.close()
+            self.write_status(False, version=7, second=False)
+
+        async def scenario():
+            server = await asyncio.start_unix_server(
+                relay, path=str(self.run_dir / "control.sock"))
+            async with server:
+                await self.server.endpoints[
+                    "/server/openams/bridge/update"](Request())
+                await self.component.update_task
+
+        self.loop.run_until_complete(scenario())
+        return self.component.last_result
+
+    def test_update_waits_for_every_unit_and_restarts_klipper_first(self):
+        # Two units online before the update; after it the first is back
+        # at once, the second a little later. Klipper is restarted before
+        # either is back, and its first start finds a stopped AMS port.
+        self.write_status(True, version=4, second=True)
+        seen_at_restart = []
+
+        def restarted():
+            seen_at_restart.append(json.loads(
+                (self.run_dir / "status.json").read_text())["units"])
+            if len(self.klippy.restarts) == 1:
+                loop = asyncio.get_event_loop()
+                loop.call_later(0.02, self.write_status, True, 7, "known",
+                                "", False)
+                loop.call_later(0.15, self.write_status, True, 7, "known",
+                                "", True)
+        self.klippy.on_restart = restarted
+        self.klippy.after_restart = [
+            {"state": "error", "state_message":
+             "Can not update MCU 'ams2' config as it is shutdown"}]
+        result = self.run_update()
+        self.assertFalse(any(unit["online"] for unit in seen_at_restart[0]),
+                         "the first FIRMWARE_RESTART came before the units")
+        self.assertEqual(result["units_expected"],
+                         ["0a1b2c3d4e5f", "5f4e3d2c1b0a"])
+        self.assertEqual(result["units_missing"], [])
+        self.assertEqual(result["units_text"], "2 of 2 AMS back online.")
+        self.assertEqual(self.klippy.restarts, ["FIRMWARE_RESTART"] * 2)
+        self.assertEqual(result["klipper_restarts"], 2)
+        self.assertEqual(result["klipper_state"], "ready")
+
+    def test_a_missing_unit_is_reported_and_klipper_not_retried(self):
+        reconnect = bridge_component._reconnect()
+        patcher = mock.patch.object(reconnect, "UNITS_BACK_WAIT", 0.2)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.write_status(True, version=4, second=True)
+        self.klippy.on_restart = lambda: asyncio.get_event_loop().call_later(
+            0.02, self.write_status, True, 7, "known", "", False)
+        self.klippy.after_restart = [
+            {"state": "error",
+             "state_message": "mcu 'ams1': Unable to connect"}]
+        result = self.run_update()
+        self.assertEqual(result["units_back"], ["0a1b2c3d4e5f"])
+        self.assertEqual(result["units_missing"], ["5f4e3d2c1b0a"])
+        self.assertIn("1 of 2 AMS back after 0 s: 5f4e3d2c1b0a not yet.",
+                      result["units_text"])
+        self.assertEqual(self.klippy.restarts, ["FIRMWARE_RESTART"])
+        self.assertEqual(result["klipper_state"], "error")
+
+
+
+class RelayAfterUpdateTests(ComponentCase):
+    """An OpenAMS update changed the relay's code: the component restarts it
+    when nothing would be interrupted, then FIRMWARE_RESTARTs Klipper."""
+
+    def setUp(self):
+        super().setUp()
+        self.code = bridge_component._code_version()
+        self.machine = FakeMachine(on_restart=self.relay_restarted)
+        self.server.machine = self.machine
+        self.write_relay(outdated=True)
+
+    def write_relay(self, outdated, state="running", **extra):
+        status = {"state": state, "firmware": None,
+                  "units": [{"uid": "0a1b2c3d4e5f", "online": True,
+                             "path": "/dev/oams/0a1b2c3d4e5f"}]}
+        if not outdated:
+            status["code"] = self.code.snapshot()
+        status.update(extra)
+        (self.run_dir / "status.json").write_text(json.dumps(status))
+
+    def relay_restarted(self):
+        self.write_relay(outdated=False)
+
+    def check(self):
+        return self.loop.run_until_complete(self.component.check_relay())
+
+    def test_an_idle_printer_gets_the_relay_restarted_and_klipper_back(self):
+        self.assertEqual(self.check(), "restarted")
+        self.assertEqual(self.machine.actions, [("restart", "cortex-bridge")])
+        self.assertEqual(self.klippy.restarts, ["FIRMWARE_RESTART"])
+        self.assertEqual(self.component.relay_code["state"], "restarted")
+        self.assertEqual(self.component.relay_code["klipper_state"], "ready")
+        self.assertEqual(self.check(), "current", "only once")
+        self.assertEqual(len(self.machine.actions), 1)
+
+    def test_never_while_printing_or_paused(self):
+        for state in ("printing", "paused"):
+            self.klippy.state = state
+            self.assertEqual(self.check(), "waiting")
+            self.assertEqual(self.component.relay_code["detail"],
+                             "a print is running")
+        self.assertEqual(self.machine.actions, [])
+        self.assertEqual(self.klippy.restarts, [])
+
+    def test_never_during_a_firmware_update(self):
+        self.write_relay(outdated=True, ams_update=True)
+        self.assertEqual(self.check(), "waiting")
+        self.write_relay(outdated=True, state="updating")
+        self.assertEqual(self.check(), "waiting")
+        self.assertEqual(self.machine.actions, [])
+
+    def test_not_while_klipper_is_starting(self):
+        self.klippy.before_restart = {"state": "startup"}
+        self.assertEqual(self.check(), "waiting")
+        self.assertEqual(self.machine.actions, [])
+
+    def test_a_current_relay_is_left_alone(self):
+        self.write_relay(outdated=False)
+        self.assertEqual(self.check(), "current")
+        self.assertEqual(self.machine.actions, [])
+
+    def test_a_relay_with_no_unit_in_use_needs_no_klipper_restart(self):
+        self.write_relay(outdated=True, units=[])
+        self.assertEqual(self.check(), "restarted")
+        self.assertEqual(self.klippy.restarts, [])
+
+
+class StoppedAtStartTests(ComponentCase):
+    """Klipper restarted (an OpenAMS update) while an AMS kept the bridge's
+    stop: one FIRMWARE_RESTART, only for an MCU on a bridge port."""
+
+    def setUp(self):
+        super().setUp()
+        self.config_dir = self.run_dir / "config"
+        self.config_dir.mkdir()
+        (self.config_dir / "oams.cfg").write_text(
+            "[mcu ams2]\nserial: /dev/oams/0a1b2c3d4e5f\n\n[mcu]\n"
+            "serial: /dev/serial/by-id/usb-Klipper\n")
+
+    def stopped(self, mcu):
+        self.klippy.before_restart = {
+            "state": "error", "config_file": str(self.config_dir /
+                                                 "printer.cfg"),
+            "state_message": "Can not update MCU '%s' config as it is "
+                             "shutdown\nOnce the underlying issue" % mcu}
+        return self.loop.run_until_complete(
+            self.component.check_stopped_at_start())
+
+    def test_a_bridge_unit_gets_one_restart(self):
+        self.assertEqual(self.stopped("ams2"), "ready")
+        self.assertEqual(self.klippy.restarts, ["FIRMWARE_RESTART"])
+        self.klippy.restarts.clear()
+        self.assertIsNone(self.stopped("ams2"), "not again within 10 min")
+        self.assertEqual(self.klippy.restarts, [])
+
+    def test_another_mcu_is_left_to_the_user(self):
+        self.assertIsNone(self.stopped("mcu"))
+        self.assertEqual(self.klippy.restarts, [])
+
+    def test_other_errors_are_left_alone(self):
+        self.klippy.before_restart = {"state": "error",
+                                      "state_message": "Option 'x' missing"}
+        self.assertIsNone(self.loop.run_until_complete(
+            self.component.check_stopped_at_start()))
+        self.assertEqual(self.klippy.restarts, [])
+
+
+class UpdateEntryFixTests(ComponentCase):
+    def test_the_entry_is_corrected_at_start(self):
+        conf = self.run_dir / "moonraker.conf"
+        conf.write_text("[update_manager openams]\ntype: git_repo\n"
+                        "managed_services: cortex-bridge klipper\n")
+        self.server.app_args = {"config_file": str(conf)}
+        result = self.component.fix_update_entry()
+        self.assertTrue(result["changed"])
+        self.assertIn("managed_services: klipper moonraker", conf.read_text())
+        self.assertFalse(self.component.fix_update_entry()["changed"])
+
+    def test_the_allowed_services_are_repaired_at_start(self):
+        asvc = self.run_dir / "moonraker.asvc"
+        asvc.write_text("klipper_mcu\ncrowsnestcortex-bridge\ncortex-bridge\n")
+        self.server.app_args = {"data_path": str(self.run_dir)}
+        self.assertTrue(self.component.fix_allowed_services()["changed"])
+        self.assertEqual(asvc.read_text(),
+                         "klipper_mcu\ncrowsnest\ncortex-bridge\n")
+        self.assertFalse(self.component.fix_allowed_services()["changed"])
+        asvc.unlink()
+        self.assertFalse(self.component.fix_allowed_services()["changed"])
 
 
 if __name__ == "__main__":

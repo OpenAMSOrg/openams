@@ -127,9 +127,11 @@ Continue? [y/N] y
   The bridge is restarting
   Done
 Installed. Waiting for the AMS to come back...
-  1 AMS online
+Klipper restarted (FIRMWARE_RESTART); it connects to each AMS as it comes back.
+  0a1b2c3d4e5f (AMS 2 Pro) is back (2 s)
+  5f4e3d2c1b0a (AMS HT) is back (3 s)
+2 of 2 AMS back online.
 The bridge now runs version 7.
-Klipper restarted (FIRMWARE_RESTART).
 Klipper is ready.
 ```
 
@@ -148,16 +150,31 @@ What happens, in order:
    with an MCU error; that is expected.
 3. The bridge restarts into its update receiver and reads the package twice:
    once to check it, once to write it.
-4. The bridge restarts into the new firmware, the relay reconnects, the AMS
-   appear again, and the bridge is asked for its version once more:
+4. The bridge restarts into the new firmware. Klipper is restarted
+   (`FIRMWARE_RESTART`) right away, before the AMS are back, and waits for
+   each of them.
+5. The relay reconnects and the AMS come back one by one, each within a few
+   seconds. The command waits for every AMS that was online before the
+   update (up to a minute) and says how many are back: `2 of 2 AMS back
+   online.` The bridge is asked for its version once more:
    `The bridge now runs version 7.` confirms the install.
-5. Klipper is restarted (`FIRMWARE_RESTART`) and is **Ready** again. If it
-   is not ready a minute later (the restart came while an AMS was still coming
-   back), the command sends `FIRMWARE_RESTART` once more.
+6. Klipper is **Ready**. If it stopped instead with `Can not update MCU '...'
+   config as it is shutdown` (an AMS still held the stop from before the
+   restart), the command sends `FIRMWARE_RESTART` once more, and says so.
+
+**If an AMS is not back**, the command names it:
+
+```text
+1 of 2 AMS back after 60 s: 5f4e3d2c1b0a (AMS HT) not yet.
+It may still be starting: run `cortex-bridge.py status` in a minute. If it stays offline, check its power (an AMS HT has its own) and cables, then power that AMS off and on; it comes back by itself once it answers.
+```
+
+Klipper starts once every AMS in its config answers; when the missing one is
+back, press **FIRMWARE RESTART** in Mainsail.
 
 **If Mainsail still says to FIRMWARE_RESTART after the update**, press
-**FIRMWARE RESTART** in Mainsail. That is expected now and then, and harmless:
-Klipper reconnects to the AMS and everything works.
+**FIRMWARE RESTART** in Mainsail. It is harmless: Klipper reconnects to the
+AMS and everything works.
 
 **Check:** `python3 ~/openams/tools/cortex-bridge.py version` says
 `Up to date.`

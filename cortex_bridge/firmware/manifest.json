@@ -2,6 +2,41 @@
  "schema": 1,
  "packages": [
   {
+   "version": 34,
+   "file": "bridge-34.oac2",
+   "sha256": "359cf8b6eb40a1a03567ce9d6ca47a8e3994224e749020040684a3f4b7897c6b",
+   "released": "2026-11-14",
+   "notes": "A dry whose target is below the AMS's current chamber temperature (a box still warm from an earlier dry) starts and cools toward its target instead of being stopped at once as overheating. An overheating dryer is now reported as chamber_overtemperature."
+  },
+  {
+   "version": 33,
+   "file": "bridge-33.oac2",
+   "sha256": "aadffe46897c1d047d2cf54ff879c0fe4e58cf39a0e250fecebb8c80eafb5c57",
+   "released": "2026-11-14",
+   "notes": "OpenAMS sees each AMS's own filament odometer as its encoder: the distance from park the AMS reports, counting up as it feeds and back to 0 at park. Before, the encoder always read 0."
+  },
+  {
+   "version": 32,
+   "file": "bridge-32.oac2",
+   "sha256": "9ef1239ab4d5217e0bd2fb45b85fabdc977c69afed143e990b0a9fe2faa740b6",
+   "released": "2026-11-14",
+   "notes": "Two AMS units of the same kind (two AMS HTs, or two AMS 2 Pros) each report their own dryer status again: target, time left and vent position. Before, both showed the vents as unknown and no time left while they dried."
+  },
+  {
+   "version": 31,
+   "file": "bridge-31.oac2",
+   "sha256": "cc9e5b7b3445209e712c23b07aa35b970a4c11475f6063e60762e3f7f61ac471",
+   "released": "2026-11-14",
+   "notes": "A fault clear (OAMS_CLEAR_FAULT) on an idle AMS now also sends the printer's retry sequence, which resets slot lights a past fault left in its error pattern after the error itself went back to 0. Such a clear takes about 2.5 s; a drying or moving AMS is cleared as before."
+  },
+  {
+   "version": 30,
+   "file": "bridge-30.oac2",
+   "sha256": "d2931b6722293bee8d74f8b6df7d6c61f9d9d40ca1782c6c9b58795cd809924a",
+   "released": "2026-11-14",
+   "notes": "After a bridge restart the bridge finds every AMS that kept its bus index before it offers one to an AMS asking for an index, so two AMS units no longer end up answering at the same index. An AMS whose answers stopped matching its identity (two units answered at its index) is identified again and comes back online by itself, with its firmware version read again."
+  },
+  {
    "version": 29,
    "file": "bridge-29.oac2",
    "sha256": "e01ec6c11ee19ed4cd9603cfa6191b97f3a43eb1462f853284fae2b4cf0f5a52",

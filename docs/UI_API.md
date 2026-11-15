@@ -342,7 +342,11 @@ the status method and treating a "method not found" error as "no bridge".
 `starting`, `waiting`, `connecting`, `running`, `updating` or `stopped`, and
 `relay.reason` names why it is waiting (`no-bridge`, `bridge-in-update-mode`,
 `bridge-fault`, `no-roster`, ...). `latest` is `null` when no package is
-bundled. The installed firmware version is not reported yet.
+bundled. The installed firmware version is not reported yet. `relay_code`
+says whether the relay runs the checkout's code: `state` is `current`,
+`not-running`, `waiting` (with `detail`: a print or firmware update is running,
+or Klipper is not ready), `restarted` (after an OpenAMS update changed it) or
+`failed`.
 
 `server.openams.bridge.update` (HTTP `POST /server/openams/bridge/update`,
 optional `version`) installs a bundled package, the newest when `version` is
@@ -360,9 +364,14 @@ bundled, and 503 when the relay is not running. Progress arrives as the
 `phase` is `entering`, `waiting-receiver`, `authenticating`, `writing`,
 `restarting` or `done`. A failed result has `ok: false` with `error` (for
 example `UpdateModeRefused` when the AMS is busy) and a `message` to show as it
-is. After a successful update the component waits for the AMS to come back
-and sends `FIRMWARE_RESTART`; a client needs to do nothing more. Confirm with
-the user before calling update: Klipper loses the AMS for about a minute.
+is. After a successful update the component sends `FIRMWARE_RESTART` at once
+(Klipper then waits for each AMS), waits up to a minute for every AMS that was
+online before the update, and sends `FIRMWARE_RESTART` once more if Klipper
+stopped with an AMS still holding the old stop; a client needs to do nothing
+more. The status's `last_result` then adds `units_expected`, `units_back`,
+`units_missing` (UIDs), `units_text` (for example `2 of 2 AMS back online.`),
+`klipper_state` and `klipper_restarts`. Confirm with the user before calling
+update: Klipper loses the AMS for about a minute.
 
 ## Compatibility rules
 
