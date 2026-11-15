@@ -1018,10 +1018,13 @@ class SnapshotTests(Fixture):
     def test_a_refusal_names_the_reason_and_the_suffix(self):
         _, section = self.snapshot_section(
             self.vector("refused_at_ht_index"))
+        # An AMS 2 Pro at an AMS HT index under bridge firmware 9: the
+        # advice is the bridge update (firmware 35 admits it there).
         self.assertIn("Reading: An AMS (tag suffix N700, not one this "
                       "firmware recognises) answers but the bridge refuses "
-                      "it: it holds an AMS index that does not fit its "
-                      "model", section)
+                      "it: it is an AMS 2 Pro holding index 128", section)
+        self.assertIn("What to do: Update the bridge: python3 "
+                      "~/openams/tools/cortex-bridge.py update", section)
         self.assertIn('"ams_version": [\n', section)
         self.assertIn('"last_offer_basis": "marker_ht"', section)
 

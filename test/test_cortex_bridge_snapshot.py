@@ -185,8 +185,53 @@ class GoldenVectorTests(unittest.TestCase):
         self.assertEqual(refused["reason"], "index_mismatch")
         self.assertIn("tag suffix N700, not one this firmware recognises",
                       refused["summary"])
+        # An AMS 2 Pro keeps the HT index it holds through power cycles:
+        # the reading says to update the bridge, not to power-cycle it.
+        self.assertIn("AMS 2 Pro holding index 128", refused["summary"])
+        self.assertIn("cortex-bridge.py update", refused["action"])
+        self.assertNotIn("power the AMS off and on",
+                         refused["summary"] + refused["action"])
         unused = snap.classify(VECTORS["admitted_not_configured"]["decoded"])
         self.assertIn("/dev/oams/151a58f19349", unused["action"])
+
+    def test_the_index_refusal_advice_follows_the_family_and_firmware(self):
+        import copy
+        base = VECTORS["refused_at_ht_index"]["decoded"]
+
+        def reading(family=None, app_version=None, index=None):
+            data = copy.deepcopy(base)
+            for row in data.get("candidates", []) + data.get("refusals", []):
+                if family is not None:
+                    row["family"] = family
+                if index is not None:
+                    row["index"] = index
+            if app_version is not None:
+                data["system"]["app_version"] = app_version
+            return snap.classify(data)
+
+        # An AMS 1 forgets the index and announces again: power-cycling
+        # still helps it.
+        ams1 = reading(family="ams1")
+        self.assertIn("power the AMS off and on", ams1["summary"])
+        self.assertNotIn("cortex-bridge.py update", ams1["action"])
+        # A bridge already on firmware 35 does not refuse an AMS 2 Pro there;
+        # if one still does, the advice falls back to the general one.
+        current = reading(app_version=35)
+        self.assertIn("power the AMS off and on", current["summary"])
+        # An AMS 2 Pro at an AMS index is not this case.
+        low = reading(index=2)
+        self.assertNotIn("cortex-bridge.py update", low["action"])
+
+    def test_the_status_next_step_names_the_bridge_update(self):
+        from cortex_bridge import cli
+        reading = snap.classify(VECTORS["refused_at_ht_index"]["decoded"])
+        facts = {"usb": [{"state": "application"}], "relay": {"units": []},
+                 "relay_service": "active", "configured": [],
+                 "snapshot": {"reading": reading}}
+        step = cli.next_step(facts)
+        self.assertIn("No AMS answers.", step)
+        self.assertIn("cortex-bridge.py update", step)
+        self.assertNotIn("power the AMS off and on", step)
 
     def test_the_allowlist_keeps_every_decoded_field(self):
         for name, case in VECTORS.items():

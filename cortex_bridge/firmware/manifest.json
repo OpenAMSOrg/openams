@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 35,
+   "file": "bridge-35.oac2",
+   "sha256": "9f85685978130386d284918021c7929bd0c33b97b8f39462a65d7be4d2a1b533",
+   "released": "2026-11-15",
+   "notes": "An AMS 2 Pro that answers at an index meant for an AMS HT (an older bridge firmware could leave it there, and it keeps that index through power cycles) is used at that index instead of being refused. Before, the bridge refused it on every start and no AMS came online."
+  },
+  {
    "version": 34,
    "file": "bridge-34.oac2",
    "sha256": "359cf8b6eb40a1a03567ce9d6ca47a8e3994224e749020040684a3f4b7897c6b",

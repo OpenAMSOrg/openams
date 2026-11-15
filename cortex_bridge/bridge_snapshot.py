@@ -604,6 +604,22 @@ WAITING_TEXT = {
 }
 
 
+# Bridge firmware that admits an AMS 2 Pro at the AMS HT index it holds
+# (0x80..0x87) instead of refusing it as index_mismatch.
+AMS2PRO_AT_HT_INDEX_FIRMWARE = 35
+
+
+def _misplaced_ams2pro(snap, reason, row) -> bool:
+    """Whether a refusal is an AMS 2 Pro at an AMS HT index that a bridge
+    update would admit: index_mismatch, family ams2pro, index 0x80..0x87,
+    and a bridge older than AMS2PRO_AT_HT_INDEX_FIRMWARE."""
+    index = row.get("index")
+    return (reason == "index_mismatch" and row.get("family") == "ams2pro"
+            and isinstance(index, int) and 0x80 <= index <= 0x87
+            and _get(snap, "system", "app_version")
+            < AMS2PRO_AT_HT_INDEX_FIRMWARE)
+
+
 def _get(data, *path, default=0):
     for key in path:
         if not isinstance(data, dict):
@@ -902,11 +918,24 @@ def _classify(snapshot) -> dict:
                 who = "An AMS (tag suffix %s%s)" % (
                     suffix, ", not one this firmware recognises"
                     if row.get("tag_family") == "unknown" else "")
+            text = REFUSAL_TEXT.get(reason, reason)
+            action = ("Send this report to support if the reason is not "
+                      "clear.")
+            if _misplaced_ams2pro(snap, reason, row):
+                # An AMS 2 Pro keeps the index it holds through power
+                # cycles, so the power-cycle advice cannot help it; bridge
+                # firmware 35 admits it at that index.
+                text = ("it is an AMS 2 Pro holding index %d, an AMS HT "
+                        "index, which it keeps through power cycles"
+                        % row.get("index"))
+                action = ("Update the bridge: python3 "
+                          "~/openams/tools/cortex-bridge.py update (firmware "
+                          "%d and later use the AMS 2 Pro at that index)."
+                          % AMS2PRO_AT_HT_INDEX_FIRMWARE)
             return {"class": "refused",
                     "summary": "%s answers but the bridge refuses it: %s."
-                               % (who, REFUSAL_TEXT.get(reason, reason)),
-                    "action": "Send this report to support if the reason "
-                              "is not clear.",
+                               % (who, text),
+                    "action": action,
                     "reason": reason, "tag_suffix": suffix}
         waiting = [row.get("waiting") for row in candidates
                    if row.get("waiting") not in (None, "none")]
