@@ -1738,14 +1738,21 @@ class OAMS(oams_ext.UnitHooks):
             self.reactor.register_async_callback(self._link_changed)
 
     def _link_changed(self, eventtime):
+        if self.link_reachable and getattr(self, "_link_requeried", False):
+            logging.info("OAMS %s: link reported up on re-query",
+                         self.name.split()[-1])
+        if self.link_reachable:
+            self._link_requeried = False
         manager = self.printer.lookup_object("oams_manager", None)
         check = getattr(manager, "check_unit_reachability", None)
         if callable(check):
             check(self.reactor.monotonic())
 
     def _query_link_status(self, eventtime):
-        """Ask for the initial link state once, from a reactor callback after
-        ready. The reply is delivered to the persistent handler."""
+        """Ask for the link state: once from a reactor callback after ready
+        and after a re-attach, and again from the manager while the link is
+        down (requery_link_status). A plain command: it never waits, and
+        the reply is delivered to the persistent handler."""
         command = self.ams_get_link_status_cmd
         if command is None:
             return
@@ -1754,6 +1761,16 @@ class OAMS(oams_ext.UnitHooks):
         except Exception:
             logging.exception("OAMS[%s]: link status query failed",
                               self.oams_idx)
+
+    def requery_link_status(self):
+        """The manager's re-query while the link reads down: the push that
+        says it came back can be lost (bridge 35 after its restart, 2026-11-15:
+        a unit stayed offline until FIRMWARE_RESTART). True when sent."""
+        if self.ams_get_link_status_cmd is None:
+            return False
+        self._link_requeried = True
+        self._query_link_status(self.reactor.monotonic())
+        return True
 
     def _require_link(self, gcmd):
         """A unit whose device is unreachable takes no command that would
@@ -2339,6 +2356,9 @@ class OAMS(oams_ext.UnitHooks):
         self.clear_errors()
         # A running dry's vent tuning goes again with the next dryer status.
         self._dryer_vents_sent = False
+        # And the link state is asked for again, as after ready.
+        if self.ams_get_link_status_cmd is not None:
+            self.reactor.register_callback(self._query_link_status)
         try:
             self._ext_session_reattached()
         except Exception:

@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 36,
+   "file": "bridge-36.oac2",
+   "sha256": "598cc16fd5006e807a798441a9194068b108eacac2bcd5ef32d9bb8423da03be",
+   "released": "2026-11-16",
+   "notes": "The bridge tells OpenAMS every 2 seconds whether each AMS is reachable, not only when it changes. Before, if one of those reports went missing, OpenAMS could keep showing an AMS as unreachable until a FIRMWARE_RESTART."
+  },
+  {
    "version": 35,
    "file": "bridge-35.oac2",
    "sha256": "9f85685978130386d284918021c7929bd0c33b97b8f39462a65d7be4d2a1b533",

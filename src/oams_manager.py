@@ -774,6 +774,40 @@ class OAMSManager(oams_ext.ManagerHooks):
                 self._rearm_followers_of_unit(oam.oams_idx)
                 self._queue_light_clears([name])
 
+    # While a relaying firmware reports a unit's link down, the link state is
+    # asked for again: first this long after it went down, then twice as long
+    # each time, up to the cap. One lost "reachable" push must never leave a
+    # unit offline until a restart.
+    LINK_REQUERY_FIRST_S = 2.0
+    LINK_REQUERY_MAX_S = 30.0
+
+    def _requery_down_links(self, now):
+        """Monitor tick: re-send ams_get_link_status to each unit whose link
+        reads down, with a backoff; stop once it is reachable. The query is a
+        plain command, so nothing here waits."""
+        queue = self.__dict__.setdefault("_link_requery", {})
+        for name, oam in self.oams.items():
+            requery = getattr(oam, "requery_link_status", None)
+            if (getattr(oam, "link_reachable", None) is not False
+                    or not callable(requery)
+                    or getattr(oam, "ams_get_link_status_cmd", None) is None):
+                queue.pop(name, None)
+                continue
+            entry = queue.get(name)
+            if entry is None:
+                queue[name] = {"next": now + self.LINK_REQUERY_FIRST_S,
+                               "wait": self.LINK_REQUERY_FIRST_S}
+                continue
+            if now < entry["next"]:
+                continue
+            try:
+                requery()
+            except Exception:
+                logging.exception("OAMS %s: link status re-query failed",
+                                  name)
+            entry["wait"] = min(entry["wait"] * 2, self.LINK_REQUERY_MAX_S)
+            entry["next"] = now + entry["wait"]
+
     #: H9e: the first try to re-establish a lost session comes this long
     #: after the loss; each failed try doubles the wait, up to the cap.
     REATTACH_FIRST_S = 1.0
@@ -1332,6 +1366,7 @@ class OAMSManager(oams_ext.ManagerHooks):
             # own reactor callback, so this tick never waits for them.
             self._check_unit_silence(eventtime, defer=True)
             self._reattach_lost_sessions(eventtime)
+            self._requery_down_links(eventtime)
             self._auto_light_clears(eventtime)
             refresh_ok = True
             has_refresh = False
