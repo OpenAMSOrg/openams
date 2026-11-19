@@ -218,6 +218,7 @@ the unit's `oams_idx`, except in the four group and spool-link commands and
 | `OAMSM_CURRENT_LOADED_GROUP` | none |
 | `OAMSM_STAGE` | exactly one of `PLAN=`, `NAME=`, `FAILED=1`, `DONE=1`; optional `FPS=` or `GROUP=` |
 | `OAMSM_FOLLOWER` | `ENABLE=<0\|1>`, `DIRECTION=<0\|1>` |
+| `OAMSM_UPDATE_HOLD` | `ENABLE=<0\|1>`: hold every follower off for a Cortex Bridge firmware update (refused during a print), or let them re-arm. `cortex-bridge.py update` sends it; Klipper restarts, a print start and 10 minutes end it |
 | `OAMSM_CREATE_GROUP` | `GROUP=<name>` |
 | `OAMSM_DELETE_GROUP` | `GROUP=<name>` |
 | `OAMSM_ASSIGN_BAY` | `GROUP=<name> OAMS=<unit name, e.g. oams1> BAY=<0-3>` |

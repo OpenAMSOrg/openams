@@ -458,6 +458,8 @@ class CommandLineTests(unittest.TestCase):
             with mock.patch.object(cli, "control_request",
                                    side_effect=OSError("no relay")), \
                     mock.patch.object(cli, "printer_state", return_value=None), \
+                    mock.patch.object(cli, "printer_activity",
+                                      return_value=(None, None)), \
                     mock.patch.object(cli, "usb_devices",
                                       return_value=[BRIDGE_ON_USB]), \
                     mock.patch.object(bridge_info, "query_direct",
@@ -497,6 +499,8 @@ class CommandLineTests(unittest.TestCase):
         patches = [
             mock.patch.object(cli, "control_request", side_effect=control),
             mock.patch.object(cli, "printer_state", return_value=None),
+            mock.patch.object(cli, "printer_activity",
+                              return_value=(None, None)),
             mock.patch.object(cli, "usb_devices",
                               return_value=[BRIDGE_ON_USB]),
         ]
@@ -737,7 +741,9 @@ class UpdateReconnectTests(unittest.TestCase):
     FIRMWARE_RESTART)."""
 
     def run_update(self, back_at, after_restart=(), extra=(), before=None,
-                   relay_outdated=False, moonraker_conf=None, asvc=None):
+                   relay_outdated=False, moonraker_conf=None, asvc=None,
+                   busy=(False,), result=None, accepted=True,
+                   activity=("standby", "Ready"), hold=(True, "")):
         """`update` with the relay, its status file, Moonraker and the clock
         faked. ``back_at``: seconds after the install at which each unit is
         online again (None: never). ``after_restart``: per FIRMWARE_RESTART,
@@ -745,8 +751,14 @@ class UpdateReconnectTests(unittest.TestCase):
         ``before``: the units online before the update (default: all).
         ``relay_outdated``: the relay runs code from before an OpenAMS
         update until Moonraker restarts it. ``moonraker_conf``: the text of
-        moonraker.conf. Returns (code, output, restart times, the POSTs to
-        Moonraker, moonraker.conf afterwards)."""
+        moonraker.conf. ``busy``: the bridge's answers to "busy?" in turn,
+        the last repeated (None: the relay cannot ask). ``result``: the
+        relay's update result (default: installed), sent after an
+        "accepted" event when ``accepted``. ``activity``: print_stats and
+        idle_timeout states. ``hold``: OpenAMS's answer to the follower
+        hold. Returns (code, output, restart times); self.result holds the
+        POSTs to Moonraker and moonraker.conf afterwards, self.steps what
+        happened in order."""
         import contextlib
         import io
         from unittest import mock
@@ -757,6 +769,18 @@ class UpdateReconnectTests(unittest.TestCase):
         posts = []
         outdated = [relay_outdated]
         before = list(back_at) if before is None else before
+        steps = self.steps = []
+        answers = list(busy)
+
+        def bridge_busy(run_dir):
+            steps.append("busy?")
+            return answers.pop(0) if len(answers) > 1 else answers[0]
+
+        def run_gcode(url, script):
+            steps.append(script)
+            if script.endswith("ENABLE=1"):
+                return hold
+            return True, ""
 
         def status(run_dir=None):
             if installed_at[0] is None:
@@ -772,13 +796,21 @@ class UpdateReconnectTests(unittest.TestCase):
                                "path": "/dev/oams/" + uid}
                               for uid in sorted(back_at)]}
 
-        def control(request, **kwargs):
+        def control(request, on_line=None, **kwargs):
             if request["method"] == "status":
                 return {"event": "status"}
-            now[0] += 11.0      # the install
-            installed_at[0] = now[0]
-            return {"event": "result", "ok": True, "changed": True,
-                    "version": 30}
+            if request["method"] == "support_snapshot":
+                return {"event": "support_snapshot", "ok": False,
+                        "error": "not-connected"}
+            steps.append("update")
+            if accepted:
+                on_line({"event": "accepted", "version": 30})
+                now[0] += 11.0      # the install, or the attempt
+                installed_at[0] = now[0]
+            if result == "raise":
+                raise OSError("connection reset")
+            return result or {"event": "result", "ok": True, "changed": True,
+                              "version": 30}
 
         def moonraker(url, path, post=False, timeout=5.0):
             if post:
@@ -790,7 +822,8 @@ class UpdateReconnectTests(unittest.TestCase):
                 if path == "/server/restart":
                     return {"result": "ok"}
                 self.assertEqual(path, "/printer/firmware_restart")
-                restarts.append(now[0] - installed_at[0])
+                steps.append("FIRMWARE_RESTART")
+                restarts.append(now[0] - (installed_at[0] or 0.0))
                 return {"result": {}}
             if not restarts:
                 return {"result": {"state": "shutdown"}}
@@ -821,7 +854,12 @@ class UpdateReconnectTests(unittest.TestCase):
                                    side_effect=control), \
                     mock.patch.object(cli, "read_status", side_effect=status), \
                     mock.patch.object(cli, "moonraker", side_effect=moonraker), \
-                    mock.patch.object(cli, "printer_state", return_value=None), \
+                    mock.patch.object(cli, "printer_activity",
+                                      return_value=activity), \
+                    mock.patch.object(cli, "bridge_busy",
+                                      side_effect=bridge_busy), \
+                    mock.patch.object(cli, "run_gcode",
+                                      side_effect=run_gcode), \
                     mock.patch.object(cli, "installed_firmware",
                                       return_value=found_with(29)), \
                     mock.patch.object(updater, "inspect_package",
@@ -999,6 +1037,149 @@ class UpdateReconnectTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(len(restarts), 1)
         self.assertIn("2 of 2 AMS back online.", out)
+
+    # -- the follower hold and a busy bridge (bridge 36, filament loaded) --
+
+    HOLD_ON = "OAMSM_UPDATE_HOLD ENABLE=1"
+    HOLD_OFF = "OAMSM_UPDATE_HOLD ENABLE=0"
+
+    def test_the_followers_are_held_before_the_bridge_is_asked(self):
+        code, out, restarts = self.run_update({FAST_UID: 1.0, SLOW_UID: 2.0})
+        self.assertEqual(code, 0)
+        self.assertEqual(self.steps[:3], [self.HOLD_ON, "busy?", "update"])
+        self.assertNotIn(self.HOLD_OFF, self.steps,
+                         "the FIRMWARE_RESTART ends the hold")
+        self.assertIn("FIRMWARE_RESTART", self.steps)
+        self.assertIn("OpenAMS holds the AMS followers off", out)
+
+    def test_busy_for_a_moment_after_the_hold_then_the_update_runs(self):
+        code, out, _ = self.run_update({FAST_UID: 1.0, SLOW_UID: 2.0},
+                                       busy=(True, True, False))
+        self.assertEqual(code, 0)
+        self.assertEqual(self.steps.count("busy?"), 3)
+        self.assertIn("update", self.steps)
+
+    def test_still_busy_after_the_hold_is_turned_down_untouched(self):
+        import contextlib
+        import io
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code, out, restarts = self.run_update(
+                {FAST_UID: 1.0, SLOW_UID: 2.0}, busy=(True,))
+        self.assertEqual(code, 1)
+        self.assertNotIn("update", self.steps, "the bridge was never asked")
+        self.assertEqual(self.steps[-1], self.HOLD_OFF, "the hold released")
+        self.assertEqual(restarts, [], "Klipper untouched")
+        text = err.getvalue()
+        self.assertIn("The bridge is still busy", text)
+        self.assertIn("the followers re-arm", text)
+        self.assertIn("holds the followers of loaded lanes off by itself",
+                      text)
+        self.assertIn("a dryer starting or stopping", text)
+        self.assertIn("OpenAMS re-arms the AMS followers.", out)
+
+    def test_never_during_a_print_or_a_pause(self):
+        import contextlib
+        import io
+        for activity in (("printing", "Printing"), ("paused", "Ready"),
+                         ("standby", "Printing")):
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                code, out, restarts = self.run_update(
+                    {FAST_UID: 1.0, SLOW_UID: 2.0}, activity=activity)
+            self.assertEqual(code, 1, activity)
+            self.assertEqual(self.steps, [], "nothing asked, nothing held")
+            self.assertEqual(restarts, [])
+            self.assertIn("The printer is", err.getvalue())
+
+    def test_openams_refusing_the_hold_for_a_print_stops_the_update(self):
+        import contextlib
+        import io
+        with contextlib.redirect_stderr(io.StringIO()):
+            code, out, _ = self.run_update(
+                {FAST_UID: 1.0, SLOW_UID: 2.0},
+                hold=(False, "OpenAMS: no update hold while a print is "
+                      "printing"))
+        self.assertEqual(code, 1)
+        self.assertEqual(self.steps, [self.HOLD_ON])
+
+    def test_an_openams_without_the_hold_still_updates(self):
+        code, out, _ = self.run_update(
+            {FAST_UID: 1.0, SLOW_UID: 2.0},
+            hold=(False, "Unknown command:\"OAMSM_UPDATE_HOLD\""))
+        self.assertEqual(code, 0)
+        self.assertIn("OpenAMS could not hold the followers", out)
+        self.assertNotIn(self.HOLD_OFF, self.steps)
+
+    def refused_after_detach(self, post_state="application"):
+        from cortex_bridge import update_messages
+        result = {"event": "result", "ok": False,
+                  "error": "UpdateModeRefused", "message": "no receiver",
+                  "reason_code": "", "post_state": post_state}
+        result.update(update_messages.explain(
+            "UpdateModeRefused", running=29, package=30,
+            post_state=post_state))
+        return result
+
+    def test_a_refusal_after_the_detach_brings_klipper_back(self):
+        # bridge 36 on voron350: busy, the update refused after the detach,
+        # every AMS timed out in Klipper; "Nothing was changed" was untrue.
+        import contextlib
+        import io
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code, out, restarts = self.run_update(
+                {FAST_UID: 1.0, SLOW_UID: 2.0},
+                result=self.refused_after_detach(),
+                after_restart=[[SHUT_DOWN], [{"state": "ready"}]])
+        self.assertEqual(code, 1)
+        self.assertNotIn("Nothing was changed", err.getvalue())
+        self.assertIn("The bridge was not updated; it still runs version 29",
+                      err.getvalue())
+        self.assertIn("Klipper lost the AMS while the bridge was asked to "
+                      "update; bringing it back.", out)
+        self.assertIn("2 of 2 AMS back online.", out)
+        self.assertIn("Klipper is ready.", out)
+        self.assertEqual(len(restarts), 2, "with the bounded retry")
+        self.assertNotIn(self.HOLD_OFF, self.steps,
+                         "the restart ends the hold")
+
+    def test_a_bridge_left_waiting_for_firmware_is_explained(self):
+        import contextlib
+        import io
+        with contextlib.redirect_stderr(io.StringIO()):
+            code, out, restarts = self.run_update(
+                {FAST_UID: None, SLOW_UID: None},
+                result=self.refused_after_detach("receiver"))
+        self.assertEqual(code, 1)
+        self.assertEqual(restarts, [])
+        self.assertIn("they stay offline until the bridge runs its firmware "
+                      "again", out)
+
+    def test_the_relay_turning_a_busy_bridge_down_releases_the_hold(self):
+        import contextlib
+        import io
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code, out, restarts = self.run_update(
+                {FAST_UID: 1.0, SLOW_UID: 2.0}, accepted=False,
+                result={"event": "result", "ok": False,
+                        "error": "BridgeBusy", "message": "busy"})
+        self.assertEqual(code, 1)
+        self.assertEqual(self.steps[-1], self.HOLD_OFF)
+        self.assertEqual(restarts, [])
+        self.assertIn("The bridge is still busy", err.getvalue())
+
+    def test_a_lost_relay_connection_after_the_detach_brings_klipper_back(
+            self):
+        import contextlib
+        import io
+        with contextlib.redirect_stderr(io.StringIO()):
+            code, out, restarts = self.run_update(
+                {FAST_UID: 1.0, SLOW_UID: 2.0}, result="raise")
+        self.assertEqual(code, 1)
+        self.assertEqual(len(restarts), 1)
+        self.assertIn("bringing it back", out)
 
     def test_restart_klipper_retries_only_what_a_restart_fixes(self):
         # Also used after a relay restart and after an AMS update.

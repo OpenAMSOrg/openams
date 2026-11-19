@@ -428,15 +428,38 @@ class OpenAmsBridge:
                        "source": "bundled"}
             writer.write((json.dumps(request) + "\n").encode("utf-8"))
             await writer.drain()
+            accepted = False
             while True:
                 line = await reader.readline()
                 if not line:
                     break
                 message = json.loads(line.decode("utf-8"))
                 self._broadcast(message)
+                if message.get("event") == "accepted":
+                    # The relay left the bridge session: Klipper loses the
+                    # AMS from here on, whatever the result.
+                    accepted = True
                 if message.get("event") == "result":
                     final = message
             writer.close()
+            if not final.get("ok") and accepted and \
+                    final.get("post_state") not in ("receiver", "fault"):
+                # Nothing installed, but Klipper lost the AMS: bring it back
+                # as after an install. A bridge left waiting for firmware
+                # keeps its AMS offline until an update succeeds.
+                restarted = self.restart_klipper and \
+                    await self._firmware_restart()
+                seen = await self._wait_for_units(list(expected))
+                final = dict(final, units_expected=list(expected),
+                             units_back=seen["back"],
+                             units_missing=seen["missing"],
+                             units_text=" ".join(_reconnect().summary(
+                                 list(expected), seen, seen["waited"])))
+                if restarted:
+                    state, restarts = await self._klipper_after_restart(
+                        seen["missing"])
+                    final = dict(final, klipper_state=state,
+                                 klipper_restarts=restarts)
             if final.get("ok") and final.get("changed", True):
                 # Klipper is restarted now, before the AMS are back: the
                 # Klipper that ran through the install keeps sending to their

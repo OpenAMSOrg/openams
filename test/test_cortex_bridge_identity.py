@@ -203,6 +203,160 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(query.firmware["reason"], "unreadable-report")
 
 
+class BusyProbeTests(unittest.TestCase):
+    """Whether the bridge is busy now: it answers Busy while an AMS
+    operation is active, the same test that refuses update mode."""
+
+    def ask(self, probe, now):
+        request = probe.due(now)
+        self.assertIsNotNone(request)
+        return request.payload
+
+    def test_a_report_means_idle_and_carries_the_version(self):
+        probe = bridge_info.BusyProbe(0.0)
+        token = self.ask(probe, 0.0)
+        self.assertTrue(probe.accept(report(token, version=36), 0.1))
+        self.assertEqual(probe.reply, {"event": "bridge_busy", "ok": True,
+                                       "busy": False, "status": "ok",
+                                       "version": 36, "probe": "identity"})
+        self.assertEqual(probe.report["version"], 36)
+
+    def test_busy_twice_in_a_row_means_busy(self):
+        probe = bridge_info.BusyProbe(0.0)
+        probe.accept(report(self.ask(probe, 0.0), status=4), 2.0)
+        self.assertFalse(probe.finished)
+        self.assertIsNone(probe.due(2.2), "half a second between them")
+        probe.accept(report(self.ask(probe, 2.5), status=4), 4.5)
+        self.assertEqual((probe.reply["ok"], probe.reply["busy"]),
+                         (True, True))
+
+    def test_busy_then_a_report_means_idle(self):
+        probe = bridge_info.BusyProbe(0.0)
+        probe.accept(report(self.ask(probe, 0.0), status=4), 0.1)
+        probe.accept(report(self.ask(probe, 0.6)), 0.7)
+        self.assertFalse(probe.reply["busy"])
+
+    def test_rate_limited_is_asked_again_and_silence_gives_up(self):
+        probe = bridge_info.BusyProbe(0.0, not_before=0.3)
+        self.assertIsNone(probe.due(0.0), "not under the bridge's 250 ms")
+        probe.accept(report(self.ask(probe, 0.3), status=1), 0.4)
+        self.assertFalse(probe.finished)
+        now = 1.0
+        for _ in range(bridge_info.BUSY_TRIES - 1):
+            self.ask(probe, now)
+            now += bridge_info.REPLY_TIMEOUT_S + 1
+            probe.due(now)
+            now += 1
+        self.assertEqual(probe.reply["error"], "no-answer")
+        self.assertFalse(probe.reply["ok"])
+
+    def test_someone_elses_answer_is_ignored(self):
+        probe = bridge_info.BusyProbe(0.0)
+        self.ask(probe, 0.0)
+        self.assertFalse(probe.accept(report(b"\x09\x09\x09\x09"), 0.1))
+        self.assertFalse(probe.finished)
+
+
+class AttestFramingTests(unittest.TestCase):
+    def test_attest_messages_frame_and_a_wrong_size_is_refused(self):
+        request = Message(MessageType.ATTEST_REQUEST, bytes(36))
+        encoded = request.encode(Direction.HOST_TO_BRIDGE)
+        self.assertEqual(Message.decode(encoded, Direction.HOST_TO_BRIDGE),
+                         request)
+        for size in (5, 69):
+            reply = Message(MessageType.ATTEST_RESPONSE, bytes(size))
+            reply.encode(Direction.BRIDGE_TO_HOST)
+        with self.assertRaises(ProtocolError):
+            Message(MessageType.ATTEST_RESPONSE, bytes(6)).encode(
+                Direction.BRIDGE_TO_HOST)
+        with self.assertRaises(ProtocolError):
+            Message(MessageType.ATTEST_REQUEST, bytes(4)).encode(
+                Direction.HOST_TO_BRIDGE)
+
+    def test_an_attest_response_reaches_its_handler_only(self):
+        import tempfile as tmp
+        with tmp.TemporaryDirectory() as directory:
+            core = CortexCore(Path(directory))
+            seen = []
+            core.attest_handler = seen.append
+            core.attach(1)
+            core.accept(Message(MessageType.ATTEST_RESPONSE,
+                                bytes(5)).encode(Direction.BRIDGE_TO_HOST))
+            self.assertEqual(seen, [bytes(5)])
+            core.close()
+
+
+class AttestProbeTests(unittest.TestCase):
+    """From bridge 38 the identity is answered during an AMS operation, so
+    whether the bridge is busy comes from an attestation instead."""
+
+    def ask(self, probe, now):
+        request = probe.due(now)
+        self.assertIsNotNone(request)
+        return request
+
+    def response(self, request, status):
+        token = request.payload[:4]
+        return token + bytes((status,)) + (bytes(64) if status == 0 else b"")
+
+    def test_38_and_later_ask_for_an_attestation(self):
+        probe = bridge_info.BusyProbe(0.0, version=38)
+        request = self.ask(probe, 0.0)
+        self.assertEqual(request.kind, MessageType.ATTEST_REQUEST)
+        self.assertEqual(len(request.payload), 36, "token and challenge")
+        request.encode(Direction.HOST_TO_BRIDGE)
+
+    def test_36_37_and_an_unknown_version_keep_the_identity(self):
+        for version in (36, 37, None):
+            probe = bridge_info.BusyProbe(0.0, version=version)
+            self.assertEqual(self.ask(probe, 0.0).kind,
+                             MessageType.IDENTITY_REQUEST, version)
+            self.assertEqual(probe.kind, "identity")
+
+    def test_an_operation_reads_busy_although_the_identity_says_ok(self):
+        probe = bridge_info.BusyProbe(0.0, version=38)
+        request = self.ask(probe, 0.0)
+        # An identity report (the session's own query) changes nothing.
+        self.assertFalse(probe.accept(report(request.payload[:4]), 0.1))
+        now = 0.1
+        for _ in range(3):
+            self.assertTrue(probe.accept_attest(self.response(request, 4),
+                                                now))
+            if probe.finished:
+                break
+            self.assertIsNone(probe.due(now + 0.5), "a second apart")
+            now += bridge_info.ATTEST_GAP_S
+            request = self.ask(probe, now)
+        self.assertEqual((probe.reply["ok"], probe.reply["busy"],
+                          probe.reply["probe"]), (True, True, "attest"))
+
+    def test_an_idle_38_reads_idle(self):
+        for status in (0, 2, 3):        # Ok, NotReady, NotGenuine
+            probe = bridge_info.BusyProbe(0.0, version=40)
+            request = self.ask(probe, 0.0)
+            probe.accept_attest(self.response(request, status), 0.1)
+            self.assertEqual((probe.reply["ok"], probe.reply["busy"]),
+                             (True, False), status)
+
+    def test_rate_limited_is_asked_again_then_ok(self):
+        probe = bridge_info.BusyProbe(0.0, version=38)
+        request = self.ask(probe, 0.0)
+        probe.accept_attest(self.response(request, 1), 0.1)
+        self.assertFalse(probe.finished, "neither busy nor idle")
+        self.assertIsNone(probe.due(0.5))
+        request = self.ask(probe, 0.1 + bridge_info.ATTEST_GAP_S)
+        probe.accept_attest(self.response(request, 0), 1.3)
+        self.assertFalse(probe.reply["busy"])
+
+    def test_a_short_busy_then_ok_reads_idle(self):
+        probe = bridge_info.BusyProbe(0.0, version=38)
+        request = self.ask(probe, 0.0)
+        probe.accept_attest(self.response(request, 4), 2.0)
+        request = self.ask(probe, 2.0 + bridge_info.ATTEST_GAP_S)
+        probe.accept_attest(self.response(request, 0), 3.2)
+        self.assertFalse(probe.reply["busy"])
+
+
 class FakeBridgePort:
     """A bridge port that announces a roster and answers identity requests."""
 

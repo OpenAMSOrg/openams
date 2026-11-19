@@ -28,6 +28,7 @@ import os
 import time
 
 from cortex_bridge.cortexd import (
+    ATTEST_CHALLENGE_SIZE,
     IDENTITY_TOKEN_SIZE,
     Message,
     MessageType,
@@ -231,6 +232,158 @@ class IdentityQuery:
         return True
 
 
+BUSY_METHOD = "bridge_busy"       # the relay's control method for BusyProbe
+BUSY_TRIES = 3                     # unanswered requests before giving up
+BUSY_GAP_S = 0.5                   # between identity requests (bridge: 250 ms)
+IDENTITY_MIN_GAP_S = 0.3           # the bridge answers RateLimited under 250 ms
+# From bridge 38 the identity report is answered during an AMS operation (so
+# status shows the version while filament is loaded), and attestation tracks
+# the update gate instead: the bridge checks its rate limit, then answers
+# Busy while an operation is active, before it calls its boot.
+ATTEST_MIN_VERSION = 38
+ATTEST_GAP_S = 1.1                 # the bridge answers RateLimited under 1 s
+RATE_LIMITED_MAX = 5               # RateLimited answers before giving up
+STATUS_RATE_LIMITED = 1
+STATUS_BUSY = 4
+
+
+def make_attest_request(token: bytes, challenge: bytes) -> Message:
+    return Message(MessageType.ATTEST_REQUEST, bytes(token) + bytes(challenge))
+
+
+class BusyProbe:
+    """Ask a running bridge, now, whether an AMS operation is active: it
+    refuses update mode then (Bridge::any_operation_active).
+
+    Bridges 36 and 37 (and one whose version is unknown) answer an identity
+    request Busy while an operation is active: Busy twice in a row, 0.5 s
+    apart, means busy (the bridge also answers Busy while its authenticity
+    check holds the boot for a moment), a report means idle and carries the
+    version. From bridge 38 the identity is answered regardless, so the probe
+    asks for an attestation of a random challenge (harmless: the bridge only
+    signs it, at most once a second): Busy three times in a row means busy
+    (Busy is also "no boot window within 2 s"), any other answer but
+    RateLimited means no operation is active. RateLimited is asked again.
+
+    ``reply`` is the relay's control answer: ``{"event": "bridge_busy",
+    "ok": True, "busy": bool, "probe": "identity" | "attest"}``, or ``ok``
+    False with ``error`` and ``message``.
+    """
+
+    def __init__(self, now: float, *, not_before: float = 0.0,
+                 version=None, token_source=os.urandom):
+        self.token_source = token_source
+        self.attest = isinstance(version, int) and \
+            version >= ATTEST_MIN_VERSION
+        self.kind = "attest" if self.attest else "identity"
+        self.gap = ATTEST_GAP_S if self.attest else BUSY_GAP_S
+        self.confirm = 3 if self.attest else 2
+        self.token = None
+        self.sent_at = 0.0
+        self.next_at = max(now, not_before)
+        self.tries = 0
+        self.busy_answers = 0
+        self.rate_limited = 0
+        self.reply = None
+        self.report = None          # the identity report of an idle answer
+
+    @property
+    def finished(self) -> bool:
+        return self.reply is not None
+
+    def _end(self, **reply) -> None:
+        self.reply = dict(reply, event="bridge_busy", probe=self.kind)
+
+    def _fail(self, error: str) -> None:
+        self._end(ok=False, error=error,
+                  message=REASON_TEXT.get(error, error))
+
+    def due(self, now: float):
+        if self.finished:
+            return None
+        if self.token is not None:
+            if now - self.sent_at < REPLY_TIMEOUT_S:
+                return None
+            self.token = None
+            if self.tries >= BUSY_TRIES:
+                self._fail("no-answer")
+                return None
+            self.next_at = now + self.gap
+        if now < self.next_at:
+            return None
+        self.tries += 1
+        self.token = bytes(self.token_source(IDENTITY_TOKEN_SIZE))
+        self.sent_at = now
+        if self.attest:
+            return make_attest_request(
+                self.token, self.token_source(ATTEST_CHALLENGE_SIZE))
+        return make_request(self.token)
+
+    def _again(self, now: float) -> None:
+        self.tries -= 1                  # an answer is not a lost try
+        self.next_at = now + self.gap
+
+    def _busy(self, now: float) -> None:
+        self.busy_answers += 1
+        if self.busy_answers >= self.confirm:
+            self._end(ok=True, busy=True, status="busy")
+        else:
+            self._again(now)
+
+    def _ours(self, payload: bytes) -> bool:
+        return not self.finished and self.token is not None and \
+            bytes(payload[:IDENTITY_TOKEN_SIZE]) == self.token
+
+    def accept(self, payload: bytes, now: float) -> bool:
+        """An identity report; True when it answered this probe."""
+        if self.attest or not self._ours(payload):
+            return False                     # not the answer to our request
+        self.token = None
+        try:
+            report = parse_report(payload)
+        except ReportError:
+            self._fail("unreadable-report")
+            return True
+        if report["status"] == "ok":
+            self.report = report
+            self._end(ok=True, busy=False, status="ok",
+                      version=report["version"])
+        elif report["status"] == "busy":
+            self._busy(now)
+        elif report["status_code"] in RETRY_STATUSES and \
+                self.tries < BUSY_TRIES:
+            self.next_at = now + self.gap
+        else:
+            self._fail(report["status"])
+        return True
+
+    def accept_attest(self, payload: bytes, now: float) -> bool:
+        """An attestation response; True when it answered this probe."""
+        if not self.attest or not self._ours(payload):
+            return False
+        self.token = None
+        if len(payload) < IDENTITY_TOKEN_SIZE + 1:
+            self._fail("unreadable-report")
+            return True
+        status = payload[IDENTITY_TOKEN_SIZE]
+        if status == STATUS_RATE_LIMITED:
+            self.rate_limited += 1
+            if self.rate_limited > RATE_LIMITED_MAX:
+                self._fail("rate-limited")
+            else:
+                self._again(now)
+        elif status == STATUS_BUSY:
+            self._busy(now)
+        elif status in STATUS_NAMES or status == STATUS_OK:
+            # Ok, NotReady, NotGenuine, BootFailed: the bridge got past its
+            # operation check, so none is active.
+            self._end(ok=True, busy=False,
+                      status=STATUS_NAMES.get(status, "ok"))
+        else:
+            self._fail("unreadable-report")
+        return True
+
+
 def query_direct(device: str, *, serial_module=None, timeout: float = 15.0,
                  clock=time.monotonic, sleep=time.sleep) -> dict:
     """Ask the bridge on ``device`` for its version without the relay.
@@ -309,7 +462,7 @@ def unknown_reason(firmware: dict | None) -> str:
 
 
 __all__ = [
-    "IdentityQuery", "ReportError", "compare", "firmware_status",
+    "BusyProbe", "IdentityQuery", "ReportError", "compare", "firmware_status",
     "make_request", "parse_report", "query_direct", "reset_cause",
     "unknown_reason",
 ]

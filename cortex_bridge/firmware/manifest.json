@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 38,
+   "file": "bridge-38.oac2",
+   "sha256": "f666fcee8e6e4bc66047d9b75bfcfb8488da609998a54989d1c7cae9a8de5125",
+   "released": "2026-11-19",
+   "notes": "The bridge can be updated with filament loaded: cortex-bridge.py update holds the AMS followers off for the update, and they come back afterwards. The bridge also reports its version while an AMS is working, so status shows it with filament loaded. An AMS that asks for a bus index when none is free no longer holds up the other AMS for seconds at a time. A dryer command cut short when the bridge lost control of the bus no longer blocks later dryer starts and stops until a restart. After a bridge restart, an unload still works when the filament has already been pulled out of the hub. A tag read waits while an AMS HT runs a dry it started itself, and a dryer request the bridge turns down reports the reason at once instead of a timeout 5 seconds later."
+  },
+  {
    "version": 36,
    "file": "bridge-36.oac2",
    "sha256": "598cc16fd5006e807a798441a9194068b108eacac2bcd5ef32d9bb8423da03be",

@@ -28,6 +28,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 if __package__ in (None, ""):
@@ -177,6 +178,35 @@ def printer_state(url: str):
         return None
     return data.get("result", {}).get("status", {}) \
         .get("print_stats", {}).get("state")
+
+
+def printer_activity(url: str):
+    """(print_stats state, idle_timeout state) through Moonraker; (None,
+    None) while it does not answer. idle_timeout reads "Printing" while any
+    G-code moves the printer, a print or not."""
+    try:
+        data = moonraker(url, "/printer/objects/query?print_stats&idle_timeout")
+    except (OSError, ValueError, urllib.error.URLError):
+        return None, None
+    status = data.get("result", {}).get("status", {})
+    return (status.get("print_stats", {}).get("state"),
+            status.get("idle_timeout", {}).get("state"))
+
+
+def run_gcode(url: str, script: str):
+    """Run one G-code line through Moonraker: (True, "") or (False, why)."""
+    try:
+        moonraker(url, "/printer/gcode/script?script=" +
+                  urllib.parse.quote(script), post=True, timeout=30.0)
+    except urllib.error.HTTPError as exc:
+        try:
+            message = json.loads(exc.read().decode("utf-8"))["error"]["message"]
+        except Exception:  # noqa: BLE001 - any unreadable body
+            message = str(exc)
+        return False, message
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        return False, str(exc)
+    return True, ""
 
 
 def online_units(status) -> list:
@@ -1388,9 +1418,13 @@ def cmd_update(args) -> int:
         return 1
     version = int(info["version"])
 
-    state = printer_state(args.moonraker)
+    state, idle = printer_activity(args.moonraker)
     if state in ("printing", "paused"):
         print_failure(update_messages.explain("PrinterBusy", detail=state))
+        return 1
+    if idle == "Printing":
+        print_failure(update_messages.explain(
+            "PrinterBusy", detail="running G-code (idle_timeout: Printing)"))
         return 1
 
     # With the relay running it owns the bridge's port and installs the
@@ -1440,6 +1474,7 @@ def cmd_update(args) -> int:
     # The units to wait for once the bridge is back: all that run now.
     expected = reconnect.expected_uids(read_status(run_dir),
                                        configured_uids(Path(args.config_dir)))
+    labels = unit_labels(Path(args.config_dir))
     # Moonraker's update entry from an earlier install restarted Klipper only
     # (Moonraker refused the relay in it): correct it once.
     conf = moonraker_conf.fix_file(Path(args.config_dir) / "moonraker.conf")
@@ -1453,74 +1488,11 @@ def cmd_update(args) -> int:
     if asvc["changed"]:
         print("moonraker.asvc: one service name per line again (the old file "
               "is kept as %s)." % asvc["backup"])
-    # A relay still running the code from before an OpenAMS update is
-    # restarted first; Klipper loses the AMS for the install anyway. The old
-    # relay installs the firmware just as well, so a restart Moonraker
-    # refuses does not stop the update.
-    if code_version.outdated(read_status(run_dir)):
-        print("The bridge relay still runs OpenAMS code from before an "
-              "update; restarting it first.")
-        restart_relay(args, by_hand="The update goes on with the running "
-                      "relay; restart it later with: sudo systemctl restart "
-                      "%s" % RELAY_SERVICE, sleep=time.sleep,
-                      clock=time.monotonic)
-
-    def show(line):
-        event = line.get("event")
-        if event == "progress":
-            phase = line.get("phase", "")
-            total = line.get("total") or 0
-            text = PHASE_TEXT.get(phase, phase)
-            if total:
-                text += " (%d%%)" % (100 * line.get("done", 0) // total)
-            print("  " + text, flush=True)
-
-    result = control_request({"method": "update", "file": str(package_path),
-                              "source": source}, run_dir=run_dir,
-                             on_line=show)
-    explanation = {key: result[key] for key in ("summary", "outcome", "action")
-                   if key in result}
-    if not result.get("ok"):
-        if len(explanation) != 3:
-            explanation = update_messages.explain(
-                result.get("error", "error"), detail=result.get("message", ""),
-                running=running, package=version)
-        print_failure(explanation, update_messages.technical_detail(
-            result.get("error", ""), result.get("message", "")))
-        return 1
-    if not result.get("changed", True):
-        print_explanation(explanation)
-        return 0
-    print("Installed. Waiting for the AMS to come back...")
-    restarted_at = None
-    if not args.no_restart:
-        # Restart Klipper now, before the AMS are back. The Klipper that ran
-        # through the install shut down when the bridge left, and it keeps
-        # sending to the AMS ports: restarted only once the AMS were back, it
-        # reached them first and left one stopped, and the new Klipper
-        # stopped with "Can not update MCU '...' config as it is shutdown"
-        # (a customer's update to bridge 29). Started now, Klipper finds each
-        # AMS as the bridge restarted it, waiting for its port to answer.
-        if send_firmware_restart(args.moonraker):
-            restarted_at = time.monotonic()
-            print("Klipper restarted (FIRMWARE_RESTART); it connects to each "
-                  "AMS as it comes back.")
-        else:
-            print("Moonraker did not take FIRMWARE_RESTART: once the AMS are "
-                  "back, press FIRMWARE RESTART in Mainsail.")
-    labels = unit_labels(Path(args.config_dir))
-    seen = wait_units_back(run_dir, expected, labels=labels,
-                           sleep=time.sleep, clock=time.monotonic)
-    for line in reconnect.summary(expected, seen, seen["waited"], labels):
-        print(line)
-    code = confirm_installed(version, wait_for_firmware(run_dir, 30))
-    if restarted_at is not None:
-        klipper_after_restart(args.moonraker, sent_at=restarted_at,
-                              missing=seen["missing"], labels=labels,
-                              sleep=time.sleep, clock=time.monotonic)
-    elif args.no_restart:
-        print("Klipper was not restarted (--no-restart): press FIRMWARE "
-              "RESTART in Mainsail to reconnect it to the AMS.")
+    job = UpdateJob(args, run_dir, expected, labels)
+    try:
+        code = job.run(package_path, source, version, running)
+    finally:
+        job.release_hold()
     if conf["changed"] or asvc["changed"]:
         # Moonraker reads both files only when it starts.
         try:
@@ -1530,6 +1502,264 @@ def cmd_update(args) -> int:
             print("Restart Moonraker (or the printer) so it reads the "
                   "corrected files.")
     return code
+
+
+UPDATE_HOLD = "OAMSM_UPDATE_HOLD"
+HOLD_SETTLE = 1.0     # the followers' stop counts as an operation ~0.7 s
+BUSY_WAIT = 10.0      # how long the bridge gets to say it is idle after the hold
+BUSY_POLL = 0.5
+# What a busy AMS is doing (bridge_snapshot.OP_KIND), in words.
+OPERATION_WORDS = {
+    "load": "loading", "unload": "unloading", "cancel": "cancelling",
+    "follower_on": "following the extruder", "follower_off":
+    "stopping its follower", "dryer_start": "starting its dryer",
+    "dryer_stop": "stopping its dryer", "clear_fault": "clearing a fault",
+    "tag_read": "reading a tag", "calibrate": "calibrating"}
+
+
+def bridge_busy(run_dir: Path):
+    """Whether an AMS operation is active on the bridge now (it would refuse
+    update mode): the relay asks the bridge afresh (bridge_info.BusyProbe).
+    True or False; None when the relay cannot ask (it is older, not
+    connected, or the bridge does not say)."""
+    status = read_status(run_dir)
+    if not status or status.get("state") != "running" or \
+            relay_lacks(status, bridge_info.BUSY_METHOD):
+        return None
+    try:
+        reply = control_request({"method": bridge_info.BUSY_METHOD},
+                                run_dir=run_dir, timeout=30.0)
+    except (OSError, ValueError):
+        return None
+    if reply.get("event") != "bridge_busy" or not reply.get("ok"):
+        return None
+    return bool(reply.get("busy"))
+
+
+def busy_units(args, labels) -> list:
+    """The AMS units the bridge's snapshot shows working, as "uid (kind):
+    doing what"; empty when it does not say."""
+    snapshot = (status_snapshot(args) or {}).get("snapshot") or {}
+    out = []
+    for unit in snapshot.get("units") or []:
+        operation = (unit or {}).get("operation") or {}
+        if operation.get("active"):
+            kind = operation.get("kind")
+            out.append("%s: %s" % (
+                reconnect.label(str(unit.get("uid")), labels),
+                OPERATION_WORDS.get(kind, kind or "working")))
+    return out
+
+
+class UpdateJob:
+    """One relayed bridge update, from the follower hold to Klipper back.
+
+    Nothing reaches Klipper's AMS until the bridge says it is idle: OpenAMS
+    first holds every follower off (OAMSM_UPDATE_HOLD; the armed follower of
+    a loaded lane is what keeps a printer with filament loaded busy), then
+    the bridge is asked through the live relay until it answers idle. A
+    bridge still busy is turned down there, the hold released, Klipper
+    untouched. Once the relay restarts or the bridge leaves its session,
+    Klipper has lost the AMS: every way out brings it back as after an
+    install (FIRMWARE_RESTART, every AMS back, one more restart when one
+    still holds a stop), except a bridge left waiting for firmware, whose
+    AMS stay offline until an update succeeds."""
+
+    def __init__(self, args, run_dir, expected, labels):
+        self.args = args
+        self.run_dir = run_dir
+        self.expected = expected
+        self.labels = labels
+        self.held = False
+        self.disrupted = ""        # why Klipper lost the AMS, once it has
+        self.klipper_restarted = False
+
+    # -- the follower hold -------------------------------------------------
+
+    def hold(self):
+        """Ask OpenAMS to hold the followers; None when held or not needed,
+        or a refusal explanation."""
+        state, idle = printer_activity(self.args.moonraker)
+        if state is None and idle is None:
+            return None             # Klipper or Moonraker away: no follower
+        ok, message = run_gcode(self.args.moonraker, UPDATE_HOLD + " ENABLE=1")
+        if ok:
+            self.held = True
+            print("OpenAMS holds the AMS followers off for the update.")
+            return None
+        if "while a print is" in message:
+            return update_messages.explain("PrinterBusy", detail=message)
+        # An OpenAMS whose Klipper still runs the code from before this
+        # command (or a Klipper not ready): the bridge is asked as it is.
+        print("OpenAMS could not hold the followers (%s); the bridge is "
+              "asked as it is." % (message.strip().splitlines()[0]
+                                   if message.strip() else "no answer"))
+        return None
+
+    def release_hold(self):
+        """Let the followers re-arm. After Klipper lost the AMS there is
+        nothing to release: the FIRMWARE_RESTART that brings it back starts
+        without the hold (it is never saved)."""
+        if not self.held:
+            return
+        self.held = False
+        if self.disrupted:
+            return
+        ok, message = run_gcode(self.args.moonraker,
+                                UPDATE_HOLD + " ENABLE=0")
+        if ok:
+            print("OpenAMS re-arms the AMS followers.")
+        else:
+            print("The followers stay held until FIRMWARE RESTART (%s)."
+                  % (message.strip().splitlines()[0] if message.strip()
+                     else "no answer"))
+
+    def wait_idle(self):
+        """Ask the bridge until it is idle, every BUSY_POLL for up to
+        BUSY_WAIT; True, False (still busy) or None (it cannot be asked). An
+        idle answer is the bridge's own update gate, open at that moment."""
+        if self.held:
+            # The followers' stop is itself an operation for about 0.7 s.
+            time.sleep(HOLD_SETTLE)
+        deadline = time.monotonic() + BUSY_WAIT
+        while True:
+            busy = bridge_busy(self.run_dir)
+            if busy is None:
+                return None
+            if not busy:
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(BUSY_POLL)
+
+    def refuse_busy(self):
+        print_failure(update_messages.explain(
+            "BridgeBusy", detail=", ".join(busy_units(self.args, self.labels)),
+            reason_code=" ".join(word for word, on in (
+                ("held", self.held), ("restarted", self.disrupted)) if on)))
+        if self.disrupted:
+            self.restore()
+        return 1
+
+    # -- Klipper back --------------------------------------------------------
+
+    def reconnect(self):
+        """FIRMWARE_RESTART now, while the AMS are away, then wait for every
+        expected AMS. Returns (time sent or None, reconnect.progress())."""
+        restarted_at = None
+        if not self.args.no_restart:
+            # Restarted only once the AMS were back, the Klipper that ran
+            # through the outage reached them first and left one stopped
+            # (a customer's update to bridge 29). Started now, Klipper finds
+            # each AMS as it comes back, waiting for its port to answer.
+            if send_firmware_restart(self.args.moonraker):
+                restarted_at = time.monotonic()
+                self.klipper_restarted = True
+                print("Klipper restarted (FIRMWARE_RESTART); it connects to "
+                      "each AMS as it comes back.")
+            else:
+                print("Moonraker did not take FIRMWARE_RESTART: once the AMS "
+                      "are back, press FIRMWARE RESTART in Mainsail.")
+        seen = wait_units_back(self.run_dir, self.expected, labels=self.labels,
+                               sleep=time.sleep, clock=time.monotonic)
+        for line in reconnect.summary(self.expected, seen, seen["waited"],
+                                      self.labels):
+            print(line)
+        return restarted_at, seen
+
+    def finish(self, restarted_at, seen):
+        if restarted_at is not None:
+            klipper_after_restart(self.args.moonraker, sent_at=restarted_at,
+                                  missing=seen["missing"], labels=self.labels,
+                                  sleep=time.sleep, clock=time.monotonic)
+        elif self.args.no_restart:
+            print("Klipper was not restarted (--no-restart): press FIRMWARE "
+                  "RESTART in Mainsail to reconnect it to the AMS.")
+
+    def restore(self):
+        print("Klipper lost the AMS %s; bringing it back." % self.disrupted)
+        self.finish(*self.reconnect())
+
+    # -- the update ------------------------------------------------------
+
+    def run(self, package_path, source, version, running) -> int:
+        refusal = self.hold()
+        if refusal is not None:
+            print_failure(refusal)
+            return 1
+        # Asked before anything is touched, by a relay that can.
+        if self.wait_idle() is False:
+            return self.refuse_busy()
+        # A relay still running the code from before an OpenAMS update is
+        # restarted first. Klipper loses its AMS with the old relay's ports,
+        # and the old relay installs the firmware just as well, so a restart
+        # Moonraker refuses does not stop the update.
+        if code_version.outdated(read_status(self.run_dir)):
+            print("The bridge relay still runs OpenAMS code from before an "
+                  "update; restarting it first.")
+            if restart_relay(self.args, by_hand="The update goes on with the "
+                             "running relay; restart it later with: sudo "
+                             "systemctl restart %s" % RELAY_SERVICE,
+                             sleep=time.sleep, clock=time.monotonic):
+                self.disrupted = "when the bridge relay restarted"
+                if self.wait_idle() is False:
+                    return self.refuse_busy()
+        accepted = []
+
+        def show(line):
+            event = line.get("event")
+            if event == "accepted":
+                # The relay has left the bridge session: Klipper loses the
+                # AMS from here on.
+                accepted.append(line)
+                self.disrupted = ("while the bridge was asked to update")
+            elif event == "progress":
+                phase = line.get("phase", "")
+                total = line.get("total") or 0
+                text = PHASE_TEXT.get(phase, phase)
+                if total:
+                    text += " (%d%%)" % (100 * line.get("done", 0) // total)
+                print("  " + text, flush=True)
+
+        try:
+            result = control_request(
+                {"method": "update", "file": str(package_path),
+                 "source": source}, run_dir=self.run_dir, on_line=show)
+        except (OSError, ValueError) as exc:
+            result = {"ok": False, "error": "OSError",
+                      "message": "the relay connection ended: %s" % exc}
+        if result.get("error") == "BridgeBusy" and not accepted:
+            # The relay asked the bridge itself and turned the update down
+            # with nothing touched: said here with what this command knows.
+            return self.refuse_busy()
+        explanation = {key: result[key] for key in
+                       ("summary", "outcome", "action") if key in result}
+        if not result.get("ok"):
+            if len(explanation) != 3:
+                explanation = update_messages.explain(
+                    result.get("error", "error"),
+                    detail=result.get("message", ""), running=running,
+                    package=version)
+            print_failure(explanation, update_messages.technical_detail(
+                result.get("error", ""), result.get("message", "")))
+            if result.get("post_state") in ("receiver", "fault"):
+                print("Klipper lost the AMS %s; they stay offline until the "
+                      "bridge runs its firmware again (see above), and "
+                      "Klipper reconnects to them after the update that "
+                      "brings it back." % self.disrupted)
+            elif self.disrupted:
+                self.restore()
+            return 1
+        if not result.get("changed", True):
+            print_explanation(explanation)
+            if self.disrupted:
+                self.restore()
+            return 0
+        print("Installed. Waiting for the AMS to come back...")
+        restarted_at, seen = self.reconnect()
+        code = confirm_installed(version, wait_for_firmware(self.run_dir, 30))
+        self.finish(restarted_at, seen)
+        return code
 
 
 def wait_units_back(run_dir: Path, expected: list, *, labels=None,

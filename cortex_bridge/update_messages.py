@@ -19,10 +19,26 @@ SUPPORT = ("run `cortex-bridge.py support` and send the report it writes to "
 AGAIN = "run `cortex-bridge.py update` again"
 
 
+# What to do when the bridge is busy (an AMS operation is active). A loaded
+# lane's armed follower counts, but `cortex-bridge.py update` holds the
+# followers off itself (OAMSM_UPDATE_HOLD), and a dryer that simply runs
+# does not count.
+BUSY_ACTION = ("The bridge updates only while no AMS operation runs. "
+               "`cortex-bridge.py update` holds the followers of loaded lanes "
+               "off by itself; what else keeps an AMS busy is a load or "
+               "unload, an AMS moving on its own (a spool just inserted, an "
+               "AMS HT reading a tag), a dryer starting or stopping (one that "
+               "simply runs is fine), or an AMS taking a Bambu Lab firmware "
+               "update. Wait until "
+               "that is over and %s." % AGAIN)
+
+
 def _still_runs(running) -> str:
+    # Said after the bridge was asked to update: the bridge is unchanged,
+    # but Klipper lost the AMS meanwhile, so never "nothing was changed".
     if running is None:
-        return "Nothing was changed."
-    return "Nothing was changed; the bridge still runs version %d." % running
+        return "The bridge was not updated."
+    return "The bridge was not updated; it still runs version %d." % running
 
 
 def _left_in(post_state: str, running) -> str:
@@ -63,6 +79,24 @@ def explain(error: str, *, reason_code: str = "", detail: str = "",
             "outcome": "Nothing was changed.",
             "action": "Update the bridge when the printer is idle.",
         }
+    if error == "BridgeBusy":
+        # Asked before anything was touched. `detail` names the units the
+        # bridge's snapshot shows working, when it does; reason_code "held"
+        # says the followers were held off and it stayed busy anyway.
+        # "restarted": the relay was restarted first, so Klipper lost the
+        # AMS anyway and is brought back.
+        held = "held" in reason_code
+        restarted = "restarted" in reason_code
+        return {
+            "summary": "The bridge is %sbusy: %s." % (
+                "still " if held else "",
+                detail or "an AMS is working"),
+            "outcome": "The bridge was not asked to update%s." % (
+                "" if restarted else
+                ", and the followers re-arm" if held else
+                "; nothing was changed and Klipper keeps its AMS"),
+            "action": BUSY_ACTION,
+        }
     if error == "UpdateModeRefused":
         if reason_code == "no-receiver":
             return {
@@ -77,10 +111,7 @@ def explain(error: str, *, reason_code: str = "", detail: str = "",
         return {
             "summary": "The bridge did not switch to update mode.",
             "outcome": _still_runs(running),
-            "action": "The bridge switches only while every AMS is idle: not "
-                      "loading, unloading or moving filament, and not starting "
-                      "or stopping a dryer. Wait until they are idle and %s."
-                      % AGAIN,
+            "action": BUSY_ACTION,
         }
     if error == "PackageRefused":
         if reason_code == "boot-abi":

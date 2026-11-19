@@ -103,11 +103,12 @@ above. Moonraker answers the same at `GET /server/openams/bridge/status`
 
 - OpenAMS installed with the bridge relay, as in
   [Set up a Cortex Bridge printer](cortex-bridge-setup.md).
-- The printer idle: not printing and not paused.
-- The AMS idle: not loading, unloading or drying, and **no filament loaded
-  to the toolhead**. A loaded spool keeps the AMS following the extruder,
-  which counts as busy: unload it first (a toolchange's unload, with the cut).
-  The bridge does not switch to update mode while an AMS is busy.
+- The printer idle: not printing and not paused (and no G-code moving it).
+- No AMS operation running: not loading or unloading, and no dryer starting
+  or stopping (a dryer that simply runs is fine). Filament may stay loaded:
+  the command holds the AMS followers off for the update
+  (`OAMSM_UPDATE_HOLD`), so the follower of a loaded lane does not keep the
+  bridge busy. Nothing moves the filament.
 - USB and 24 V connected for the whole update, which takes about a minute.
 
 ## Install it
@@ -120,6 +121,7 @@ python3 ~/openams/tools/cortex-bridge.py update
 This installs Cortex Bridge firmware version 7 (the bridge runs version 4).
 Klipper loses the AMS for about a minute and is restarted afterwards. Keep the bridge powered until it finishes.
 Continue? [y/N] y
+OpenAMS holds the AMS followers off for the update.
   Asking the bridge to enter update mode
   Waiting for the bridge's update receiver
   The bridge is checking the package (100%)
@@ -190,14 +192,23 @@ sentences: what happened, what changed (usually nothing), and what to do. A
 `Details:` line may follow for support. For example:
 
 ```text
-Update failed: The bridge did not switch to update mode.
-Nothing was changed; the bridge still runs version 4.
-The bridge switches only while every AMS is idle: not loading, unloading or moving filament, and not starting or stopping a dryer. Wait until they are idle and run `cortex-bridge.py update` again.
+Update failed: The bridge is still busy: c5bc6f8de4ae (AMS HT): loading.
+The bridge was not asked to update, and the followers re-arm.
+The bridge updates only while no AMS operation runs. ...
 ```
+
+Before the bridge leaves its session the command holds the followers off
+and asks the bridge, for up to 10 s, whether an AMS is busy; a bridge still
+busy is turned down there, with Klipper untouched. If the update fails after
+the bridge left its session, Klipper has lost the AMS: the command brings it
+back as after an install (`FIRMWARE_RESTART`, every AMS back), unless the
+bridge is left waiting for firmware, whose AMS stay offline until an update
+succeeds.
 
 | The first line says | What it means |
 |---|---|
-| `The bridge did not switch to update mode.` | An AMS was busy. Nothing changed. |
+| `The bridge is busy: ...` or `The bridge is still busy: ...` | An AMS operation ran (a load or unload, an AMS moving on its own, a dryer starting or stopping, an AMS taking a Bambu Lab firmware update). Nothing changed. |
+| `The bridge did not switch to update mode.` | An AMS became busy as the bridge was asked. The bridge was not updated; Klipper is brought back. |
 | `The bridge left its firmware, but its update mode did not appear on USB.` | USB trouble during the switch. `status` shows whether it is waiting for firmware. |
 | `This file cannot be installed: ...` | The file given with `--file` is not Cortex Bridge firmware, or it is damaged. Nothing was sent. |
 | `The bridge checked version N and refused it. It runs version M, so the version is not the reason ...` | The file was made for another board revision, or it is not signed for this bridge. |

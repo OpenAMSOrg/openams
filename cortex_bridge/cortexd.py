@@ -45,6 +45,14 @@ IDENTITY_FAILURE_PAYLOAD_SIZE = IDENTITY_TOKEN_SIZE + 1
 # longer report from a later firmware can never break the AMS traffic; the
 # reader decides whether it understands the contents.
 IDENTITY_REPORT_MAX_PAYLOAD = 512
+# Attestation (production firmware): a token and a 32-byte challenge out;
+# token and status back, with a 64-byte signature when the status is 0. From
+# bridge 38 the host sends it only to learn whether an AMS operation is
+# active: the bridge answers Busy then, before it calls its boot.
+ATTEST_CHALLENGE_SIZE = 32
+ATTEST_REQUEST_PAYLOAD_SIZE = IDENTITY_TOKEN_SIZE + ATTEST_CHALLENGE_SIZE
+ATTEST_FAILURE_PAYLOAD_SIZE = IDENTITY_TOKEN_SIZE + 1
+ATTEST_RESPONSE_PAYLOAD_SIZE = ATTEST_FAILURE_PAYLOAD_SIZE + 64
 # The support snapshot exchange (production firmware 9 and later): a 4-byte
 # token out; token, status and, on success, a body of at most 507 bytes back.
 SUPPORT_TOKEN_SIZE = 4
@@ -91,6 +99,8 @@ class MessageType(IntEnum):
     NODE_DATA = 3
     IDENTITY_REQUEST = 4
     IDENTITY_REPORT = 5
+    ATTEST_REQUEST = 6
+    ATTEST_RESPONSE = 7
     SUPPORT_REQUEST = 8
     SUPPORT_REPORT = 9
     AMS_UPDATE_REQUEST = 10
@@ -98,10 +108,11 @@ class MessageType(IntEnum):
 
 
 HOST_MESSAGES = (MessageType.HOST_DATA, MessageType.IDENTITY_REQUEST,
-                 MessageType.SUPPORT_REQUEST, MessageType.AMS_UPDATE_REQUEST)
+                 MessageType.ATTEST_REQUEST, MessageType.SUPPORT_REQUEST,
+                 MessageType.AMS_UPDATE_REQUEST)
 BRIDGE_MESSAGES = (MessageType.ROSTER, MessageType.NODE_DATA,
-                   MessageType.IDENTITY_REPORT, MessageType.SUPPORT_REPORT,
-                   MessageType.AMS_UPDATE_REPORT)
+                   MessageType.IDENTITY_REPORT, MessageType.ATTEST_RESPONSE,
+                   MessageType.SUPPORT_REPORT, MessageType.AMS_UPDATE_REPORT)
 
 
 class Direction(IntEnum):
@@ -187,6 +198,13 @@ def _validate_message(message: Message, direction: Direction) -> None:
     elif message.kind == MessageType.IDENTITY_REPORT:
         if len(payload) < IDENTITY_FAILURE_PAYLOAD_SIZE:
             raise ProtocolError("invalid identity report")
+    elif message.kind == MessageType.ATTEST_REQUEST:
+        if len(payload) != ATTEST_REQUEST_PAYLOAD_SIZE:
+            raise ProtocolError("invalid attest request")
+    elif message.kind == MessageType.ATTEST_RESPONSE:
+        if len(payload) not in (ATTEST_FAILURE_PAYLOAD_SIZE,
+                                ATTEST_RESPONSE_PAYLOAD_SIZE):
+            raise ProtocolError("invalid attest response")
     elif message.kind == MessageType.SUPPORT_REQUEST:
         if len(payload) != SUPPORT_REQUEST_PAYLOAD_SIZE:
             raise ProtocolError("invalid support request")
@@ -532,6 +550,9 @@ class CortexCore:
         # it is None (nobody asked).
         self.identity_handler: Callable[[bytes], None] | None = None
         self.identity_handler_errors = 0
+        # The same for each ATTEST_RESPONSE payload.
+        self.attest_handler: Callable[[bytes], None] | None = None
+        self.attest_handler_errors = 0
         # The same for each SUPPORT_REPORT payload (the support snapshot).
         self.support_handler: Callable[[bytes], None] | None = None
         self.support_handler_errors = 0
@@ -630,6 +651,14 @@ class CortexCore:
                     self.identity_handler(message.payload)
                 except Exception:  # noqa: BLE001 - see above
                     self.identity_handler_errors += 1
+            return
+        if message.kind == MessageType.ATTEST_RESPONSE:
+            # Informational like the identity: never routed, never fatal.
+            if self.attest_handler is not None:
+                try:
+                    self.attest_handler(message.payload)
+                except Exception:  # noqa: BLE001 - see above
+                    self.attest_handler_errors += 1
             return
         if message.kind == MessageType.SUPPORT_REPORT:
             # Informational like the identity: never routed, never fatal.
@@ -957,6 +986,7 @@ class CortexDaemon:
 
 
 __all__ = [
+    "ATTEST_CHALLENGE_SIZE", "ATTEST_REQUEST_PAYLOAD_SIZE",
     "BRIDGE_MESSAGES", "HOST_MESSAGES", "IDENTITY_FAILURE_PAYLOAD_SIZE",
     "IDENTITY_REQUEST_PAYLOAD_SIZE", "IDENTITY_TOKEN_SIZE",
     "SUPPORT_REPORT_MAX_PAYLOAD", "SUPPORT_REPORT_MIN_PAYLOAD",

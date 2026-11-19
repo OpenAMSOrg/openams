@@ -292,6 +292,57 @@ class SessionTests(unittest.TestCase):
                                                       version, status)))
         return request
 
+    def answer_identities(self, statuses=(0,), version=7, attest=(0,)):
+        """Answer every identity request from a thread until the session
+        ends, as the bridge does: the relay asks whether it is busy before
+        it leaves the session for an update. ``statuses`` are the answers
+        in turn, the last one repeated (0 is a report, 4 Busy); ``attest``
+        the same for attestation requests (bridge 38 on). Returns the list
+        the answered statuses go to, attestations as ("attest", status)."""
+        answered = []
+        statuses = list(statuses)
+        attest = list(attest)
+        attested = []
+
+        def read_exact(count):
+            data = b""
+            while len(data) < count:
+                chunk = self.bridge_side.recv(count - len(data))
+                if not chunk:
+                    raise EOFError
+                data += chunk
+            return data
+
+        def serve():
+            self.bridge_side.settimeout(15)
+            try:
+                while True:
+                    header = read_exact(4)
+                    body = read_exact(int.from_bytes(header[2:4], "big"))
+                    message = Message.decode(header + body,
+                                             Direction.HOST_TO_BRIDGE)
+                    if message.kind == MessageType.ATTEST_REQUEST:
+                        status = attest[min(len(attested), len(attest) - 1)]
+                        attested.append(status)
+                        answered.append(("attest", status))
+                        self.send_from_bridge(Message(
+                            MessageType.ATTEST_RESPONSE,
+                            message.payload[:4] + bytes((status,)) +
+                            (bytes(64) if status == 0 else b"")))
+                        continue
+                    if message.kind != MessageType.IDENTITY_REQUEST:
+                        continue
+                    status = statuses[min(
+                        len(answered) - len(attested), len(statuses) - 1)]
+                    answered.append(status)
+                    self.send_from_bridge(Message(
+                        MessageType.IDENTITY_REPORT,
+                        identity_report(message.payload, version, status)))
+            except (OSError, EOFError, ValueError):
+                return
+        threading.Thread(target=serve, daemon=True).start()
+        return answered
+
     def update_request(self, path):
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
             client.settimeout(10)
@@ -379,6 +430,7 @@ class SessionTests(unittest.TestCase):
         package = Path(self.tmp.name) / "bridge-7.oac2"
         package.write_bytes(b"OAC2-test")
         self.start_session()
+        self.answer_identities()
         with mock.patch.dict(sys.modules, {"cortex_bridge.updater": fake}), \
                 mock.patch.object(cortex_bridge, "updater", fake,
                                   create=True):
@@ -437,11 +489,103 @@ class SessionTests(unittest.TestCase):
             update_bridge_with_retry=lambda data, on_retry=None, **kw:
                 update_bridge(data, **kw))
 
-    def run_update(self, fake, path):
+    def run_update(self, fake, path, statuses=(0,)):
+        self.answered = self.answer_identities(statuses, version=4)
         with mock.patch.dict(sys.modules, {"cortex_bridge.updater": fake}), \
                 mock.patch.object(cortex_bridge, "updater", fake,
                                   create=True):
             return self.update_request(path)
+
+    def test_a_busy_bridge_turns_the_update_down_with_nothing_touched(self):
+        # An AMS operation is active (a loaded lane's follower, say): the
+        # bridge would refuse update mode, and leaving the session for it
+        # would cost Klipper its AMS. The relay asks first.
+        self.start_session()
+        self.answer_identity(version=4)
+        self.wait_for(lambda: self.firmware().get("version") == 4)
+        calls = []
+        package = Path(self.tmp.name) / "bridge-7.oac2"
+        package.write_bytes(b"OAC2-test")
+        lines = self.run_update(self.fake_updater(7, calls), package,
+                                statuses=(4,))
+        self.assertEqual([line["event"] for line in lines], ["result"],
+                         "never accepted: the session was not left")
+        result = lines[-1]
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "BridgeBusy")
+        self.assertIn("Klipper keeps its AMS", result["outcome"])
+        self.assertEqual(calls, [])
+        self.assertEqual(self.answered, [4, 4], "Busy twice means busy")
+        self.session_still_up()
+        records = [json.loads(line) for line in
+                   self.log_file.read_text().splitlines()]
+        self.assertNotIn("runtime_detach", [r["record"] for r in records])
+        self.assertIn(("refused", "bridge-busy"),
+                      [(r.get("result"), r.get("reason")) for r in records
+                       if r["record"] == "update_result"])
+
+    def test_one_busy_answer_then_idle_lets_the_update_run(self):
+        self.start_session()
+        self.answer_identity(version=4)
+        self.wait_for(lambda: self.firmware().get("version") == 4)
+        calls = []
+        package = Path(self.tmp.name) / "bridge-7.oac2"
+        package.write_bytes(b"OAC2-test")
+        lines = self.run_update(self.fake_updater(7, calls), package,
+                                statuses=(4, 0))
+        self.assertTrue(lines[-1]["ok"], lines[-1])
+        self.assertEqual(len(calls), 1)
+
+    def ask_busy(self):
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(15)
+            client.connect(str(self.run_dir / "control.sock"))
+            client.sendall(b'{"method": "bridge_busy"}\n')
+            return json.loads(client.makefile().readline())
+
+    def test_the_busy_question_answers_busy_or_idle(self):
+        self.start_session()
+        self.answer_identity(version=4, status=4)     # busy at the start
+        self.wait_for(lambda: self.firmware().get("reason") == "busy")
+        answered = self.answer_identities((4, 4, 0), version=4)
+        reply = self.ask_busy()
+        self.assertEqual((reply["ok"], reply["busy"]), (True, True))
+        reply = self.ask_busy()
+        self.assertEqual((reply["ok"], reply["busy"]), (True, False))
+        self.assertEqual(reply["version"], 4)
+        # The idle answer is a whole report: the session's version too.
+        self.wait_for(lambda: self.firmware().get("version") == 4)
+        self.assertGreaterEqual(len(answered), 3)
+
+    def test_a_38_bridge_is_asked_by_attestation(self):
+        # From bridge 38 the identity is answered during an AMS operation;
+        # the attestation still says Busy then.
+        self.start_session()
+        self.answer_identity(version=38)
+        self.wait_for(lambda: self.firmware().get("version") == 38)
+        answered = self.answer_identities((0,), version=38, attest=(4,))
+        reply = self.ask_busy()
+        self.assertEqual((reply["ok"], reply["busy"], reply["probe"]),
+                         (True, True, "attest"))
+        self.assertEqual(answered, [("attest", 4)] * 3,
+                         "three Busy answers, no identity asked")
+
+    def test_an_idle_38_bridge_reads_idle_after_a_rate_limit(self):
+        self.start_session()
+        self.answer_identity(version=38)
+        self.wait_for(lambda: self.firmware().get("version") == 38)
+        answered = self.answer_identities((0,), version=38, attest=(1, 0))
+        reply = self.ask_busy()
+        self.assertEqual((reply["ok"], reply["busy"]), (True, False))
+        self.assertEqual(answered, [("attest", 1), ("attest", 0)])
+
+    def test_a_lab_bridge_is_never_asked_whether_it_is_busy(self):
+        self.use_manufacturer("OpenAMS")
+        self.start_session()
+        reply = self.ask_busy()
+        self.assertFalse(reply["ok"])
+        self.assertEqual(reply["error"], "not-production")
+        self.assert_nothing_sent()
 
     def test_a_production_bridge_reports_its_version(self):
         self.start_session()

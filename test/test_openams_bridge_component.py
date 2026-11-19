@@ -262,13 +262,15 @@ class ComponentTests(ComponentCase):
                          "1 of 1 AMS back online.")
         self.assertEqual(self.component.last_result["klipper_state"], "ready")
 
-    def run_update(self):
+    def run_update(self, lines=None):
         """An update whose relay leaves both units offline at its result;
-        the test brings them back."""
+        the test brings them back. ``lines``: what the relay sends."""
+        lines = lines or [{"event": "result", "ok": True, "version": 7}]
+
         async def relay(reader, writer):
             await reader.readline()
-            writer.write((json.dumps({"event": "result", "ok": True,
-                                      "version": 7}) + "\n").encode())
+            for line in lines:
+                writer.write((json.dumps(line) + "\n").encode())
             await writer.drain()
             writer.close()
             self.write_status(False, version=7, second=False)
@@ -314,6 +316,37 @@ class ComponentTests(ComponentCase):
         self.assertEqual(self.klippy.restarts, ["FIRMWARE_RESTART"] * 2)
         self.assertEqual(result["klipper_restarts"], 2)
         self.assertEqual(result["klipper_state"], "ready")
+
+    def test_a_failure_after_the_detach_brings_klipper_back(self):
+        # The bridge refused update mode after the relay left the session:
+        # nothing installed, but Klipper lost the AMS.
+        self.write_status(True, version=4, second=True)
+        self.klippy.on_restart = lambda: asyncio.get_event_loop().call_later(
+            0.02, self.write_status, True, 4, "known", "", True)
+        result = self.run_update([
+            {"event": "accepted", "version": 7},
+            {"event": "result", "ok": False, "error": "UpdateModeRefused",
+             "post_state": ""}])
+        self.assertFalse(result["ok"])
+        self.assertEqual(self.klippy.restarts, ["FIRMWARE_RESTART"])
+        self.assertEqual(result["units_text"], "2 of 2 AMS back online.")
+        self.assertEqual(result["klipper_state"], "ready")
+
+    def test_a_refusal_before_the_detach_leaves_klipper_alone(self):
+        self.write_status(True, version=4, second=True)
+        result = self.run_update([
+            {"event": "result", "ok": False, "error": "BridgeBusy"}])
+        self.assertFalse(result["ok"])
+        self.assertEqual(self.klippy.restarts, [])
+
+    def test_a_bridge_left_waiting_for_firmware_is_not_restarted(self):
+        self.write_status(True, version=4, second=True)
+        result = self.run_update([
+            {"event": "accepted", "version": 7},
+            {"event": "result", "ok": False, "error": "TransferInterrupted",
+             "post_state": "receiver"}])
+        self.assertFalse(result["ok"])
+        self.assertEqual(self.klippy.restarts, [])
 
     def test_a_missing_unit_is_reported_and_klipper_not_retried(self):
         reconnect = bridge_component._reconnect()

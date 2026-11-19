@@ -42,6 +42,11 @@ HEAT_WAIT_POLL = 0.5
 # Delays before each further forward-follower retry (a try follows each);
 # the first try is immediate. Bounded: len + 1 tries in all.
 FOLLOWER_RETRY_BACKOFF = (5.0, 15.0, 45.0)
+# A Cortex Bridge refuses its firmware update while an AMS is busy, and an
+# armed follower on a loaded lane counts; the manager re-arms a stopped one
+# within seconds. OAMSM_UPDATE_HOLD keeps every follower off for the update;
+# a hold nobody released ends by itself after this long.
+UPDATE_HOLD_MAX_S = 600.0
 STOPPED_TEXT = S.STOPPED_TEXT
 
 # FPS change (as a fraction of full compression) that republishes a
@@ -892,9 +897,12 @@ class OAMSManager(oams_ext.ManagerHooks):
         get_state = getattr(getattr(self, "runtime", None), "get_state", None)
         if get_state is None:
             return
+        reactor = getattr(self, "reactor", None)
+        if self._update_held(reactor.monotonic() if reactor is not None
+                             else 0.0):
+            return      # the release re-arms the loaded lanes
         pending = self.__dict__.setdefault("_follower_rearm", {})
         gave_up = self.__dict__.setdefault("_follower_gave_up", set())
-        reactor = getattr(self, "reactor", None)
         printing = self._print_job_active(
             reactor.monotonic() if reactor is not None else 0.0)
         for fps, lane in get_state().lanes.items():
@@ -1006,6 +1014,9 @@ class OAMSManager(oams_ext.ManagerHooks):
         self.ready = False
         self._follower_rearm = {}
         self._follower_gave_up = set()
+        # A hold for a bridge update never outlives the Klipper session: the
+        # FIRMWARE_RESTART after the update re-arms through the restore.
+        self._update_hold_until = None
         # Family detection may have added units; publish a projection for any
         # unit that appeared since construction.
         self._register_ui_projections()
@@ -1783,6 +1794,8 @@ class OAMSManager(oams_ext.ManagerHooks):
         pending = self.__dict__.setdefault("_follower_rearm", {})
         gave_up = self.__dict__.setdefault("_follower_gave_up", set())
         now = self.reactor.monotonic()
+        if self._update_held(now):
+            return
         for fps, lane in list(get_state().lanes.items()):
             rec = pending.get(fps)
             if lane.op != S.OP_LOADED or lane.unit is None or lane.following is True:
@@ -1883,6 +1896,10 @@ class OAMSManager(oams_ext.ManagerHooks):
         self._print_was_active = active
         if not active or was:
             return
+        if self._update_held(now):
+            # A print needs its follower more than a bridge update needs the
+            # hold (cortex-bridge.py refuses to update during a print).
+            self._release_update_hold("a print started")
         get_state = getattr(self.runtime, "get_state", None)
         if get_state is None:
             return
@@ -2553,6 +2570,8 @@ class OAMSManager(oams_ext.ManagerHooks):
             ("OAMSM_VALIDATE_LOAD", self.cmd_VALIDATE_LOAD,
              self.cmd_VALIDATE_LOAD_help),
             ("OAMSM_FOLLOWER", self.cmd_FOLLOWER, self.cmd_FOLLOWER_help),
+            ("OAMSM_UPDATE_HOLD", self.cmd_UPDATE_HOLD,
+             self.cmd_UPDATE_HOLD_help),
             ("OAMSM_CURRENT_LOADED_GROUP", self.cmd_CURRENT_LOADED_GROUP,
              self.cmd_CURRENT_LOADED_GROUP_help),
             ("OAMSM_CLEAR_ERRORS", self.cmd_CLEAR_ERRORS,
@@ -4237,6 +4256,81 @@ class OAMSManager(oams_ext.ManagerHooks):
         refusal = self._follower_refusal(lane.unit)
         if enable and refusal:
             raise gcmd.error(refusal)
+
+    cmd_UPDATE_HOLD_help = ("Hold every follower off for a Cortex Bridge "
+                            "firmware update (ENABLE=1), or let them re-arm "
+                            "(ENABLE=0)")
+
+    def cmd_UPDATE_HOLD(self, gcmd):
+        """`cortex-bridge.py update` asks for this before the bridge leaves
+        its session: a bridge refuses update mode while an AMS is busy, and
+        the forward follower of a loaded lane counts, re-armed within seconds
+        if only stopped. The hold stops every follower through the store (so
+        LaneState stays truthful) and keeps the manager from re-arming one
+        until it is released, Klipper restarts, a print starts or 10 minutes
+        pass. It never moves filament and is never saved."""
+        enable = gcmd.get_int("ENABLE", 1, minval=0, maxval=1)
+        if not enable:
+            released = self._release_update_hold("released")
+            gcmd.respond_info("OpenAMS: followers %s" % (
+                "re-arm (the update hold is released)" if released
+                else "were not held"))
+            return
+        now = self.reactor.monotonic()
+        state = self._print_stats_state(now)
+        if state in ("printing", "paused"):
+            raise gcmd.error("OpenAMS: no update hold while a print is %s"
+                             % state)
+        self._update_hold_until = now + UPDATE_HOLD_MAX_S
+        lanes = sorted(fps for fps, lane in
+                       self.runtime.get_state().lanes.items()
+                       if lane.op == S.OP_LOADED and lane.unit is not None)
+        # Every lane, so a follower started directly on an idle unit stops
+        # too; an explicit stop also ends a pending re-arm.
+        self._stop_followers(list(self.fpss))
+        logging.info("OpenAMS: followers held off for a bridge update "
+                     "(loaded lanes: %s)", ", ".join(lanes) or "none")
+        gcmd.respond_info("OpenAMS: followers held off for a bridge update%s"
+                          % (" (loaded: %s)" % ", ".join(lanes)
+                             if lanes else ""))
+
+    def _print_stats_state(self, now):
+        try:
+            stats = self.printer.lookup_object("print_stats", None)
+            return stats.get_status(now).get("state") if stats else None
+        except Exception:
+            return None
+
+    def _update_held(self, now):
+        """Whether OAMSM_UPDATE_HOLD holds the followers off; a hold left
+        for UPDATE_HOLD_MAX_S is released here."""
+        until = self.__dict__.get("_update_hold_until")
+        if until is None:
+            return False
+        if now >= until:
+            self._release_update_hold("it was not released within %d min"
+                                      % (UPDATE_HOLD_MAX_S // 60))
+            return False
+        return True
+
+    def _release_update_hold(self, why):
+        """End the hold and queue the forward follower of every loaded lane
+        through the bounded re-arm loop. False when nothing was held."""
+        if self.__dict__.get("_update_hold_until") is None:
+            return False
+        self._update_hold_until = None
+        logging.info("OpenAMS: the bridge update hold ended (%s)", why)
+        get_state = getattr(getattr(self, "runtime", None), "get_state", None)
+        if get_state is None:
+            return True
+        pending = self.__dict__.setdefault("_follower_rearm", {})
+        gave_up = self.__dict__.setdefault("_follower_gave_up", set())
+        for fps, lane in get_state().lanes.items():
+            if (lane.op == S.OP_LOADED and lane.unit is not None
+                    and lane.following is not True):
+                gave_up.discard(fps)
+                pending[fps] = {"tries": 0, "next": 0.0}
+        return True
 
     cmd_LOAD_FILAMENT_CANCEL_help = "Cancel the in-flight load on a lane"
 

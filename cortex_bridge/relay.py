@@ -70,7 +70,8 @@ AMS_LISTEN_METHOD = "ams_listen"
 # was not restarted after an OpenAMS update) before asking it for something
 # it lacks; a relay from before this list writes none.
 CONTROL_METHODS = ("status", "update", bridge_snapshot.SNAPSHOT_METHOD,
-                   AMS_UPDATE_METHOD, AMS_LISTEN_METHOD)
+                   AMS_UPDATE_METHOD, AMS_LISTEN_METHOD,
+                   bridge_info.BUSY_METHOD)
 AMS_IMAGE_MAX = 512 * 1024
 AMS_UNITS_WAIT_S = 5.0
 
@@ -419,6 +420,18 @@ class Relay:
         self.snapshot_waiters = []
         self.snapshot_sent_at = None
         self.ams = None              # the running AMS firmware update
+        # A fresh "is the bridge busy?" question (bridge_info.BusyProbe), the
+        # control connections waiting for it, and when an identity request
+        # last went to the bridge (it answers RateLimited under 250 ms).
+        self.busy_probe = None
+        self.busy_waiters = []
+        self.identity_sent_at = None
+        self.attest_sent_at = None
+        self.identity_query = None   # the session's own version query
+        # An update request waiting for that answer: (connection, request,
+        # prepared). A busy bridge would refuse update mode, and leaving the
+        # session for it costs Klipper its AMS, so it is asked first.
+        self.pending_update = None
 
     # -- lifecycle --------------------------------------------------------
 
@@ -521,12 +534,26 @@ class Relay:
             # request that needs nothing from the bridge must not cost
             # Klipper its connection to the units.
             prepared = self.prepare_update(connection, request)
-            if prepared is not None:
-                raise UpdateRequested(connection, request, prepared)
+            if prepared is None:
+                return
+            if self.pending_update is not None:
+                send_line(connection, {
+                    "event": "result", "ok": False, "error": "busy",
+                    "message": "another update request is being checked"})
+                connection.close()
+                return
+            if running and self.core is not None and \
+                    (self.bridge or {}).get("image") == "production":
+                self.pending_update = (connection, request, prepared)
+                self.start_busy_probe()
+                return
+            raise UpdateRequested(connection, request, prepared)
         elif method == bridge_snapshot.SNAPSHOT_METHOD:
             self.request_snapshot(connection, running=running)
         elif method == AMS_UPDATE_METHOD:
             self.start_ams_update(connection, request, running=running)
+        elif method == bridge_info.BUSY_METHOD:
+            self.request_busy(connection, running=running)
         elif method == AMS_LISTEN_METHOD:
             self.start_ams_listen(connection, request, running=running)
         else:
@@ -582,6 +609,119 @@ class Relay:
         self.snapshot_query = None
         for connection in waiters:
             self._answer(connection, reply)
+
+    # -- is the bridge busy now? -------------------------------------------
+
+    def request_busy(self, connection, *, running: bool) -> None:
+        """Answer {"method": "bridge_busy"}: whether an AMS operation is
+        active on the bridge now, which would make it refuse update mode.
+        Asked before an update, so a busy bridge never costs Klipper its
+        AMS. Only production firmware knows the identity request; any other
+        would treat it as a stream error."""
+        def refuse(error, message):
+            self._answer(connection, {"event": "bridge_busy", "ok": False,
+                                      "error": error, "message": message})
+        if not running or self.core is None:
+            return refuse("not-connected", "no bridge session is running")
+        if (self.bridge or {}).get("image") != "production":
+            return refuse("not-production", "only a bridge running "
+                          "production firmware can be asked")
+        self.busy_waiters.append(connection)
+        self.start_busy_probe()
+
+    def start_busy_probe(self) -> None:
+        """Identity for bridges 36 and 37 (or an unknown version), an
+        attestation from bridge 38 (bridge_info.BusyProbe)."""
+        if self.busy_probe is not None:
+            return
+        firmware = self.status.state.get("firmware") or {}
+        version = firmware.get("version") \
+            if firmware.get("state") == "known" else None
+        attest = isinstance(version, int) and \
+            version >= bridge_info.ATTEST_MIN_VERSION
+        last = self.attest_sent_at if attest else self.identity_sent_at
+        gap = bridge_info.ATTEST_GAP_S if attest else \
+            bridge_info.IDENTITY_MIN_GAP_S
+        self.busy_probe = bridge_info.BusyProbe(
+            time.monotonic(), version=version,
+            not_before=0.0 if last is None else last + gap)
+
+    def drive_busy(self, daemon, now: float) -> None:
+        probe = self.busy_probe
+        if probe is None:
+            return
+        query = self.identity_query
+        # The bridge takes one request at a time and drops another.
+        request = None if query is not None and query.token is not None \
+            else probe.due(now)
+        if request is not None:
+            daemon.send_request(request)
+            if probe.attest:
+                self.attest_sent_at = now
+            else:
+                self.identity_sent_at = now
+        if not probe.finished:
+            return
+        reply = probe.reply
+        self.finish_busy(reply)
+        pending, self.pending_update = self.pending_update, None
+        if pending is None:
+            return
+        connection, request, prepared = pending
+        # Busy: turned down with nothing touched. Idle, or the bridge could
+        # not say: the update runs (the bridge's own refusal is the
+        # backstop).
+        if reply.get("ok") and reply.get("busy"):
+            self.refuse_busy(connection, prepared)
+        else:
+            raise UpdateRequested(connection, request, prepared)
+
+    def finish_busy(self, reply: dict) -> None:
+        """Answer everyone waiting for the probe."""
+        waiters, self.busy_waiters = self.busy_waiters, []
+        self.busy_probe = None
+        for connection in waiters:
+            self._answer(connection, reply)
+
+    def refuse_busy(self, connection, prepared) -> None:
+        """Turn an update down because the bridge is busy, before anything
+        is touched: Klipper keeps its AMS."""
+        version, running = prepared["version"], prepared["running"]
+        explanation = update_messages.explain(
+            "BridgeBusy", running=running, package=version)
+        update = dict(self.status.state.get("update") or {})
+        update.update(result="failed", finished=_now_iso(),
+                      message="the bridge is busy", version=version,
+                      **explanation)
+        self.status.set(update=update)
+        self.log.record("update_result", firmware_version=version,
+                        result="refused", reason="bridge-busy")
+        line = {"event": "result", "ok": False, "error": "BridgeBusy",
+                "message": "the bridge is busy: an AMS operation is active",
+                "reason_code": "busy", "post_state": "application",
+                "running_version": running, "package_version": version}
+        line.update(explanation)
+        send_line(connection, line)
+        connection.close()
+
+    def accept_attest(self, payload: bytes) -> None:
+        if self.busy_probe is not None:
+            self.busy_probe.accept_attest(payload, time.monotonic())
+
+    def accept_identity(self, query, payload: bytes) -> None:
+        """An identity report: the session's version query or a busy probe,
+        whichever asked (each knows its own token)."""
+        now = time.monotonic()
+        if query is not None:
+            query.accept(payload, now)
+        probe = self.busy_probe
+        if probe is not None and probe.accept(payload, now) and \
+                probe.report is not None and query is not None and \
+                not query.finished:
+            # An idle answer is a whole report: the version the session's
+            # own query (still waiting while the bridge was busy) asks for.
+            query.firmware = bridge_info.firmware_status("known", "",
+                                                         probe.report)
 
     @staticmethod
     def _answer(connection, reply: dict) -> None:
@@ -813,8 +953,10 @@ class Relay:
         query = None
         if bridge["image"] == "production":
             query = bridge_info.IdentityQuery(time.monotonic())
+            self.identity_query = query
             self.core.identity_handler = \
-                lambda payload: query.accept(payload, time.monotonic())
+                lambda payload: self.accept_identity(query, payload)
+            self.core.attest_handler = self.accept_attest
             self.core.support_handler = self.accept_snapshot
         reported = query.firmware if query is not None else None
         summary_at = time.monotonic() + SUMMARY_INTERVAL
@@ -824,9 +966,13 @@ class Relay:
                 daemon.step(0.1)
                 now = time.monotonic()
                 if query is not None:
-                    request = query.due(now)
+                    probe = self.busy_probe
+                    # One request at a time: not while a probe's is out.
+                    request = query.due(now) if probe is None or \
+                        probe.token is None else None
                     if request is not None:
                         daemon.send_request(request)
+                        self.identity_sent_at = now
                     if query.firmware is not reported:
                         reported = query.firmware
                         self.status.set(firmware=reported)
@@ -847,6 +993,7 @@ class Relay:
                                     **self.core.support_snapshot())
                     summary_at = now + SUMMARY_INTERVAL
                 self.drive_snapshot(daemon, now)
+                self.drive_busy(daemon, now)
                 self.drive_ams_update(daemon, now)
                 self.serve_control(running=True)
         finally:
@@ -854,11 +1001,27 @@ class Relay:
                                 "update; the AMS may wait in its loader: run "
                                 "the update again")
             self.core.identity_handler = None
+            self.core.attest_handler = None
+            self.identity_query = None
             self.core.support_handler = None
             if self.snapshot_query is not None:
                 self.finish_snapshot(bridge_snapshot.failure(
                     "not-connected", "the bridge session ended before it "
                     "answered"))
+            if self.busy_probe is not None:
+                self.finish_busy({"event": "bridge_busy", "ok": False,
+                                  "error": "not-connected",
+                                  "message": "the bridge session ended before "
+                                  "it answered"})
+            if self.pending_update is not None:
+                connection = self.pending_update[0]
+                self.pending_update = None
+                send_line(connection, {
+                    "event": "result", "ok": False, "error": "not-connected",
+                    "message": "the bridge session ended before the update "
+                               "started; nothing was changed: run it again"})
+                connection.close()
+            self.identity_sent_at = None
             self.log.record("traffic_summary", **self.core.support_snapshot())
             daemon.detach()
             self.status.set(units=self.units())
