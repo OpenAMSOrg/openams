@@ -447,6 +447,55 @@ def cmd_status(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# kit (the CyberBrick Time-lapse Kit, bridge 40 and later)
+# ---------------------------------------------------------------------------
+
+def kit_lines(reply: dict) -> list:
+    """What the relay's kit reply says, for a person."""
+    lines = []
+    present = reply.get("present")
+    lines.append("CyberBrick kit: %s" % ("present" if present else "not answering"))
+    if "service" in reply:
+        lines.append("  service: %s" % ("on" if reply["service"] else "off"))
+    lines.append("  shots: %d%s" % (
+        reply.get("shots", 0),
+        ", last %s" % reply["last_shot"] if reply.get("last_shot") else ""))
+    return lines
+
+
+def cmd_kit(args) -> int:
+    from cortex_bridge import kit as kit_protocol
+    request = {"method": kit_protocol.METHOD}
+    if args.action == "shot":
+        request["shot"] = args.p
+    elif args.action in ("on", "off"):
+        request["service"] = args.action == "on"
+    try:
+        reply = control_request(request, run_dir=Path(args.run_dir),
+                                timeout=10.0)
+    except OSError as exc:
+        print("cortex-bridge: the relay is not running (%s)" % exc,
+              file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(reply, indent=1, sort_keys=True))
+        return 0 if reply.get("ok") else 1
+    if not reply.get("ok"):
+        if reply.get("shot"):
+            print("cortex-bridge: the shot was %s" % reply["shot"],
+                  file=sys.stderr)
+        else:
+            print("cortex-bridge: %s" % reply.get("message", "no answer"),
+                  file=sys.stderr)
+        return 1
+    if args.action == "shot":
+        print("shot queued (P%d)" % args.p)
+    for line in kit_lines(reply):
+        print(line)
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # config
 # ---------------------------------------------------------------------------
 
@@ -2114,6 +2163,18 @@ def parser() -> argparse.ArgumentParser:
     amsfw.add_argument("--verbose", action="store_true",
                        help="with update: also print the AMS loader's lines")
     amsfw.set_defaults(func=cmd_ams_firmware)
+
+    kit = commands.add_parser(
+        "kit", help="the CyberBrick Time-lapse Kit (bridge firmware 40 and "
+        "later): its status, a shot, or its service on or off")
+    kit.add_argument("action", nargs="?",
+                     choices=("status", "shot", "on", "off"),
+                     default="status")
+    kit.add_argument("--p", type=int, default=1, choices=range(256),
+                     metavar="P", help="the M1004 S5 P value (default 1)")
+    kit.add_argument("--run-dir", default=str(RUN_DIR))
+    kit.add_argument("--json", action="store_true")
+    kit.set_defaults(func=cmd_kit)
 
     support = commands.add_parser(
         "support", help="write a support report with private details "

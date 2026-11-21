@@ -66,6 +66,10 @@ AMS_UPDATE_REQUEST_MIN_PAYLOAD = 5
 AMS_UPDATE_REQUEST_MAX_PAYLOAD = 265
 AMS_UPDATE_REPORT_MIN_PAYLOAD = 6
 AMS_UPDATE_REPORT_MAX_PAYLOAD = 78
+# The CyberBrick Time-lapse Kit (production firmware 40 and later,
+# cortex_bridge.kit).
+KIT_REQUEST_PAYLOAD_SIZE = 2
+KIT_REPORT_PAYLOAD_SIZE = 6
 MAX_PAYLOAD = max(ROSTER_PAYLOAD_SIZE, NODE_DATA_PAYLOAD_SIZE,
                   IDENTITY_REPORT_MAX_PAYLOAD, SUPPORT_REPORT_MAX_PAYLOAD)
 MAX_MESSAGE = HEADER_SIZE + MAX_PAYLOAD
@@ -105,14 +109,17 @@ class MessageType(IntEnum):
     SUPPORT_REPORT = 9
     AMS_UPDATE_REQUEST = 10
     AMS_UPDATE_REPORT = 11
+    KIT_REQUEST = 12
+    KIT_REPORT = 13
 
 
 HOST_MESSAGES = (MessageType.HOST_DATA, MessageType.IDENTITY_REQUEST,
                  MessageType.ATTEST_REQUEST, MessageType.SUPPORT_REQUEST,
-                 MessageType.AMS_UPDATE_REQUEST)
+                 MessageType.AMS_UPDATE_REQUEST, MessageType.KIT_REQUEST)
 BRIDGE_MESSAGES = (MessageType.ROSTER, MessageType.NODE_DATA,
                    MessageType.IDENTITY_REPORT, MessageType.ATTEST_RESPONSE,
-                   MessageType.SUPPORT_REPORT, MessageType.AMS_UPDATE_REPORT)
+                   MessageType.SUPPORT_REPORT, MessageType.AMS_UPDATE_REPORT,
+                   MessageType.KIT_REPORT)
 
 
 class Direction(IntEnum):
@@ -222,6 +229,12 @@ def _validate_message(message: Message, direction: Direction) -> None:
         if not AMS_UPDATE_REPORT_MIN_PAYLOAD <= len(payload) <= \
                 AMS_UPDATE_REPORT_MAX_PAYLOAD:
             raise ProtocolError("invalid AMS update report")
+    elif message.kind == MessageType.KIT_REQUEST:
+        if len(payload) != KIT_REQUEST_PAYLOAD_SIZE:
+            raise ProtocolError("invalid kit request")
+    elif message.kind == MessageType.KIT_REPORT:
+        if len(payload) != KIT_REPORT_PAYLOAD_SIZE:
+            raise ProtocolError("invalid kit report")
     elif message.kind == MessageType.HOST_DATA:
         if len(payload) <= UID_SIZE or not _valid_uid(payload[:UID_SIZE]):
             raise ProtocolError("invalid host-data UID or payload")
@@ -559,6 +572,9 @@ class CortexCore:
         # And for each AMS_UPDATE_REPORT payload (an AMS firmware update).
         self.ams_update_handler: Callable[[bytes], None] | None = None
         self.ams_update_handler_errors = 0
+        # And for each KIT_REPORT payload (the CyberBrick kit).
+        self.kit_handler: Callable[[bytes], None] | None = None
+        self.kit_handler_errors = 0
         self.bridge_to_host_messages = 0
         self.bridge_to_host_bytes = 0
         self.host_to_bridge_messages = 0
@@ -674,6 +690,14 @@ class CortexCore:
                     self.ams_update_handler(message.payload)
                 except Exception:  # noqa: BLE001 - see above
                     self.ams_update_handler_errors += 1
+            return
+        if message.kind == MessageType.KIT_REPORT:
+            # Informational like the identity: never routed, never fatal.
+            if self.kit_handler is not None:
+                try:
+                    self.kit_handler(message.payload)
+                except Exception:  # noqa: BLE001 - see above
+                    self.kit_handler_errors += 1
             return
         if message.kind == MessageType.ROSTER:
             generation, statuses = parse_roster(message)
@@ -989,6 +1013,7 @@ __all__ = [
     "ATTEST_CHALLENGE_SIZE", "ATTEST_REQUEST_PAYLOAD_SIZE",
     "BRIDGE_MESSAGES", "HOST_MESSAGES", "IDENTITY_FAILURE_PAYLOAD_SIZE",
     "IDENTITY_REQUEST_PAYLOAD_SIZE", "IDENTITY_TOKEN_SIZE",
+    "KIT_REPORT_PAYLOAD_SIZE", "KIT_REQUEST_PAYLOAD_SIZE",
     "SUPPORT_REPORT_MAX_PAYLOAD", "SUPPORT_REPORT_MIN_PAYLOAD",
     "SUPPORT_REQUEST_PAYLOAD_SIZE", "SUPPORT_TOKEN_SIZE",
     "CleartextMuxTransport", "RuntimeTransport", "CortexCore",

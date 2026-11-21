@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: MIT
 """One AMS firmware update through the bridge (bridge firmware 23 and later).
 
-The bridge updates an AMS unit's own MCU the way a Bambu printer does: it
-puts the unit in its loader, answers the loader's requests for the image
-header and blocks, waits for the loader's verdict and the reboot, then reads
-the unit's new version. The host owns the image (Bambu's file, checked by
+The bridge installs the firmware on an AMS unit and reports the unit's new
+version. The host owns the image (Bambu's file, checked by
 ``cortex_bridge.ams_firmware``) and streams it over two runtime-mux control
 messages; the bridge keeps only a 4 KiB window of it.
 
@@ -15,7 +13,7 @@ Wire format (the bridge's docs/host-integration.md, "AMS firmware update"):
   model; DATA = offset(4) bytes(1..256); ABORT = no body.
 - type 11 AmsUpdateReport, bridge to host: token(4) status(1) kind(1) body.
   STATUS (kind 1) = a 72-byte little-endian record; TEXT (kind 2) =
-  source(2, LE) + one loader line.
+  source(2, LE) + one line of the update's log.
 
 ``AmsUpdateDriver`` is the host's side of one session, free of I/O: ``due``
 returns the requests to send now, ``accept`` takes each report, and
@@ -28,8 +26,8 @@ import dataclasses
 import os
 import struct
 
-# Bridge 22 has the update mode, but its isolation check stops every update
-# while an AMS 1 is on the bus; 23 polls each unit the way the bus does.
+# Bridge 22 has the update mode, but it stops every update while an AMS 1 is
+# on the bus; 23 fixes that.
 MINIMUM_FIRMWARE = 23
 
 REQUEST_TYPE = 10
@@ -40,9 +38,8 @@ REPORT_MIN_PAYLOAD = TOKEN_SIZE + 2
 REPORT_MAX_PAYLOAD = 78
 
 OP_BEGIN, OP_DATA, OP_ABORT, OP_RESUME = 1, 2, 3, 4
-# RESUME (bridge 24): BEGIN's body; when the bridge holds neither the
-# loader's banner nor the unit's model code (it restarted while the unit
-# waited in its loader), the host's model stands.
+# RESUME (bridge 24): BEGIN's body, for an update the bridge restarted in the
+# middle of; the host's model name then stands.
 RESUME_MINIMUM_FIRMWARE = 24
 KIND_STATUS, KIND_TEXT = 1, 2
 CONFIRM = b"ERASE-AMS-FW"
@@ -80,14 +77,16 @@ CODE_TEXT = {
     "model-mismatch": "the AMS's loader names a different model or board "
                       "than this firmware is for; nothing was written",
     "model-unknown": "the bridge could not tell which model the AMS is",
-    "bad-image": "the bridge rejected the image header",
+    "bad-image": "the bridge rejected the firmware image",
     "too-large": "the image is larger than the AMS's loader accepts",
-    "block-size": "the AMS's loader asked for an unexpected block size",
+    "block-size": "the AMS's loader did not take the firmware as "
+                  "expected",
     "no-loader": "the AMS did not enter its loader (no answer for 15 s); "
                  "its firmware is unchanged",
-    "loader-silent": "the AMS's loader stopped asking for data",
+    "loader-silent": "the AMS's loader stopped taking the firmware",
     "host-stalled": "this computer did not send the image in time",
-    "verify-timeout": "the AMS gave no verdict after the last block",
+    "verify-timeout": "the AMS did not confirm the firmware after the "
+                      "transfer",
     "aborted": "the update was stopped",
     "host-lost": "the link between this computer and the bridge dropped",
     "master-lost": "the bridge lost control of the AMS bus",
@@ -193,8 +192,8 @@ def parse_report(payload: bytes) -> dict:
 
 
 def version_text(raw: bytes) -> str:
-    """The 0x0103 version bytes, lowest first (1d 15 00 03 = 03.00.21.29);
-    empty when all zero."""
+    """The AMS's version as reported to the bridge, as Bambu Lab prints it;
+    empty when the AMS reported none."""
     if not any(raw):
         return ""
     return "%02d.%02d.%02d.%02d" % tuple(reversed(raw))
@@ -205,8 +204,8 @@ def _cstring(raw: bytes) -> str:
 
 
 def model_for(family: str, hardware: str) -> str:
-    """What the AMS's loader (or its 0x0103 model code) calls the board the
-    image is for: N3F05 (AMS 2 Pro rev5), N3S05 (AMS HT rev5), AMS08."""
+    """The board name the AMS reports for the hardware an image is for:
+    N3F05 (AMS 2 Pro rev5), N3S05 (AMS HT rev5), AMS08."""
     prefix = {"ams1": "AMS", "ams2": "N3F", "ams_ht": "N3S"}.get(family)
     digits = hardware[3:] if hardware.startswith("rev") else ""
     if prefix is None or not digits.isdigit():
@@ -233,9 +232,9 @@ class AmsUpdateDriver:
                  now: float, token: bytes | None = None,
                  probe: bool = False, resume: bool = False):
         self.image = image
-        # A probe opens a session only to read the unit's model code from
-        # the bridge's first reply, then aborts during Settle: no loader
-        # command is ever sent.
+        # A probe opens a session only to read the unit's model name from
+        # the bridge's first reply, then aborts before anything is sent to
+        # the AMS.
         self.probe = probe
         self.resume = resume
         self.index = index
@@ -330,13 +329,13 @@ class AmsUpdateDriver:
         previous = self.status
         self.status = report
         if self.finished:
-            # About 3 s after a session ends the bridge reports every unit
-            # again, once the bus has polled them: the isolation proof.
+            # Shortly after a session ends the bridge reports every unit
+            # again: the proof that no other unit changed.
             if report["units"]:
                 self.final_units = report["units"]
                 event = {"event": "units", "units": report["units"]}
-                # Bridge 24 reads the rebooted unit's version the way its
-                # admission does before this report: the version it runs.
+                # From bridge 24 this report carries the rebooted unit's
+                # version: the version it runs.
                 if report["after"]:
                     event["after"] = report["after"]
                     if self.outcome is not None and self.outcome.ok:
@@ -358,7 +357,7 @@ class AmsUpdateDriver:
                 return
         if self.probe:
             if report["phase"] == "failed":
-                self._finish(True, "probe", "model code %r"
+                self._finish(True, "probe", "the AMS reports model %r"
                              % (self.probed or {}).get("model_code", ""))
                 self.outcome.status = dict(report, **(self.probed or {}))
             return
@@ -379,9 +378,8 @@ class AmsUpdateDriver:
                                 "retries": report["retries"]})
         if report["phase"] == "done":
             if report["code"] == "no-rejoin":
-                # The loader accepted the image; the unit did not answer
-                # within the bridge's wait, and its version is read once
-                # it does.
+                # The AMS accepted the firmware but has not answered yet;
+                # its version is read once it does.
                 self._finish(True, "no-rejoin",
                              "the AMS accepted the firmware but has not "
                              "answered yet; if it stays offline for two "
@@ -398,13 +396,13 @@ class AmsUpdateDriver:
 
 
 class AmsListener:
-    """Listen to the AMS loaders on the bus for a while, without a session.
+    """Listen for a while for an AMS left waiting in its loader, without
+    starting an update.
 
-    The bridge forwards loader lines only to a host that has sent it an AMS
-    update request in this USB session, so the listener sends one ABORT
-    with a fresh token: with no session running the bridge answers
-    NoSession and changes nothing. Then every loader line on the bus comes
-    through, which shows a unit left waiting in its loader."""
+    The bridge reports this only to a host that has sent it an AMS update
+    request in this USB session, so the listener sends one ABORT with a
+    fresh token: with no session running the bridge answers NoSession and
+    changes nothing."""
 
     def __init__(self, *, now: float, seconds: float,
                  token: bytes | None = None):

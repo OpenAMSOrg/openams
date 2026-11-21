@@ -2,6 +2,13 @@
  "schema": 1,
  "packages": [
   {
+   "version": 40,
+   "file": "bridge-40.oac2",
+   "sha256": "ed93abbf1b965ef278a55db9e85c71cdcd975980fa102ccd0b7ee373d5e2049c",
+   "released": "2026-11-20",
+   "notes": "Support for the Bambu Lab CyberBrick Time-lapse Kit: plugged into a free 6-pin bus port on an AMS, the kit stays linked (its light shows solid green) and OpenAMS fires it from Klipper with CYBERBRICK_SHOT or M1004 S5 P1. The bridge also no longer mistakes another device on the bus for an AMS HT that stopped answering, and its diagnostics now count one kind of transmit fault they used to miss."
+  },
+  {
    "version": 38,
    "file": "bridge-38.oac2",
    "sha256": "f666fcee8e6e4bc66047d9b75bfcfb8488da609998a54989d1c7cae9a8de5125",

@@ -60,6 +60,8 @@ _EVENT_FIELDS = {
     # ended, with the versions before and after ("none" when unknown).
     "ams_update_start": frozenset(("index", "family", "model", "size")),
     "ams_update_end": frozenset(("result", "reason", "before", "after")),
+    # The CyberBrick kit (bridge 40) came or went.
+    "kit_presence": frozenset(("present",)),
 }
 
 _CODE_FIELDS = frozenset((

@@ -50,6 +50,7 @@ from cortex_bridge.cortexd import (  # noqa: E402
 from cortex_bridge import ams_update  # noqa: E402
 from cortex_bridge import bridge_info, bridge_snapshot  # noqa: E402
 from cortex_bridge import code_version  # noqa: E402
+from cortex_bridge import kit as kit_protocol  # noqa: E402
 from cortex_bridge import update_messages  # noqa: E402
 from cortex_bridge.support_log import GatewaySupportLog  # noqa: E402
 
@@ -78,6 +79,8 @@ AMS_UNITS_WAIT_S = 5.0
 ROSTER_TIMEOUT = 30.0
 READY_WAIT = 60.0
 SUMMARY_INTERVAL = 60.0
+# How long the relay waits for the bridge to answer a kit request.
+KIT_ANSWER_WAIT = 2.0
 STATUS_INTERVAL = 1.0
 RETRY_INTERVAL = 1.0
 MAX_PACKAGE_SIZE = 1024 * 1024
@@ -432,6 +435,16 @@ class Relay:
         # prepared). A busy bridge would refuse update mode, and leaving the
         # session for it costs Klipper its AMS, so it is asked first.
         self.pending_update = None
+        # The CyberBrick kit (cortex_bridge.kit, bridge 40 and later):
+        # whether its service was asked for (it is then turned on at each
+        # session), whether this session has it, the requests to send, the
+        # control connections waiting for their answer, and the latest
+        # report.
+        self.kit_service = False
+        self.kit_given = False
+        self.kit_outbox = []
+        self.kit_waiters = []
+        self.kit_state = None
 
     # -- lifecycle --------------------------------------------------------
 
@@ -556,11 +569,115 @@ class Relay:
             self.request_busy(connection, running=running)
         elif method == AMS_LISTEN_METHOD:
             self.start_ams_listen(connection, request, running=running)
+        elif method == kit_protocol.METHOD:
+            self.request_kit(connection, request, running=running)
         else:
             send_line(connection, {"event": "result", "ok": False,
                                    "error": "unknown-method",
                                    "message": "unknown method %r" % method})
             connection.close()
+
+    # -- the CyberBrick kit (bridge 40 and later) -----------------------------
+
+    def kit_supported(self) -> bool:
+        firmware = self.status.state.get("firmware") or {}
+        version = firmware.get("version") \
+            if firmware.get("state") == "known" else None
+        return (self.bridge or {}).get("image") == "production" and \
+            isinstance(version, int) and version >= kit_protocol.MIN_FIRMWARE
+
+    def request_kit(self, connection, request, *, running: bool) -> None:
+        """Answer {"method": "kit"} with the latest report, {"method":
+        "kit", "service": true|false} once the bridge turned the kit service
+        on or off, and {"method": "kit", "shot": p} with the shot's status.
+        A bridge before 40 is never sent a kit request."""
+        def refuse(error, message):
+            self._answer(connection, {"event": "kit", "ok": False,
+                                      "error": error, "message": message})
+        if not running or self.core is None:
+            return refuse("not-connected", "no bridge session is running")
+        if not self.kit_supported():
+            firmware = self.status.state.get("firmware") or {}
+            return refuse("unsupported-firmware",
+                          "bridge firmware %s has no CyberBrick support; "
+                          "version %d or later has"
+                          % (firmware.get("version", "unknown"),
+                             kit_protocol.MIN_FIRMWARE))
+        try:
+            if "service" in request:
+                on = bool(request["service"])
+                self.kit_service = on
+                self.kit_given = True
+                message, event = kit_protocol.service(on), "service"
+            elif "shot" in request:
+                message, event = kit_protocol.shot(
+                    int(request.get("shot", 1))), "shot"
+            else:
+                state = self.kit_state
+                if state is None:
+                    return refuse("no-report", "the bridge has not reported "
+                                  "the kit yet (its service is not on)")
+                return self._answer(connection,
+                                    dict(state, event="kit", ok=True))
+        except (TypeError, ValueError) as exc:
+            return refuse("bad-request", str(exc))
+        self.kit_outbox.append(message)
+        self.kit_waiters.append((connection, event,
+                                 time.monotonic() + KIT_ANSWER_WAIT))
+
+    def drive_kit(self, daemon, now: float) -> None:
+        if not self.kit_supported():
+            return
+        if not self.kit_given and self.kit_service:
+            # A new session: the kit's service again, as it was asked for.
+            self.kit_outbox.insert(0, kit_protocol.service())
+            self.kit_given = True
+        while self.kit_outbox:
+            daemon.send_request(self.kit_outbox.pop(0))
+        late = [w for w in self.kit_waiters if w[2] <= now]
+        if late:
+            self.kit_waiters = [w for w in self.kit_waiters if w[2] > now]
+            for connection, _event, _deadline in late:
+                self._answer(connection, {
+                    "event": "kit", "ok": False, "error": "no-answer",
+                    "message": "the bridge did not answer the kit request"})
+
+    def accept_kit(self, payload: bytes) -> None:
+        """A KitReport: the status file's "kit" entry (presence, shots, the
+        time of the last shot), the answer to whoever waits for it, and one
+        log line when the kit comes or goes."""
+        state = kit_protocol.decode(payload)
+        previous = self.kit_state or {}
+        if state["shots"] != previous.get("shots", state["shots"]) or \
+                (state["shots"] and "last_shot" not in previous):
+            state["last_shot"] = _now_iso()
+        elif "last_shot" in previous:
+            state["last_shot"] = previous["last_shot"]
+        self.kit_state = {k: v for k, v in state.items() if k != "event"}
+        self.status.set(kit=self.kit_state)
+        if state["present"] != previous.get("present", False):
+            self.log.record("kit_presence", present=state["present"])
+        event = state["event"]
+        for i, (connection, wanted, _deadline) in enumerate(self.kit_waiters):
+            if wanted == event:
+                del self.kit_waiters[i]
+                reply = dict(self.kit_state, event="kit")
+                reply["ok"] = event != "shot" or state.get("shot") == "queued"
+                if event == "shot":
+                    reply["shot"] = state.get("shot")
+                self._answer(connection, reply)
+                break
+
+    def end_kit(self) -> None:
+        self.kit_given = False
+        self.kit_outbox = []
+        self.kit_state = None
+        self.status.set(kit=None)
+        waiters, self.kit_waiters = self.kit_waiters, []
+        for connection, _event, _deadline in waiters:
+            self._answer(connection, {
+                "event": "kit", "ok": False, "error": "not-connected",
+                "message": "the bridge session ended before it answered"})
 
     # -- the support snapshot ----------------------------------------------
 
@@ -958,6 +1075,7 @@ class Relay:
                 lambda payload: self.accept_identity(query, payload)
             self.core.attest_handler = self.accept_attest
             self.core.support_handler = self.accept_snapshot
+            self.core.kit_handler = self.accept_kit
         reported = query.firmware if query is not None else None
         summary_at = time.monotonic() + SUMMARY_INTERVAL
         status_at = 0.0
@@ -995,6 +1113,7 @@ class Relay:
                 self.drive_snapshot(daemon, now)
                 self.drive_busy(daemon, now)
                 self.drive_ams_update(daemon, now)
+                self.drive_kit(daemon, now)
                 self.serve_control(running=True)
         finally:
             self.end_ams_update(reason="the bridge session ended during the "
@@ -1004,6 +1123,8 @@ class Relay:
             self.core.attest_handler = None
             self.identity_query = None
             self.core.support_handler = None
+            self.core.kit_handler = None
+            self.end_kit()
             if self.snapshot_query is not None:
                 self.finish_snapshot(bridge_snapshot.failure(
                     "not-connected", "the bridge session ended before it "

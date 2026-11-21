@@ -32,6 +32,10 @@ from . import oams_ext
 from .oams_runtime import Runtime
 from .openams_ui import OpenAMSUIProjection
 from .openams_screen import OpenAMSScreen
+try:
+    from . import cyberbrick        # the CyberBrick kit, where it ships
+except ImportError:                 # pragma: no cover
+    cyberbrick = None
 
 # A managed follower may acknowledge command admission before its service has
 # physically applied the direction. Keep toolhead motion behind a finite gate.
@@ -336,6 +340,19 @@ class OAMSManager(oams_ext.ManagerHooks):
         webhooks.register_endpoint("openams/topology", self._webhook_topology)
 
         self.register_commands()
+        # The CyberBrick Time-lapse Kit behind a Cortex Bridge (optional;
+        # inert without a relay, src/cyberbrick.py).
+        config_error = getattr(config, "error", None)
+        try:
+            self.cyberbrick = None if cyberbrick is None else cyberbrick.load(
+                config, self.printer, self.printer.lookup_object("gcode"))
+        except Exception as exc:
+            if isinstance(config_error, type) and isinstance(exc,
+                                                             config_error):
+                raise               # a bad cyberbrick_* option
+            logging.exception("OpenAMS: the CyberBrick kit support did not"
+                              " load")
+            self.cyberbrick = None
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
         self.printer.register_event_handler("klippy:shutdown",
                                             self._handle_shutdown)
@@ -1092,6 +1109,10 @@ class OAMSManager(oams_ext.ManagerHooks):
     LIGHT_CLEAR_GIVE_UP_S = 60.0
 
     def _queue_light_clears(self, names):
+        # The same moments turn the CyberBrick kit service on again.
+        kit = getattr(self, "cyberbrick", None)
+        if kit is not None:
+            kit.bridge_reattached()
         reactor = getattr(self, "reactor", None)
         if reactor is None:
             return
