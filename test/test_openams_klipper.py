@@ -311,6 +311,13 @@ class Printer:
     def lookup_object(self, name, default=None):
         return self.objects.get(name, default)
 
+    def add_object(self, name, obj):
+        # As Klipper's Printer.add_object (the CyberBrick kit support adds
+        # itself this way).
+        if name in self.objects:
+            raise AssertionError("Printer object '%s' already created" % name)
+        self.objects[name] = obj
+
     def lookup_objects(self, module=None):
         return [(name, obj) for name, obj in self.objects.items()
                 if module is None or name.split()[0] == module]
@@ -793,12 +800,13 @@ HEAT_235 = 'OAMSM_STAGE NAME=heat DETAIL="235 °C" FPS=fps'
 
 
 @pytest.mark.parametrize("variant", ["cannot_extrude", "below_minimum"])
-@pytest.mark.parametrize("command, loaded, steps", [
-    ("T1", 0, "cut,retract,feed"), ("T1", None, "feed"),
-    ("OPENAMS_LOAD GROUP=T1 SLOT=2", 0, "cut,retract,feed"),
-    ("OPENAMS_LOAD GROUP=T1 SLOT=2", None, "feed"),
-    ("SAFE_UNLOAD_FILAMENT", 0, "cut,retract"), ("OPENAMS_UNLOAD", 0, "cut,retract")])
-def test_a_cold_extruder_is_heated_before_any_motion(setup, variant, command, loaded, steps):
+@pytest.mark.parametrize("command, loaded, steps, group", [
+    ("T1", 0, "cut,retract,feed", "T1"), ("T1", None, "feed", "T1"),
+    ("OPENAMS_LOAD GROUP=T1 SLOT=2", 0, "cut,retract,feed", "T1"),
+    ("OPENAMS_LOAD GROUP=T1 SLOT=2", None, "feed", "T1"),
+    ("SAFE_UNLOAD_FILAMENT", 0, "cut,retract", None),
+    ("OPENAMS_UNLOAD", 0, "cut,retract", None)])
+def test_a_cold_extruder_is_heated_before_any_motion(setup, variant, command, loaded, steps, group):
     # What the machine can do itself, it does: the flow heats and waits before
     # it moves any filament (the old behavior was a console error).
     printer, manager, unit = setup(loaded=loaded)
@@ -814,14 +822,14 @@ def test_a_cold_extruder_is_heated_before_any_motion(setup, variant, command, lo
     heat, wait = heat_commands(trace)
     assert trace.index("G28") < heat < wait < first_motion(trace)
     assert trace[wait] == "OAMSM_HEAT_WAIT HEATER=extruder MINIMUM=230.0 FPS=fps"
-    assert reports[0] == ("OAMSM_STAGE PLAN=home,heat,%s FPS=fps" % steps, None)
+    assert reports[0] == (plan_line("home,heat," + steps, group=group), None)
     assert (reports[1], reports[2]) == (("OAMSM_STAGE NAME=home FPS=fps", 0),
                                         (HEAT_235, 1))
 
 
-@pytest.mark.parametrize("command, steps", [("OPENAMS_UNLOAD", "cut,retract"),
-                                            ("T1", "cut,retract,feed")])
-def test_homing_that_leaves_the_extruder_cold_heats_before_any_motion(setup, command, steps):
+@pytest.mark.parametrize("command, steps, group", [
+    ("OPENAMS_UNLOAD", "cut,retract", None), ("T1", "cut,retract,feed", "T1")])
+def test_homing_that_leaves_the_extruder_cold_heats_before_any_motion(setup, command, steps, group):
     # Homing that ends with no target and a cold extruder is no longer a dead
     # end: the flow heats afterwards and carries on.
     printer, manager, unit = setup(loaded=0)
@@ -834,7 +842,7 @@ def test_homing_that_leaves_the_extruder_cold_heats_before_any_motion(setup, com
     heat, wait = heat_commands(trace)
     assert trace.index("G28") < heat < wait < first_motion(trace)
     assert trace[wait] == "OAMSM_HEAT_WAIT HEATER=extruder MINIMUM=230.0 FPS=fps"
-    assert reports[0] == ("OAMSM_STAGE PLAN=home,heat,%s FPS=fps" % steps, None)
+    assert reports[0] == (plan_line("home,heat," + steps, group=group), None)
     assert reports[2] == (HEAT_235, 1)
     # The flow finished, so the target it raised went back to the one it found.
     assert printer.objects["extruder"].values["target"] == 0.0
@@ -904,7 +912,7 @@ def test_two_lanes_cold_lane_b_extruder_heats_t1(setup_two_lanes):
     heat, wait = heat_commands(trace, extruder="extruder1")
     assert heat == 0 and wait < first_motion(trace)
     assert trace[wait] == "OAMSM_HEAT_WAIT HEATER=extruder1 MINIMUM=230.0 FPS=lane2"
-    assert reports[0] == ("OAMSM_STAGE PLAN=heat,feed FPS=lane2", None)
+    assert reports[0] == (plan_line("heat,feed", fps="lane2", group="T1"), None)
     assert reports[1] == ('OAMSM_STAGE NAME=heat DETAIL="235 °C" FPS=lane2', 0)
     assert (unit1.current_spool, unit2.current_spool) == (None, 0)
 
@@ -1156,6 +1164,14 @@ def published_stage(manager, fps="fps"):
     return manager.get_status(0.)["lanes_by_fps"][fps]["stage"]
 
 
+def plan_line(steps, fps="fps", group=None, labels=""):
+    """The OAMSM_STAGE line _OAMS_PLAN announces. A load or a swap also names
+    the group it brings in (GROUP=, C3), so the printer's LCD names the tool
+    from the first step; an unload names none."""
+    line = "OAMSM_STAGE PLAN=%s%s FPS=%s" % (steps, labels, fps)
+    return line + (" GROUP=%s" % group if group else "")
+
+
 def test_stage_reports_a_switch_as_cut_retract_feed(setup):
     # C2 5.3: a group switch announces heat,cut,retract,feed (heat first, the
     # extruder is colder than the unknown material's 235 C), enters each step
@@ -1164,7 +1180,7 @@ def test_stage_reports_a_switch_as_cut_retract_feed(setup):
     reports = stage_reports(printer, manager)
     printer.gcode.run_script("OPENAMS_LOAD GROUP=T1 SLOT=2")
     assert reports == [
-        ("OAMSM_STAGE PLAN=heat,cut,retract,feed FPS=fps", None),
+        (plan_line("heat,cut,retract,feed", group="T1"), None),
         (HEAT_235, 0),
         ("OAMSM_STAGE NAME=cut FPS=fps", 1),
         ("OAMSM_STAGE NAME=retract FPS=fps", 2),
@@ -1195,7 +1211,7 @@ def test_stage_reports_a_load_from_empty_as_feed(setup):
     reports = stage_reports(printer, manager)
     printer.gcode.run_script("T1")
     assert reports == [
-        ("OAMSM_STAGE PLAN=heat,feed FPS=fps", None),
+        (plan_line("heat,feed", group="T1"), None),
         (HEAT_235, 0),
         ("OAMSM_STAGE NAME=feed FPS=fps", 1),
         ("OAMSM_STAGE DONE=1 FPS=fps", None),
@@ -1249,7 +1265,7 @@ def test_stage_reports_failed_toolchange_before_the_abort(setup):
     with pytest.raises(printer.command_error, match="printer was paused"):
         printer.gcode.run_script("T1")
     assert reports == [
-        ("OAMSM_STAGE PLAN=heat,feed FPS=fps", None),
+        (plan_line("heat,feed", group="T1"), None),
         (HEAT_235, 0),
         ("OAMSM_STAGE NAME=feed FPS=fps", 1),
         ("OAMSM_STAGE FAILED=1 FPS=fps", 1),
@@ -1388,7 +1404,8 @@ def test_a_cut_override_with_a_label_names_the_cut_step(setup, klipper, strict):
     assert published["plan"] == ["heat", "cut", "retract", "feed"]
     assert published["labels"] == {"cut": "Form tip"}
     assert reports[0] == (
-        'OAMSM_STAGE PLAN=heat,cut,retract,feed LABEL_CUT="Form tip" FPS=fps', None)
+        plan_line("heat,cut,retract,feed", group="T1",
+                  labels=' LABEL_CUT="Form tip"'), None)
     assert ("OAMSM_STAGE NAME=cut FPS=fps", 1) in reports
     assert any("Form tip" in line for line in messages)
     assert not any("Cutting" in line for line in messages)
@@ -1404,7 +1421,7 @@ def test_a_cut_override_without_a_label_keeps_the_cut_wording(setup, klipper, st
     messages = respond_messages(printer)
     run(printer, "OPENAMS_LOAD GROUP=T1 SLOT=2", strict)
     assert published["labels"] == {}
-    assert reports[0] == ("OAMSM_STAGE PLAN=heat,cut,retract,feed FPS=fps", None)
+    assert reports[0] == (plan_line("heat,cut,retract,feed", group="T1"), None)
     assert any("Cutting" in line for line in messages)
 
 
@@ -1420,8 +1437,8 @@ def test_a_hook_with_a_step_is_announced_and_entered_before_it_runs(setup, klipp
     assert published["plan"] == ["heat", "cut", "wipe", "retract", "feed"]
     assert published["labels"] == {"wipe": "Wiping the nozzle"}
     assert reports == [
-        ('OAMSM_STAGE PLAN=heat,cut,wipe,retract,feed '
-         'LABEL_WIPE="Wiping the nozzle" FPS=fps', None),
+        (plan_line("heat,cut,wipe,retract,feed", group="T1",
+                   labels=' LABEL_WIPE="Wiping the nozzle"'), None),
         (HEAT_235, 0),
         ("OAMSM_STAGE NAME=cut FPS=fps", 1),
         ("OAMSM_STAGE NAME=wipe FPS=fps", 2),
@@ -1446,7 +1463,7 @@ def test_a_hook_without_a_step_runs_inside_the_step_around_it(setup, klipper, st
     assert published["plan"] == ["heat", "cut", "retract", "feed"]
     assert published["labels"] == {}
     assert reports == [
-        ("OAMSM_STAGE PLAN=heat,cut,retract,feed FPS=fps", None),
+        (plan_line("heat,cut,retract,feed", group="T1"), None),
         (HEAT_235, 0),
         ("OAMSM_STAGE NAME=cut FPS=fps", 1),
         ("OAMSM_STAGE NAME=retract FPS=fps", 2),
@@ -1475,13 +1492,13 @@ def test_the_after_cut_hook_runs_before_the_extruder_retracts(setup, klipper, st
     assert unit.current_spool is None
 
 
-@pytest.mark.parametrize("command, loaded, steps, hooks", [
-    ("OPENAMS_LOAD GROUP=T1 SLOT=2", 0, "heat,cut,retract,feed", 4),
-    ("T1", None, "heat,feed", 2),
-    ("OPENAMS_UNLOAD", 0, "heat,cut,retract", 2)])
+@pytest.mark.parametrize("command, loaded, steps, hooks, group", [
+    ("OPENAMS_LOAD GROUP=T1 SLOT=2", 0, "heat,cut,retract,feed", 4, "T1"),
+    ("T1", None, "heat,feed", 2, "T1"),
+    ("OPENAMS_UNLOAD", 0, "heat,cut,retract", 2, None)])
 @pytest.mark.parametrize("strict", [False, True], ids=["legacy", "ordered"])
 def test_hooks_that_claim_no_step_leave_the_plans_exactly_as_they_are(
-        setup, klipper, strict, command, loaded, steps, hooks):
+        setup, klipper, strict, command, loaded, steps, hooks, group):
     printer, manager, unit = setup(loaded=loaded)
     load_user_macros(printer, klipper, hook("BEFORE_HEAT"), hook("AFTER_CUT"),
                      hook("AFTER_RETRACT"), hook("AFTER_FEED"))
@@ -1491,17 +1508,18 @@ def test_hooks_that_claim_no_step_leave_the_plans_exactly_as_they_are(
     assert published["labels"] == {}
     # Every point this flow passes ran; the ones it does not pass did not.
     assert len([line for line in printer.trace if line == "G0 X201 Y201"]) == hooks
-    assert reports[0][0] == "OAMSM_STAGE PLAN=%s FPS=fps" % (steps,)
+    assert reports[0][0] == plan_line(steps, group=group)
 
 
-@pytest.mark.parametrize("command, loaded, steps, ran", [
+@pytest.mark.parametrize("command, loaded, steps, ran, group", [
     ("OPENAMS_LOAD GROUP=T1 SLOT=2", 0,
-     "park,heat,cut,wipe,retract,check,feed,purge", ["park", "wipe", "check", "purge"]),
-    ("T1", None, "park,heat,feed,purge", ["park", "purge"]),
-    ("OPENAMS_UNLOAD", 0, "park,heat,cut,wipe,retract", ["park", "wipe"])])
+     "park,heat,cut,wipe,retract,check,feed,purge", ["park", "wipe", "check", "purge"],
+     "T1"),
+    ("T1", None, "park,heat,feed,purge", ["park", "purge"], "T1"),
+    ("OPENAMS_UNLOAD", 0, "park,heat,cut,wipe,retract", ["park", "wipe"], None)])
 @pytest.mark.parametrize("strict", [False, True], ids=["legacy", "ordered"])
 def test_a_hook_only_joins_the_flows_that_pass_its_point(
-        setup, klipper, strict, command, loaded, steps, ran):
+        setup, klipper, strict, command, loaded, steps, ran, group):
     # A load into an empty toolhead has no cut and no retract, so neither hook
     # is in its plan and neither runs; an unload has no feed, so the feed hook
     # is not in its plan.
@@ -1513,7 +1531,7 @@ def test_a_hook_only_joins_the_flows_that_pass_its_point(
     reports, published = stage_trace(printer, manager)
     run(printer, command, strict)
     plan = published["plan"]
-    assert reports[0] == ("OAMSM_STAGE PLAN=%s FPS=fps" % (steps,), None)
+    assert reports[0] == (plan_line(steps, group=group), None)
     assert plan == steps.split(",")
     trace = printer.trace
     # The flow enters every step of the plan, in order, and the hook's own

@@ -35,6 +35,7 @@ if "oamspkg" not in sys.modules:
     sys.modules["oamspkg"] = _pkg
 CB = importlib.import_module("oamspkg.cyberbrick")
 from cortex_bridge import kit as kit_protocol      # noqa: E402
+from log_assertions import assert_no_logs   # noqa: E402
 
 RUNNING = {"state": "running", "bridge": {"image": "production"},
            "firmware": {"state": "known", "version": 40}}
@@ -290,7 +291,7 @@ class ShotTest(unittest.TestCase):
         self.rig.relay.answers = [
             {"event": "kit", "ok": False, "shot": "refused"},
             {"event": "kit", "ok": False, "error": "no-answer"}]
-        with self.assertNoLogs(level="WARNING"):
+        with assert_no_logs(self, level="WARNING"):
             self.rig.gcode.run("CYBERBRICK_SHOT QUIET=1")
             self.assertEqual(self.rig.kit.get_status()["last_shot_result"],
                              "refused")
@@ -361,7 +362,7 @@ class ServiceTest(unittest.TestCase):
 
 class OptionalTest(unittest.TestCase):
     def assert_inert(self, rig):
-        with self.assertNoLogs(level="INFO"):
+        with assert_no_logs(self, level="INFO"):
             rig.start()
             rig.reactor.advance(120.0)
             gcmd = rig.gcode.run("CYBERBRICK_SHOT")
