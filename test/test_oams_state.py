@@ -992,7 +992,7 @@ class PositioningTests(unittest.TestCase):
 
     POS_MSG = ("OAMS 1 is positioning a newly inserted spool; retry when it"
                " finishes")
-    BUSY_MSG = "OAMS is busy (positioning a newly inserted spool?); retry"
+    BUSY_MSG = "OAMS is busy; retry"
 
     def _world(self, **kw):
         return S.World(lanes={FPS: S.LaneWorld(
@@ -1057,6 +1057,33 @@ class PositioningTests(unittest.TestCase):
         self.assertEqual(settles[0].result.message, self.BUSY_MSG)
         self.assertFalse(has(fx, S.Pause))
         self.assertFalse(has(fx, S.CancelLoad))  # no op ever started
+
+    def test_a_busy_refusal_the_driver_explains_is_worded_its_way(self):
+        """The driver words a Busy refusal from what it knows: a unit that
+        did not settle after its own unload (it sent the load again until
+        then), or a spool being positioned. The reducer only quotes it."""
+        for reason in (
+                "ams2 (AMS 2 Pro) was still busy after its unload and did not"
+                " settle within 10 s; retry",
+                "ams2 (AMS 2 Pro) is positioning a newly inserted spool;"
+                " retry when it finishes"):
+            lane = S.LaneState(op=S.OP_LOADING, group=GROUP, unit=BAY_A,
+                               op_gen=4, following=False)
+            sys1, fx = S.reduce(
+                system(lane),
+                S.OpCompleted(FPS, S.OAMS_OP_CODE_ERROR_BUSY, gen=4,
+                              reason=reason),
+                S.World(), now=2.0)
+            nl = lane_of(sys1)
+            self.assertEqual(nl.op, S.OP_UNLOADED)
+            self.assertIsNone(nl.message)      # still a refusal
+            settles = find(fx, S.Settle)
+            self.assertEqual(len(settles), 1)
+            self.assertEqual(settles[0].result.code,
+                             S.OAMS_OP_CODE_ERROR_BUSY)
+            self.assertEqual(settles[0].result.message, reason)
+            self.assertNotIn("newly inserted spool?", settles[0].result.message)
+            self.assertFalse(has(fx, S.CancelLoad))
 
 
 class UnitSessionLostTests(unittest.TestCase):

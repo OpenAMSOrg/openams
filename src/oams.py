@@ -212,6 +212,11 @@ class OAMS(oams_ext.UnitHooks):
     _use_wide_gen_protocol = False
     _active_action = None
     _active_gen = None
+    # The load in flight, while a Busy refusal of it may be held back and the
+    # load sent again (_retry_busy_load), and when and how the unit last
+    # rewound (_note_rewound).
+    _last_load = None
+    _rewound = None
     oams_load_spool4_cmd = None
     oams_unload_spool4_cmd = None
     # Host-confirmed toolhead arrival (C1 AMS_CAP_HOST_ARRIVAL_CONFIRM).
@@ -2087,6 +2092,7 @@ class OAMS(oams_ext.UnitHooks):
 
     def _handle_disconnect(self):
         self.hardware_snapshot_ready = False
+        self._drop_held_load()
         self._ext_disconnect()
         if self._telemetry_timer is not None:
             self.reactor.unregister_timer(self._telemetry_timer)
@@ -2640,7 +2646,9 @@ class OAMS(oams_ext.UnitHooks):
         for i in range(self.bay_count):
             self.set_led_error(i, 0)
         # CLEAR_ERRORS is the resync point: any replies still owed for
-        # abandoned ops are no longer wanted.
+        # abandoned ops are no longer wanted, and a refused load waiting to
+        # be sent again is not sent.
+        self._drop_held_load()
         self._gen_queue.clear()
         self._active_action = None
         self._active_gen = None
@@ -2863,7 +2871,8 @@ class OAMS(oams_ext.UnitHooks):
         self._last_load = {"bay": spool_idx, "gen": gen,
                            "at": (reactor.monotonic() if reactor is not None
                                   else 0.0),
-                           "retried": False, "cancelled": False}
+                           "retried": False, "cancelled": False,
+                           "held": False}
         if hasattr(self, "filament_path_length"):
             self._selected_path_length = self._ptfe_length_for_bay(spool_idx)
             self._selected_ptfe_bay = spool_idx
@@ -2930,6 +2939,8 @@ class OAMS(oams_ext.UnitHooks):
         self._note_active(self.status_calibrating, gen)
 
     def load_spool_cancel(self):
+        if self._cancel_held_load():
+            return "OAMS load spool operation cancelled"
         if getattr(self, "_last_load", None) is not None:
             self._last_load["cancelled"] = True
         if self._use_wide_gen_protocol:
@@ -2946,6 +2957,8 @@ class OAMS(oams_ext.UnitHooks):
         delayed or cross-action cancel cannot affect a newer operation. Older
         firmware can cancel a load only, with its original command.
         """
+        if action == self.status_loading and self._cancel_held_load():
+            return "OAMS load spool operation cancelled"
         if self._use_wide_gen_protocol:
             cmd = self._require_cmd(
                 self.oams_cancel4_cmd, "protocol-v4 cancel command")
@@ -3399,6 +3412,15 @@ class OAMS(oams_ext.UnitHooks):
     # A load the unit answers Busy this soon after a clear is sent again,
     # once, when the window has passed.
     FAULT_CLEAR_BUSY_RETRY_S = 4.0
+    # A unit that has just rewound (its own unload, or a calibration that
+    # ended with its return to park) can answer Busy for a moment while it
+    # settles, and a toolchange sends its load the moment the unload ends.
+    # Busy is the unit's admission refusal (C1 §4.1): nothing started. So a
+    # load refused Busy within this many seconds of the rewind is sent again
+    # every REWIND_BUSY_RETRY_INTERVAL_S until this many seconds after the
+    # rewind; only a refusal after that goes through (_retry_busy_load).
+    REWIND_BUSY_RETRY_S = 10.0
+    REWIND_BUSY_RETRY_INTERVAL_S = 1.0
 
     def _note_fault_clear_sent(self):
         caps = getattr(self, "capabilities", None) or {}
@@ -3754,8 +3776,9 @@ class OAMS(oams_ext.UnitHooks):
             )
         return "PTFE calibration failed with firmware error code %s." % code
 
-    # How long a calibration refused as Busy is tried again (seconds).
-    CALIBRATION_BUSY_RETRY_S = 10.0
+    # How long a calibration refused as Busy is tried again (seconds): as
+    # long as a load after a rewind.
+    CALIBRATION_BUSY_RETRY_S = REWIND_BUSY_RETRY_S
 
     cmd_OAMS_CALIBRATE_PTFE_LENGTH_help = "Calibrate the length of the PTFE tube"
 
@@ -3928,10 +3951,15 @@ class OAMS(oams_ext.UnitHooks):
     def _failure_reason(self, code, value, calibrating=None):
         """A failed operation's reason in words, from a unit that reports it
         (AMS_CAP_OP_REASON: the terminal value names one of its AMS_REASON_*
-        constants); None for a success, an older unit, or no reason."""
+        constants); None for a success, an older unit, or no reason. A load
+        refused Busy gets what the host knows of why (_busy_load_reason)."""
         caps = getattr(self, "capabilities", None) or {}
         if code == OAMS_OP_CODE_SUCCESS:
             return None
+        loading = getattr(self, "status_loading", None)
+        if (code == OAMS_OP_CODE_ERROR_BUSY and loading is not None
+                and getattr(self, "_completed_action", None) == loading):
+            return self._busy_load_reason()
         if not caps.get("op_reason"):
             # Older bridge firmware reports only "timeout", whether the
             # filament stalled or ran past its length: name both.
@@ -4091,21 +4119,27 @@ class OAMS(oams_ext.UnitHooks):
             hub[bay] = 0
             self.hub_hes_value = hub  # a fresh list, as _oams_cmd_stats does
 
-    def _apply_action_status(self, params, wire_gen=None):
+    def _apply_action_status(self, params, wire_gen=None, released=False):
+        """One action status from the unit. ``released`` is a held load
+        refusal handed on (_retry_busy_load): ``wire_gen`` is then its
+        generation on every protocol, since a legacy unit's place in the
+        reply queue was taken when it was held."""
         action = params["action"]
         code = params["code"]
         # The completion's action, for the reason text: action_status is
         # cleared before the completion is dispatched.
         self._completed_action = action
         if self._use_wide_gen_protocol and wire_gen is not None:
-            self._apply_action_status4(params, wire_gen)
+            self._apply_action_status4(params, wire_gen, released)
             return
-        if self._retry_busy_load(params, wire_gen):
+        if not released and self._retry_busy_load(params, wire_gen):
             return
         if action == self.status_calibrating:
             self.action_status_value = params["value"]
             self.action_status_code = code
             self.ptfe_calibrating = False
+            if code == OAMS_OP_CODE_SUCCESS:
+                self._note_rewound("calibration")
         # Verified against firmware 2.0.25: code 5 (KLIPPER_CALL) only ever
         # co-occurs with action=CALIBRATING, so the `or` clause is redundant
         # there — kept for robustness against other firmware versions. The
@@ -4129,6 +4163,7 @@ class OAMS(oams_ext.UnitHooks):
             elif action == self.status_unloading and code == OAMS_OP_CODE_SUCCESS:
                 self._clear_hub_after_unload()
                 self.current_spool = None
+                self._note_rewound("unload")
                 self._schedule_stale_motion_clear()
         else:
             # Follower/coast/stop notifications and anything unrecognized are
@@ -4168,9 +4203,9 @@ class OAMS(oams_ext.UnitHooks):
         # or the oldest pending FIFO entry on legacy firmware. Either way the
         # reducer rejects a gen that does not match the in-flight op; an
         # unsolicited completion-class status (gen=None / empty queue) is
-        # never accepted.
+        # never accepted. A released refusal brings its own generation.
         self.action_status = None
-        if wire_gen is not None:
+        if released or wire_gen is not None:
             gen = wire_gen
         elif self._gen_queue:
             gen = self._gen_queue.popleft()
@@ -4180,53 +4215,190 @@ class OAMS(oams_ext.UnitHooks):
             self.on_action_complete(self.action_status_code,
                                     self.action_status_value, gen)
 
-    def _retry_busy_load(self, params, wire_gen):
-        """A load the unit refused Busy while a fault clear this host sent
-        was still running (FAULT_CLEAR_BUSY_S): hold the refusal back and
-        send the same load again once the clear has ended, one time. True
-        when the refusal was held. The *2 protocol only, where the unit
-        echoes the generation; a cancelled or superseded load is not sent
-        again, and its refusal then goes on as usual."""
+    def _note_rewound(self, kind):
+        """The unit's own unload, or a calibration that ended with its return
+        to park, has just finished: for a moment the unit may refuse a load
+        Busy while it settles (REWIND_BUSY_RETRY_S)."""
+        reactor = getattr(self, "reactor", None)
+        if reactor is not None:
+            self._rewound = (reactor.monotonic(), kind)
+
+    def _busy_reply_is_for(self, load, gen):
+        """Is this Busy reply the refusal of `load`? A unit on the *2 or v4
+        protocol echoes the generation. A legacy unit (the OpenAMS 1
+        mainboard) answers in order, so its reply is owed to the oldest
+        operation still unanswered, which must be this load."""
+        if self._use_wide_gen_protocol:
+            return gen is not None and gen == self._wire_gen32(load["gen"])
+        if getattr(self, "_use_gen_protocol", False):
+            return gen is not None and gen == self._wire_gen(load["gen"])
+        queue = getattr(self, "_gen_queue", None)
+        return gen is None and bool(queue) and queue[0] == load["gen"]
+
+    def _retry_busy_load(self, params, gen):
+        """Hold back a Busy refusal of the load in flight and send the same
+        load again, when the host knows why the unit is busy and that it ends
+        soon. True when the refusal was held.
+
+        Busy is the unit's admission refusal (C1 §4.1; on the OpenAMS 1
+        mainboard, its refusal of a second operation): nothing started, so
+        the same load can be sent again on every protocol. It is held when:
+
+        - a fault clear this host sent was still running (FAULT_CLEAR_BUSY_S):
+          sent again once, when the clear has ended;
+        - the unit had just rewound (_note_rewound): sent again every
+          REWIND_BUSY_RETRY_INTERVAL_S until REWIND_BUSY_RETRY_S after the
+          rewind.
+
+        The load keeps its generation. A legacy unit's reply leaves its queue
+        when it is held, and the next send queues the load again. Meanwhile
+        the reducer still sees the load in flight, so the toolchange waits in
+        its feed step. A cancel ends a held load at once (_cancel_held_load);
+        a Busy refusal after the window goes on to the reducer, worded from
+        what the host knows (_busy_load_reason)."""
         load = getattr(self, "_last_load", None)
-        sent = getattr(self, "_fault_clear_sent_at", None)
         if (params["action"] != self.status_loading
                 or params["code"] != OAMS_OP_CODE_ERROR_BUSY
-                or wire_gen is None or load is None or sent is None
-                or load["retried"] or load["cancelled"]
-                or wire_gen != self._wire_gen(load["gen"])
-                or not 0.0 <= load["at"] - sent
-                <= self.FAULT_CLEAR_BUSY_RETRY_S):
+                or load is None or load["cancelled"] or load.get("held")
+                or not self._busy_reply_is_for(load, gen)):
             return False
-        load["retried"] = True
         now = self.reactor.monotonic()
-        when = now + max(0.1, self.fault_clear_remaining(now) + 0.1)
-        logging.info("OAMS[%s]: the load of %s was refused busy while a fault"
-                     " clear ran; sending it again in %.1f s", self.oams_idx,
-                     self.spool_label(load["bay"]), when - now)
-
-        def resend(eventtime, load=load, params=dict(params)):
-            current = getattr(self, "_last_load", None)
-            if current is load and not load["cancelled"]:
-                try:
-                    self.start_load_spool(load["bay"], load["gen"])
-                    self._last_load["retried"] = True
-                    return self.reactor.NEVER
-                except Exception:
-                    logging.exception("OAMS[%s]: sending the load again"
-                                      " failed", self.oams_idx)
-            # Not sent again: the refusal ends the load as it would have.
-            self._apply_action_status(params, wire_gen)
-            return self.reactor.NEVER
-
-        self.reactor.register_timer(resend, when)
+        if self.positioning_bays(now):
+            # H16: the unit positions a newly inserted spool, which the
+            # message names if the refusal goes through.
+            load["positioning"] = True
+        when = why = None
+        sent = getattr(self, "_fault_clear_sent_at", None)
+        if (sent is not None and not load["retried"]
+                and 0.0 <= load["at"] - sent <= self.FAULT_CLEAR_BUSY_RETRY_S):
+            load["retried"] = True
+            when = now + max(0.1, self.fault_clear_remaining(now) + 0.1)
+            why = "while a fault clear ran"
+        rewound = getattr(self, "_rewound", None)
+        if (load.get("rewind") is None and rewound is not None
+                and load.get("first_at", load["at"]) >= rewound[0]
+                and now < rewound[0] + self.REWIND_BUSY_RETRY_S):
+            load["rewind"] = rewound
+        rewind = load.get("rewind")
+        if rewind is not None and now < rewind[0] + self.REWIND_BUSY_RETRY_S:
+            when = max(when or 0.0, now + self.REWIND_BUSY_RETRY_INTERVAL_S)
+            why = why or "%.1f s after its %s" % (now - rewind[0], rewind[1])
+        if when is None:
+            return False
+        if gen is None:
+            # A legacy unit answered in order: this reply was the load's.
+            gen = self._gen_queue.popleft()
+        load["held"] = True
+        load["held_reply"] = (dict(params), gen)
+        load["timer"] = self.reactor.register_timer(
+            lambda eventtime, load=load: self._resend_held_load(load), when)
+        logging.info("OAMS[%s]: the load of %s was refused busy %s; sending"
+                     " it again in %.1f s", self.oams_idx,
+                     self.spool_label(load["bay"]), why, when - now)
         return True
 
-    def _apply_action_status4(self, params, gen):
+    def _resend_held_load(self, load):
+        """The timer of a held refusal: send the same load again. When it
+        cannot be sent, the refusal goes on and ends the load as it would
+        have; when another operation started meanwhile, the reducer has moved
+        on and the refusal is dropped."""
+        load["timer"] = None
+        if not load.get("held"):
+            return self.reactor.NEVER
+        load["held"] = False
+        params, gen = load["held_reply"]
+        if getattr(self, "_last_load", None) is not load:
+            logging.info("OAMS[%s]: the refused load of %s is not sent again:"
+                         " another operation started", self.oams_idx,
+                         self.spool_label(load["bay"]))
+            return self.reactor.NEVER
+        if not load["cancelled"]:
+            try:
+                self.start_load_spool(load["bay"], load["gen"])
+            except Exception:
+                logging.exception("OAMS[%s]: sending the load again failed",
+                                  self.oams_idx)
+            else:
+                # The same load: what the host learnt about it carries over.
+                again = self._last_load
+                again["first_at"] = load.get("first_at", load["at"])
+                again["resent"] = True
+                for key in ("retried", "rewind", "positioning"):
+                    if key in load:
+                        again[key] = load[key]
+                return self.reactor.NEVER
+        self._apply_action_status(params, gen, released=True)
+        return self.reactor.NEVER
+
+    def _drop_held_load(self):
+        """Stop waiting to send a refused load again (a cancel, a resync, a
+        disconnect); nothing is sent and nothing is reported."""
+        load = getattr(self, "_last_load", None)
+        if not load or not load.get("held"):
+            return None
+        load["held"] = False
+        load["cancelled"] = True
+        timer = load.get("timer")
+        load["timer"] = None
+        if timer is not None:
+            self.reactor.unregister_timer(timer)
+        return load["held_reply"]
+
+    def _cancel_held_load(self):
+        """A cancel while a refused load waits to be sent again: nothing runs
+        on the unit, so nothing is sent to it, and the load ends cancelled at
+        once, as the unit would end a load it was running. True when there
+        was one."""
+        held = self._drop_held_load()
+        if held is None:
+            return False
+        params, gen = held
+        params = dict(params, code=OAMS_OP_CODE_CANCEL)
+        self.reactor.register_callback(
+            lambda eventtime: self._apply_action_status(
+                params, gen, released=True))
+        return True
+
+    def load_retry_since(self, now):
+        """For the host's stall watch (Runtime._check_stalls): `now` while a
+        load the unit refused Busy waits to be sent again (nothing is asked
+        to move), the time it was sent again once it was, else None."""
+        load = getattr(self, "_last_load", None)
+        if not load:
+            return None
+        if load.get("held"):
+            return now
+        if load.get("resent"):
+            return load["at"]
+        return None
+
+    def _busy_load_reason(self):
+        """Why the unit refused the load Busy, as far as the host knows: it
+        was positioning a newly inserted spool (H16), or it had just rewound
+        and did not settle in time (_retry_busy_load sent the load again
+        until then). None when the host does not know."""
+        load = getattr(self, "_last_load", None) or {}
+        reactor = getattr(self, "reactor", None)
+        if load.get("positioning") or (
+                reactor is not None
+                and self.positioning_bays(reactor.monotonic())):
+            return ("%s is positioning a newly inserted spool; retry when it"
+                    " finishes" % self._unit_label())
+        rewind = load.get("rewind")
+        if rewind is not None:
+            return ("%s was still busy after its %s and did not settle within"
+                    " %.0f s; retry" % (self._unit_label(), rewind[1],
+                                        self.REWIND_BUSY_RETRY_S))
+        return None
+
+    def _apply_action_status4(self, params, gen, released=False):
         """Protocol-v4 completion: the echoed generation is exact. Every
         status still reaches the reducer, which keeps the audit trail and
         rejects a stale one; the driver mirrors (current_spool, the waiter
         sentinel) move only when action and generation match the operation in
-        flight, so a stale completion is observable but physically inert."""
+        flight, so a stale completion is observable but physically inert. A
+        Busy refusal of the load in flight may be held first, as on the other
+        protocols (_retry_busy_load)."""
         action = params["action"]
         code = params["code"]
         calibrating = action == self.status_calibrating
@@ -4235,6 +4407,10 @@ class OAMS(oams_ext.UnitHooks):
                               self.status_error)):
             logging.info("OAMS[%s]: ignoring non-completion action status"
                          " action=%d code=%d", self.oams_idx, action, code)
+            return
+        if (not released and self._active_action == self.status_loading
+                and gen == self._active_gen
+                and self._retry_busy_load(params, gen)):
             return
         value = params["value"] if calibrating else None
         if (code == S.OAMS_OP_CODE_SESSION_LOST
@@ -4246,6 +4422,8 @@ class OAMS(oams_ext.UnitHooks):
                 and action in (self._active_action, self.status_error)):
             if calibrating:
                 self.action_status_value = value
+                if code == OAMS_OP_CODE_SUCCESS:
+                    self._note_rewound("calibration")
             self.action_status_code = code
             if action == self.status_loading and code == OAMS_OP_CODE_SUCCESS:
                 self.current_spool = self._pending_bay
@@ -4253,6 +4431,7 @@ class OAMS(oams_ext.UnitHooks):
                   and code == OAMS_OP_CODE_SUCCESS):
                 self._clear_hub_after_unload()
                 self.current_spool = None
+                self._note_rewound("unload")
                 self._schedule_stale_motion_clear()
             self._active_action = None
             self._active_gen = None

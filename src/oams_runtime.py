@@ -705,6 +705,16 @@ class Runtime:
             oam = self.resolve_oam(unit[0])
             if oam is None:
                 continue
+            # A load the unit refused Busy, which the driver sends again (a
+            # unit settling after its own unload, OAMS._retry_busy_load),
+            # asks nothing to move while it waits, and the window starts
+            # again when it is sent again. Once sent, it is watched as any.
+            retry_since = getattr(oam, "load_retry_since", None)
+            since = retry_since(now) if callable(retry_since) else None
+            if (isinstance(since, (int, float)) and not isinstance(since, bool)
+                    and now - since <= STALL_AFTER):
+                self._stall.pop(fps, None)
+                continue
             samples = self._stall.setdefault(fps, deque(maxlen=STALL_SAMPLES))
             samples.append(oam.encoder_clicks)
             if len(samples) < STALL_SAMPLES:

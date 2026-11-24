@@ -79,6 +79,11 @@ def _describe_code(code):
 # The lane message (and the G-code error) of a sequence the user stopped.
 STOPPED_TEXT = "Stopped by the user"
 
+# A load the unit refused Busy at admission, when the driver does not know
+# why (it names a spool being positioned, or a unit that did not settle after
+# its own unload): nothing moved.
+LOAD_BUSY_TEXT = "OAMS is busy; retry"
+
 # --- follower directions (firmware convention) ---
 FOLLOWER_REVERSE = 0
 FOLLOWER_FORWARD = 1
@@ -1245,16 +1250,19 @@ def _complete(lane, code, value, now, fps, timed_out=False, fault=None,
                                                 "Spool loading cancelled")))
             return nl, effects
         if code == OAMS_OP_CODE_ERROR_BUSY:
-            # H16: the unit was positioning a newly inserted spool and refused
-            # the load at admission; nothing moved, so this is a refusal, not a
-            # lane failure. No CancelLoad: no firmware op ever started.
+            # The unit refused the load at admission (C1 §4.1): nothing moved,
+            # so this is a refusal, not a lane failure. No CancelLoad: no
+            # firmware op ever started. The driver says why when it knows (a
+            # spool being positioned, H16; a unit that did not settle after
+            # its own unload, which the driver sent the load again for), else
+            # the unit is only busy.
             nl = replace(lane, op=OP_UNLOADED, group=None, unit=None,
                          following=False, op_deadline=None, message=None)
             effects = [CancelDeadline(fps)]
             if lane.following is not False and lane.unit is not None:
                 effects.append(SetFollower(lane.unit, 0, lane.direction, fps))
             effects.append(Settle(fps, OpResult(False, code,
-                "OAMS is busy (positioning a newly inserted spool?); retry")))
+                                                code_text or LOAD_BUSY_TEXT)))
             return nl, effects
         if timed_out:
             msg = "timed out loading spool"
