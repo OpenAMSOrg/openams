@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openams.org/contracts/openams_spoolman_materials_v1.schema.json",
+  "title": "openams_spoolman materials list, version 1 (C4 §9.3)",
+  "description": "The answer of GET /server/openams_spoolman/materials (JSON-RPC server.openams_spoolman.materials), C4 §9.3: the materials Spoolman holds, each once, sorted without case, with the extruder temperature the host's table (C4 §7.4, material_temps merged over the built-in one) gives each, or null.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["materials"],
+  "properties": {
+    "materials": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "extruder_temp"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1, "maxLength": 32, "description": "The material as Spoolman spells it (the first spelling, when several differ only in case)."},
+          "extruder_temp": {"type": ["integer", "null"], "minimum": 150, "maximum": 400, "description": "°C: what C4 §7.4's table gives a spool of this material, or null when it gives none (a UI then asks for one)."}
+        }
+      }
+    }
+  }
+}

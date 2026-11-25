@@ -1,0 +1,16 @@
+{
+  "materials": [
+    {
+      "name": "PET-CF17",
+      "extruder_temp": 270
+    },
+    {
+      "name": "PLA",
+      "extruder_temp": 210
+    },
+    {
+      "name": "Unobtanium",
+      "extruder_temp": null
+    }
+  ]
+}

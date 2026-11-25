@@ -24,6 +24,7 @@ if _TOOLS not in sys.path:
 
 from mock_moonraker import FixtureError, load, loads  # noqa: E402
 from mock_moonraker.server import REFUSAL_MESSAGE, MockMoonraker  # noqa: E402
+from mock_moonraker.spoolman import ops  # noqa: E402
 
 _BUILD = os.path.join(_TOOLS, "mock_moonraker", "build_fixtures.py")
 _FIXTURES = os.path.join(_TOOLS, "mock_moonraker", "fixtures")
@@ -474,6 +475,30 @@ class SpoolEditTest(ClientTestCase):
         self.assertEqual(unknown_bay["error"]["message"], "oams1 has no Spool 10")
         # A refused edit writes nothing.
         self.assertEqual(server.spoolman.spools_view()[0]["remaining_weight"], 812)
+
+    async def test_materials_list_and_a_typed_type_with_its_temperatures(self):
+        """C4 §9.3 and §9: the materials Spoolman holds, then a type nobody
+        has used yet, saved with its own temperatures, is listed next time."""
+        server, ws = await self.spool_client()
+        before = await self.rpc("server.openams_spoolman.materials", ws=ws)
+        self.assertEqual(before["result"], {"materials": [
+            {"name": "PLA", "extruder_temp": ops.MATERIAL_EXTRUDER_TEMP["PLA"]}]})
+        proxied = await self.rpc("server.spoolman.proxy",
+                                 {"request_method": "GET", "path": "/v1/material"},
+                                 ident=2, ws=ws)
+        self.assertEqual(proxied["result"], ["PLA"])
+
+        await self.rpc("server.openams_spoolman.edit",
+                       {"unit": "oams1", "bay": 1, "material": "PET-CF17",
+                        "extruder_temp": 265, "bed_temp": 90}, ident=3, ws=ws)
+        new = [f for f in server.spoolman.filaments
+               if f["material"] == "PET-CF17"]
+        self.assertEqual([(f["settings_extruder_temp"], f["settings_bed_temp"])
+                          for f in new], [(265, 90)])
+        after = await self.rpc("server.openams_spoolman.materials", ident=4,
+                               ws=ws)
+        self.assertEqual([m["name"] for m in after["result"]["materials"]],
+                         ["PET-CF17", "PLA"])
 
     async def test_proxy_serves_the_spoolman_the_edit_wrote(self):
         document = spool_document(responses={"GET /v1/spool/77": {"id": 77}})

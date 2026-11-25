@@ -353,7 +353,8 @@ class ExtruderTempTableTest(unittest.TestCase):
             "PLA": 210, "PLA-CF": 220, "PETG": 240, "PETG-CF": 250,
             "ABS": 250, "ASA": 255, "HIPS": 240, "PC": 270,
             "PA": 270, "PA-CF": 280, "PA6": 275, "TPU": 225,
-            "TPE": 225, "PVA": 200, "PP": 235, "PPS": 320})
+            "TPE": 225, "PVA": 200, "PP": 235, "PPS": 320,
+            "PET": 230, "PET-CF": 270})
 
     def test_the_table_and_the_bed_table_cover_the_same_materials(self):
         self.assertEqual(set(ops.MATERIAL_EXTRUDER_TEMP),
@@ -372,6 +373,41 @@ class ExtruderTempTableTest(unittest.TestCase):
     def test_an_exact_entry_wins_over_the_base_material(self):
         self.assertEqual(ops.material_extruder_temp("PLA-CF"), 220)
         self.assertEqual(ops.material_extruder_temp("PA-CF"), 280)
+
+    def test_a_variant_takes_the_longest_name_it_starts_with(self):
+        # The name that follows must end at a separator or a digit: a
+        # carbon-fiber variant numbered by its maker takes the CF entry, a
+        # numbered nylon its own grade, a shore hardness its base material.
+        self.assertEqual(ops.material_extruder_temp("PETG-CF17"),
+                         ops.MATERIAL_EXTRUDER_TEMP["PETG-CF"])
+        self.assertEqual(ops.material_extruder_temp("PLA-CF-HT"),
+                         ops.MATERIAL_EXTRUDER_TEMP["PLA-CF"])
+        self.assertEqual(ops.material_extruder_temp("PA6-CF"),
+                         ops.MATERIAL_EXTRUDER_TEMP["PA6"])
+        self.assertEqual(ops.material_extruder_temp("PA12"),
+                         ops.MATERIAL_EXTRUDER_TEMP["PA"])
+        self.assertEqual(ops.material_extruder_temp("TPU95A"),
+                         ops.MATERIAL_EXTRUDER_TEMP["TPU"])
+        # ... and a letter does not: PCTG is not PC, PETGX not PETG.
+        self.assertIsNone(ops.material_extruder_temp("PETGX"))
+
+    def test_pet_and_its_carbon_fiber_variant_have_temperatures(self):
+        for material in ("PET", "PET-CF"):
+            self.assertIn(material, ops.MATERIAL_EXTRUDER_TEMP)
+            self.assertIn(material, ops.MATERIAL_BED_TEMP)
+        # A maker's numbered PET-CF takes the PET-CF entry, not PET's.
+        self.assertEqual(ops.material_extruder_temp("PET-CF17"),
+                         ops.MATERIAL_EXTRUDER_TEMP["PET-CF"])
+        self.assertEqual(ops.material_bed_temp("pet-cf17"),
+                         ops.MATERIAL_BED_TEMP["PET-CF"])
+        self.assertEqual(ops.material_extruder_temp("PET+"),
+                         ops.MATERIAL_EXTRUDER_TEMP["PET"])
+
+    def test_a_bed_temperature_without_an_entry_is_the_default(self):
+        self.assertEqual(ops.material_bed_temp("Unobtanium"),
+                         ops.DEFAULT_BED_TEMP)
+        self.assertEqual(ops.material_bed_temp("PLA Silk"),
+                         ops.MATERIAL_BED_TEMP["PLA"])
 
     def test_an_unknown_or_absent_material_has_no_temperature(self):
         for material in (None, "", "   ", "Unobtanium", "PCTG"):
@@ -678,3 +714,58 @@ class FailureTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MaterialListTest(unittest.TestCase):
+    """The materials a UI's edit form offers beside its own (C4 §9.3)."""
+
+    def fake(self, *materials, route=True):
+        api = A.FakeSpoolman()
+        api.material_route = route
+        vendor = {"id": api._next_id("vendor"), "name": "Acme", "extra": {}}
+        api.vendors.append(vendor)
+        for material in materials:
+            api.filaments.append({
+                "id": api._next_id("filament"), "name": material,
+                "vendor": vendor, "material": material, "density": 1.24,
+                "diameter": 1.75, "weight": 1000, "color_hex": None,
+                "settings_extruder_temp": None, "settings_bed_temp": None,
+                "extra": {}})
+        return api
+
+    def test_each_material_once_sorted_with_the_host_temperature(self):
+        api = self.fake("PLA", "pla", "PET-CF17", "Unobtanium", "PETG", " ")
+        listed = run(ops.material_list(api))
+        self.assertEqual([m["name"] for m in listed],
+                         ["PET-CF17", "PETG", "PLA", "Unobtanium"])
+        temps = dict((m["name"], m["extruder_temp"]) for m in listed)
+        self.assertEqual(temps["PET-CF17"], ops.MATERIAL_EXTRUDER_TEMP["PET-CF"])
+        self.assertEqual(temps["PLA"], ops.MATERIAL_EXTRUDER_TEMP["PLA"])
+        self.assertIsNone(temps["Unobtanium"])
+        self.assertEqual(api.calls[0][:2], ("GET", "/v1/material"))
+
+    def test_the_users_material_temps_count(self):
+        api = self.fake("Unobtanium", "PLA")
+        table = ops.material_temp_table(
+            ops.parse_material_temps("UNOBTANIUM=260, PLA=215"))
+        temps = dict((m["name"], m["extruder_temp"])
+                     for m in run(ops.material_list(api, table)))
+        self.assertEqual(temps, {"PLA": 215, "Unobtanium": 260})
+
+    def test_an_older_spoolman_lists_its_filaments_materials(self):
+        api = self.fake("ASA", "asa", "PC", route=False)
+        listed = run(ops.material_list(api))
+        self.assertEqual([m["name"] for m in listed], ["ASA", "PC"])
+        self.assertEqual([c[:2] for c in api.calls],
+                         [("GET", "/v1/material"), ("GET", "/v1/filament")])
+
+    def test_a_name_the_edit_would_refuse_is_left_out(self):
+        api = self.fake("X" * (ops.MAX_MATERIAL_NAME + 1), "PLA")
+        self.assertEqual([m["name"] for m in run(ops.material_list(api))],
+                         ["PLA"])
+
+    def test_spoolman_offline_raises(self):
+        api = self.fake("PLA")
+        api.online = False
+        with self.assertRaises(A.SpoolmanUnavailable):
+            run(ops.material_list(api))

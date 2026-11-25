@@ -2,6 +2,8 @@
   "schema_version": 1,
   "spoolman_online": false,
   "edit": true,
+  "edit_temps": true,
+  "materials": true,
   "stop": true,
   "queued_writes": 1,
   "bays": {

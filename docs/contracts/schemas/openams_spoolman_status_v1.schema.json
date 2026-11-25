@@ -10,6 +10,8 @@
     "schema_version": {"const": 1},
     "spoolman_online": {"type": "boolean"},
     "edit": {"const": true, "description": "Capability flag (C4 §9): present and true when the component serves the edit endpoint. Additive; a component without it omits the key."},
+    "edit_temps": {"const": true, "description": "Capability flag (C4 §9): present and true when the edit endpoint takes extruder_temp and bed_temp, which a filament the edit creates carries as its settings_extruder_temp and settings_bed_temp. Additive; a component without it omits the key (and ignores those parameters, as it ignores any it does not know)."},
+    "materials": {"const": true, "description": "Capability flag (C4 §9.3): present and true when the component serves GET /server/openams_spoolman/materials, Spoolman's materials with the extruder temperature the host would use for each. Additive; a component without it omits the key."},
     "stop": {"const": true, "description": "Capability flag (C3, C4 §9.1): present and true when the component serves the stop route (POST /server/openams/stop), which stops the whole running load, unload or toolchange sequence. Additive; a component without it omits the key."},
     "queued_writes": {"type": "integer", "minimum": 0, "description": "Spoolman writes waiting for Spoolman to come back (C4 §6)."},
     "bays": {

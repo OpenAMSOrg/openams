@@ -618,10 +618,19 @@ C2 §4.5.1), pushed here with `OAMSM_SET_BAY_FILAMENT` (C3).
    | ABS 250 | ASA 255 | HIPS 240 | PC 270 |
    | PA 270 | PA-CF 280 | PA6 275 | TPU 225 |
    | TPE 225 | PVA 200 | PP 235 | PPS 320 |
+   | PET 230 | PET-CF 270 | | |
 
-   **Lookup:** the material, upper-cased and trimmed, matched exactly first;
-   then the part before the first `-`, `+` or space, so `PLA+` and `ABS-GF`
-   fall back to `PLA` and `ABS`.
+   PET and PET-CF (added 2026-11-25) are conservative values inside the
+   ranges their makers publish (the sources are named in `ops.py`).
+
+   **Lookup** (`ops.material_table_value`, the bed table the same way): the
+   material, upper-cased and trimmed, matched exactly first; then the longest
+   table name the material starts with, where what follows that name is a
+   `-`, `+`, space or digit. So `PLA+` and `ABS-GF` fall back to `PLA` and
+   `ABS`, `PET-CF17` to `PET-CF`, `PA6-CF` to `PA6` and `TPU95A` to `TPU`;
+   `PCTG` is not `PC`. (Changed 2026-11-25: before, the fallback was only the
+   part before the first `-`, `+` or space, so `PET-CF17` would have taken
+   `PET`.)
 
    **User overrides:** the optional `material_temps` option of the component's
    `[openams_spoolman]` section, `NAME=TEMP` entries separated by commas or
@@ -781,8 +790,8 @@ be proposed for `oams_manager`/`openams_ui` (material, color, vendor,
 remaining), per bay, since Spoolman — not the host — owns those facts:
 
 ```json
-{"schema_version": 1, "spoolman_online": true, "edit": true, "stop": true,
- "queued_writes": 0,
+{"schema_version": 1, "spoolman_online": true, "edit": true,
+ "edit_temps": true, "materials": true, "stop": true, "queued_writes": 0,
  "bays": {"oams1-2": {"state": "pending_confirmation", "spool_id": 21,
                       "source": "tag", "pending_confirmation": true, "error": null,
                       "spool": {"material": "PETG", "color_hex": "000000",
@@ -795,6 +804,8 @@ remaining), per bay, since Spoolman — not the host — owns those facts:
 |---|---|
 | `spoolman_online` | ARCHITECTURE §5 C4 |
 | `edit` | `true` when the component serves the edit endpoint (§9); additive, so a UI that finds it absent or false hides its edit controls |
+| `edit_temps` | `true` when the edit endpoint takes `extruder_temp` and `bed_temp` (§9); additive (2026-11-25), so a UI that finds it absent or false does not ask for them. An older component ignores them anyway, as it ignores every parameter it does not know |
+| `materials` | `true` when the component serves the materials list (§9.3); additive (2026-11-25). Without it a UI may read Spoolman's list itself (`server.spoolman.proxy` `GET /v1/material`), without the temperatures |
 | `stop` | `true` when the component serves the stop route (§9.1); additive, so a UI that finds it absent or false hides its Stop button's sequence stop |
 | `queued_writes` | the write queue's depth (§6) |
 | `bays.<unit>-<bay>.state` | §3 |
@@ -824,21 +835,24 @@ accepted:** `GET /server/openams_spoolman/status`
 (`server.openams_spoolman.status`), `POST /server/openams_spoolman/confirm`
 (the §5.8 endpoint), `POST /server/openams_spoolman/edit` (§9),
 `GET /server/openams_spoolman/duplicates` and
-`POST /server/openams_spoolman/merge` (§9.2), and
+`POST /server/openams_spoolman/merge` (§9.2),
+`GET /server/openams_spoolman/materials` (§9.3), and
 `notify_openams_spoolman_status`, registered with an
 explicit notification name (Moonraker's default-from-event-suffix pattern,
 e.g. `spoolman:active_spool_set` → `notify_active_spool_set`,
 `moonraker:89-91`, would be too generic here).
 
 Examples: `examples/c4/openams_spoolman_linked.json`, `_resolving.json`,
-`_pending_confirmation.json`, `_offline.json`; regenerate with
+`_pending_confirmation.json`, `_offline.json` (and `_materials.json`, the
+§9.3 list, `schemas/openams_spoolman_materials_v1.schema.json`); regenerate with
 `docs/contracts/tools/gen_examples.py` after any schema change.
 
 ## 9. Editing a spool from a UI
 
-A UI sets a bay's material, color, vendor, weights and pressure advance through
-one component endpoint, so nobody has to edit Spoolman by hand. The status object
-advertises it with `"edit": true` (§8).
+A UI sets a bay's material, color, vendor, weights, pressure advance and the
+filament's temperatures through one component endpoint, so nobody has to edit
+Spoolman by hand. The status object advertises it with `"edit": true`, and the
+temperatures with `"edit_temps": true` (§8).
 
 **JSON-RPC** `server.openams_spoolman.edit` (HTTP
 `POST /server/openams_spoolman/edit`).
@@ -853,8 +867,21 @@ advertises it with `"edit": true` (§8).
 | `remaining_weight` | number | grams, 0 or more |
 | `initial_weight` | number | grams, more than 0 |
 | `flow_k` | number | pressure advance, 0 to 2; stored in the spool's `extra.flow_k`, encoded as §5.1 and §7.2 read it |
+| `extruder_temp` | integer | °C, 150 to 400 (the range the host holds, §7.4); the filament's `settings_extruder_temp`. Additive, `edit_temps` (2026-11-25) |
+| `bed_temp` | integer | °C, 0 to 150; the filament's `settings_bed_temp`. Additive, `edit_temps` (2026-11-25) |
 
-At least one of the six optional fields is required. Other keys are ignored.
+At least one of the eight optional fields is required. Other keys are ignored,
+so a UI may send `extruder_temp` and `bed_temp` to an older component, which
+drops them; a UI that honors `edit_temps` does not offer them there.
+
+**Temperatures** are a filament's, and a filament is never modified, so they
+choose the filament exactly as `material`, `color_hex` and `vendor` do: a
+filament matches only when it holds the temperatures given (any not given do
+not count), and a new one carries them, over the material's defaults. A UI
+asks for them when the material has no temperature of its own: one the
+host's table does not give (§7.4, with `material_temps`; §9.3 lists it per
+material), typically a type the person typed. A material the table knows
+needs none: `PET-CF17` takes `PET-CF`'s.
 
 **Result:** `{"spool_id": <int>, "created": <bool>, "bay": <this bay's entry>}`,
 where `bay` is exactly the entry `bays.<unit>-<bay>` of the status object (§8)
@@ -862,8 +889,8 @@ after the change.
 
 **Bay is linked** (the host's `oams_manager` status has a `spool_id` for it):
 - `remaining_weight`, `initial_weight` and `flow_k` PATCH the spool (§5.1).
-- `material`, `color_hex` and `vendor` **never modify a filament**, since other
-  spools may share it. The component finds or creates the filament with the
+- `material`, `color_hex`, `vendor`, `extruder_temp` and `bed_temp` **never
+  modify a filament**, since other spools may share it. The component finds or creates the filament with the
   resulting vendor, material and color (vendor by §5.3, filament as §5.4 but by
   those three fields), then PATCHes the spool's `filament_id`. A new filament
   carries the current filament's diameter and weight; with the material
@@ -874,7 +901,8 @@ after the change.
 **Bay is not linked but holds a spool** (`ready`): the component creates the
 vendor (default `"Generic"`), the filament (`material` is required; `color_hex`
 defaults to none), and the spool (`initial_weight` default 1000 g,
-`remaining_weight` default the initial weight), with `location` set to
+`remaining_weight` default the initial weight; the temperatures given, else
+none for the extruder and the material's bed default), with `location` set to
 `"<unit>-<bay>"` (§5.1), then links it:
 
 ```
@@ -996,6 +1024,38 @@ Errors: a bad or missing id, or `keep` equal to `merge` (400); `Spoolman has no
 spool …` (404); the two hold different tray UUIDs (they are two spools), or
 `keep` is archived (409); `Spoolman is offline` (503, nothing queued);
 `Spoolman refused the merge: …` (502).
+
+### 9.3 The materials a UI offers (added 2026-11-25)
+
+A UI's edit form offers the common types it carries, and beside them every
+material Spoolman already holds, so a type someone added once (`PET-CF17`) is
+one choice from then on, on every display. The status object advertises the
+list with `"materials": true` (§8).
+
+**JSON-RPC** `server.openams_spoolman.materials` (HTTP
+`GET /server/openams_spoolman/materials`), no params, read only.
+
+**Result:** `{"materials": [{"name": "PET-CF17", "extruder_temp": 270},
+{"name": "PLA", "extruder_temp": 210}, {"name": "Unobtanium",
+"extruder_temp": null}]}` (`schemas/openams_spoolman_materials_v1.schema.json`,
+`examples/c4/openams_spoolman_materials.json`):
+
+- the names are Spoolman's `GET /v1/material` (every filament's material), or,
+  from a Spoolman too old to serve it (404), the materials of its filaments
+  (`GET /v1/filament`);
+- each name once, ignoring case and spaces (the first spelling is kept),
+  sorted without case; a blank name, or one longer than the 32 characters the
+  edit takes (§9), is left out;
+- `extruder_temp` is the temperature §7.4 would give a spool of that material
+  from the table (the built-in one with `material_temps` over it, matched by
+  the lookup rule there), or `null` when it gives none. A UI asks for a
+  temperature when it saves a spool of a material whose entry is `null`, and
+  for a type it has no entry for.
+
+Nothing is cached: the list is read from Spoolman on every call. A UI reads
+it when the status says `materials` (on start, and again after an edit,
+which may have added one). Errors: `Spoolman is offline` (503); `Spoolman
+refused the material list: …` (502).
 
 ## 10. Open questions
 

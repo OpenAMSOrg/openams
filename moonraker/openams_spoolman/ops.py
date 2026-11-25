@@ -23,15 +23,26 @@ MATERIAL_BED_TEMP = {
     "ABS": 100, "ASA": 100, "HIPS": 100, "PC": 110,
     "PA": 45, "PA-CF": 45, "PA6": 45, "TPU": 35,
     "TPE": 35, "PVA": 60, "PPS": 120, "PP": 90,
+    "PET": 80, "PET-CF": 80,
 }
 # Default extruder temperatures (°C) per material: what the host heats to
 # before it moves the filament, when Spoolman holds no temperature for the
 # spool (C4 §7.4). Public facts about common filaments.
+#
+# PET and PET-CF (added 2026-11-25) are conservative values: the one
+# temperature inside every published range below, never above a maximum.
+# - PET-CF 270 °C nozzle, 80 °C bed: Bambu Lab PET-CF TDS V3.0 (260-290,
+#   80-100), Polymaker Fiberon PET-CF17 TDS V1.0 (270-300, 70-80), Forward AM
+#   Ultrafuse PET CF15 (250-270, 65-85).
+# - PET 230 °C nozzle, 80 °C bed: Forward AM Ultrafuse PET (210-230, 60-80),
+#   Forward AM Ultrafuse rPET (225-245, 65-85), Polymaker's PET guide
+#   (wiki.polymaker.com, 230-245, 80-90).
 MATERIAL_EXTRUDER_TEMP = {
     "PLA": 210, "PLA-CF": 220, "PETG": 240, "PETG-CF": 250,
     "ABS": 250, "ASA": 255, "HIPS": 240, "PC": 270,
     "PA": 270, "PA-CF": 280, "PA6": 275, "TPU": 225,
     "TPE": 225, "PVA": 200, "PP": 235, "PPS": 320,
+    "PET": 230, "PET-CF": 270,
 }
 # The range the host accepts (C3 §4): a spool's own value outside it is not a
 # temperature the host could hold, so the table is used instead.
@@ -177,23 +188,42 @@ def parse_tag_vendor(text):
     return name
 
 
-def material_extruder_temp(material, table=None):
-    """The table temperature for a material, or None (C4 §7.4).
+def material_table_value(table, material):
+    """A material's entry in one of the tables above, or None (C4 §7.4).
 
-    The material, upper-cased and trimmed, is matched exactly first; a
-    variant then falls back to the part before its first ``-``, ``+`` or
-    space, so ``PLA+`` and ``ABS-GF`` take ``PLA`` and ``ABS``.
+    The material, upper-cased and trimmed, is matched exactly first. A
+    variant then takes the longest name in the table that it starts with,
+    when what follows that name is a ``-``, ``+``, space or digit: ``PLA+``
+    and ``ABS-GF`` take ``PLA`` and ``ABS``, ``PET-CF17`` takes ``PET-CF``,
+    ``PA6-CF`` ``PA6`` and ``TPU95A`` ``TPU``; ``PCTG`` is not ``PC``.
     """
-    table = MATERIAL_EXTRUDER_TEMP if table is None else table
     name = str(material or "").strip().upper()
     if not name:
         return None
     if name in table:
         return table[name]
-    for index, char in enumerate(name):
-        if char in "-+ ":
-            return table.get(name[0:index])
-    return None
+    best = None
+    for key in table:
+        if len(key) < len(name) and name.startswith(key) \
+                and (name[len(key)] in "-+ " or name[len(key)].isdigit()) \
+                and (best is None or len(key) > len(best)):
+            best = key
+    return None if best is None else table[best]
+
+
+def material_extruder_temp(material, table=None):
+    """The table temperature for a material, or None (C4 §7.4), matched as
+    ``material_table_value`` matches."""
+    return material_table_value(
+        MATERIAL_EXTRUDER_TEMP if table is None else table, material)
+
+
+def material_bed_temp(material):
+    """The bed temperature a new filament of this material takes when nothing
+    else gives one: the table's, matched as ``material_table_value`` matches,
+    else the default."""
+    value = material_table_value(MATERIAL_BED_TEMP, material)
+    return DEFAULT_BED_TEMP if value is None else value
 
 
 def extruder_temp_of(value):
@@ -641,21 +671,35 @@ async def find_or_create_filament(api, vendor_id, bambu):
         "settings_extruder_temp": _mean_int(bambu.get("hotend_min_c"),
                                             bambu.get("hotend_max_c")),
         "settings_bed_temp": bambu.get("bed_temp_c")
-        or MATERIAL_BED_TEMP.get(key, DEFAULT_BED_TEMP)}, extra)
+        or material_bed_temp(material)}, extra)
+
+
+def same_temp(value, wanted):
+    """Whether a filament's temperature field holds ``wanted`` (whole °C)."""
+    if value is None or isinstance(value, bool):
+        return False
+    try:
+        return int(round(float(value))) == int(wanted)
+    except (TypeError, ValueError):
+        return False
 
 
 async def find_or_create_filament_by(api, vendor_id, material, color_hex=None,
-                                     current=None, weight=None):
+                                     current=None, weight=None,
+                                     extruder_temp=None, bed_temp=None):
     """The filament of a vendor with this material and color, created when
     absent: the UI edit path (C4 §9).
 
     An existing filament is never modified, since other spools may use it.
     Matching is on vendor, material (any case), color (any case; both absent
-    match) and, when ``current`` (the spool's present filament) has one, the
-    diameter; a filament named like ``current`` wins a tie. A new filament
-    carries ``current``'s diameter and weight, and, when the material is
-    unchanged, its name, density and temperatures too; a changed material
-    takes the defaults above, and a filament with no ``current`` takes them all.
+    match), the temperatures given (``extruder_temp``, ``bed_temp``: a
+    filament matches only when it holds exactly those) and, when ``current``
+    (the spool's present filament) has one, the diameter; a filament named
+    like ``current`` wins a tie. A new filament carries ``current``'s diameter
+    and weight, and, when the material is unchanged, its name, density and
+    temperatures too; a changed material takes the defaults above, and a
+    filament with no ``current`` takes them all. The temperatures given win
+    over all of these.
     """
     current = current or {}
     wanted = str(color_hex or "").lower()
@@ -670,6 +714,12 @@ async def find_or_create_filament_by(api, vendor_id, material, color_hex=None,
             continue
         if diameter is not None and filament.get("diameter") is not None \
                 and float(filament["diameter"]) != float(diameter):
+            continue
+        if extruder_temp is not None and not same_temp(
+                filament.get("settings_extruder_temp"), extruder_temp):
+            continue
+        if bed_temp is not None and not same_temp(
+                filament.get("settings_bed_temp"), bed_temp):
             continue
         matches.append(filament)
     for filament in matches:
@@ -690,13 +740,57 @@ async def find_or_create_filament_by(api, vendor_id, material, color_hex=None,
         else weight,
         "settings_bed_temp": (current.get("settings_bed_temp") if same
                               else None)
-        or MATERIAL_BED_TEMP.get(key, DEFAULT_BED_TEMP)}
+        or material_bed_temp(material)}
     if wanted:
         body["color_hex"] = wanted
     if same and current.get("settings_extruder_temp") is not None:
         body["settings_extruder_temp"] = current["settings_extruder_temp"]
+    if extruder_temp is not None:
+        body["settings_extruder_temp"] = int(extruder_temp)
+    if bed_temp is not None:
+        body["settings_bed_temp"] = int(bed_temp)
     body = dict((k, v) for k, v in body.items() if v is not None)
     return await _create_filament(api, body)
+
+
+# The longest material name the materials list offers (C4 §9.3): what the
+# edit endpoint takes (C4 §9), so every listed name can be sent back.
+MAX_MATERIAL_NAME = 32
+
+
+async def material_list(api, table=None):
+    """Spoolman's materials as the UI edit form offers them (C4 §9.3).
+
+    Spoolman's own list (``GET /v1/material``, every filament's material),
+    or, from a Spoolman too old to serve it, the materials of its filaments.
+    Each name once, ignoring case (the first spelling is kept), sorted
+    without case; a blank one or one longer than the edit endpoint takes is
+    left out. Every entry carries the extruder temperature the host would
+    use for it from ``table`` (the built-in one with ``material_temps``
+    merged over it), or None when the table has none.
+    """
+    from .api import SpoolmanError
+    try:
+        names = await api.request("GET", "/v1/material")
+    except SpoolmanError as error:
+        if error.status != 404:
+            raise
+        names = [filament.get("material") for filament
+                 in await api.request("GET", "/v1/filament") or []
+                 if isinstance(filament, dict)]
+    seen = {}
+    for name in names if isinstance(names, list) else []:
+        if not isinstance(name, str):
+            continue
+        name = name.strip()
+        key = _material_key(name)
+        if not key or len(name) > MAX_MATERIAL_NAME or key in seen:
+            continue
+        seen[key] = name
+    table = MATERIAL_EXTRUDER_TEMP if table is None else table
+    return [{"name": name,
+             "extruder_temp": material_extruder_temp(name, table)}
+            for name in sorted(seen.values(), key=lambda n: (n.upper(), n))]
 
 
 async def create_spool(api, filament_id, tag, location):

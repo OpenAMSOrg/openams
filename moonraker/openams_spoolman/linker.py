@@ -423,6 +423,8 @@ class Linker(object):
         """The §8 object and the status schema."""
         return {"schema_version": 1,
                 "edit": True,
+                "edit_temps": True,
+                "materials": True,
                 "stop": True,
                 "spoolman_online": bool(self.spoolman_online),
                 "queued_writes": len(self._cache.queue),

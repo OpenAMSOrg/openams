@@ -255,6 +255,27 @@ none, to create one. It never changes a spool Spoolman already has.
   editor shows at once; Spoolman's page is re-read about once a minute while
   any bay is linked, and the display, the bay's temperature and the slicer's
   filament list follow without the tag being read again.
+- **A material that is not on the list.** The spool editor's **Material**
+  list holds the common types and every material your Spoolman already has, so
+  a type you added once is one choice from then on, on every display. On the
+  Mainsail or Fluidd panel, choose **Other…** and type the new one under
+  **New material**: letters, digits and `- + . _ /`, up to 16 characters,
+  kept in capitals (`PET-CF17`). An AMS unit stores only the first 8
+  characters of a type. When the printer has no default temperature for the
+  type, the editor also shows **Nozzle temperature** and **Bed temperature**
+  (both optional), which are saved with the new filament in Spoolman. The
+  printer's defaults are built in (PLA, PETG, ABS, ASA, PA, PC, PET and their
+  CF variants, and more; a variant such as `PET-CF17` or `PLA+` takes its
+  base type's), and you can add or change one in `moonraker.conf`:
+
+  ```
+  [openams_spoolman]
+  material_temps: PCTG=250, PET-CF17=265
+  ```
+
+  Temperatures are whole °C from 150 to 400; restart Moonraker after a change.
+  The touch screen offers the list (Spoolman's materials included), without
+  typing a new type.
 - **New spools get a vendor you choose.** A spool OpenAMS creates from a Bambu
   tag is filed under the vendor `Bambu Lab`. To file them under another vendor,
   set it in `moonraker.conf`:

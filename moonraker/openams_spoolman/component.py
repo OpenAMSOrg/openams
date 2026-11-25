@@ -180,6 +180,10 @@ class OpenAmsSpoolman(object):
             "/server/openams_spoolman/confirm", ["POST"], self._handle_confirm)
         self.server.register_endpoint(
             "/server/openams_spoolman/edit", ["POST"], self._handle_edit)
+        # The materials a UI's edit form offers beside its own (C4 §9.3).
+        self.server.register_endpoint(
+            "/server/openams_spoolman/materials", ["GET"],
+            self._handle_materials)
         # The two-tag maintenance pair (C4 §9.2): a read-only report of the
         # spools that look like one spool's records, and the merge the owner
         # confirms. Nothing merges on its own.
@@ -559,6 +563,19 @@ class OpenAmsSpoolman(object):
                 self.server.send_event(EVENT_NAME, status_obj)
                 self._schedule_pass()
             return result
+
+    async def _handle_materials(self, web_request):
+        table = (self.linker._material_temps if self.linker is not None
+                 else ops.material_temp_table(self._material_temps))
+        try:
+            return {"materials": await ops.material_list(self._api, table)}
+        except SpoolmanUnavailable:
+            if self.linker is not None:
+                self.linker.spoolman_online = False
+            raise self.server.error(edit.OFFLINE_MESSAGE, 503)
+        except SpoolmanError as error:
+            raise self.server.error("Spoolman refused the material list: %s"
+                                    % (error.message or error), 502)
 
     async def _handle_edit(self, web_request):
         try:

@@ -437,6 +437,8 @@ class MockMoonraker(object):
             return "ok"
         if method == "server.openams_spoolman.edit":
             return self._edit(params)
+        if method == "server.openams_spoolman.materials":
+            return self._materials()
         if method == "server.files.metadata":
             filename = params.get("filename")
             if filename in self.fixture.file_metadata:
@@ -470,6 +472,9 @@ class MockMoonraker(object):
             return self.spoolman.spools_view()
         if parts[1:] == ["vendor"]:
             return self.spoolman.vendors_view(query.get("name"))
+        if parts[1:] == ["material"]:
+            return sorted(set(f["material"] for f in self.spoolman.filaments
+                              if f.get("material")))
         if len(parts) == 3 and parts[1] == "spool" and parts[2].isdigit():
             try:
                 return self.spoolman.spool_view(parts[2])
@@ -577,6 +582,13 @@ class MockMoonraker(object):
             self._push_status_update(
                 {"openams_ui %s" % unit: {"lane": copy.deepcopy(lane)}},
                 self.eventtime)
+
+    # -- the materials list (C4 §9.3) -------------------------------------
+
+    async def _materials(self):
+        """The component's own list, from the in-memory Spoolman, with the
+        built-in temperature table (a mock has no material_temps)."""
+        return {"materials": await ops.material_list(self.spoolman)}
 
     # -- the spool edit (C4 §9) ------------------------------------------
 

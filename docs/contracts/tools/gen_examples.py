@@ -877,12 +877,23 @@ def c4_examples():
                     "spool": None}
     ex["offline"] = {"schema_version": 1, "spoolman_online": False,
                      "queued_writes": 1, "bays": o}
-    for name, obj in ex.items():   # the edit capability flag (C4 §9)
+    for name, obj in ex.items():   # the capability flags (C4 §8, §9, §9.3)
         ex[name] = dict([("schema_version", 1), ("spoolman_online",
-                         obj["spoolman_online"]), ("edit", True), ("stop", True)]
+                         obj["spoolman_online"]), ("edit", True),
+                         ("edit_temps", True), ("materials", True),
+                         ("stop", True)]
                         + [(k, v) for k, v in obj.items()
                            if k not in ("schema_version", "spoolman_online")])
     return ex
+
+
+def c4_materials_example():
+    """C4 §9.3: Spoolman's materials with the host's temperature for each
+    (a type a person typed once, a common one, and one no table knows)."""
+    return {"materials": [
+        {"name": "PET-CF17", "extruder_temp": 270},
+        {"name": "PLA", "extruder_temp": 210},
+        {"name": "Unobtanium", "extruder_temp": None}]}
 
 
 def minified(obj):
@@ -902,6 +913,8 @@ def render():
              project_ui(status, bound))
     for name, obj in c4_examples().items():
         dump(os.path.join(OUT_C4, "openams_spoolman_%s.json" % name), obj)
+    dump(os.path.join(OUT_C4, "openams_spoolman_materials.json"),
+         c4_materials_example())
     return out
 
 

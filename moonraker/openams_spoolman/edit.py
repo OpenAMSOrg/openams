@@ -1,5 +1,5 @@
-# The UI spool edit (C4 §9): set a bay's material, color, vendor, weights and
-# pressure advance in Spoolman through one call.
+# The UI spool edit (C4 §9): set a bay's material, color, vendor, weights,
+# pressure advance and filament temperatures in Spoolman through one call.
 #
 # ``parse`` validates the request; ``apply`` does the Spoolman writes (and, for
 # an unlinked bay, the host link). It raises ``EditError`` with a message a
@@ -15,7 +15,15 @@ DEFAULT_INITIAL_WEIGHT = 1000.0
 OFFLINE_MESSAGE = "Spoolman is offline"
 _COLOR = re.compile(r"^[0-9a-fA-F]{6}$")
 FIELDS = ("material", "color_hex", "vendor", "remaining_weight",
-          "initial_weight", "flow_k")
+          "initial_weight", "flow_k", "extruder_temp", "bed_temp")
+# The bed temperatures a filament may carry (°C); the extruder's are the
+# host's own range (ops.MIN_EXTRUDER_TEMP to ops.MAX_EXTRUDER_TEMP).
+MIN_BED_TEMP = 0
+MAX_BED_TEMP = 150
+# The fields that choose the spool's filament (C4 §9): a filament is never
+# modified, so a change to any of them finds or makes another one.
+FILAMENT_FIELDS = ("material", "color_hex", "vendor", "extruder_temp",
+                   "bed_temp")
 
 
 class EditError(Exception):
@@ -30,6 +38,15 @@ def _number(args, name):
             or value != value or value in (float("inf"), float("-inf")):
         raise EditError("%s must be a number" % name)
     return float(value)
+
+
+def _temp(args, name, low, high):
+    """A whole temperature in °C, within ``low`` to ``high``."""
+    value = _number(args, name)
+    if value != int(value) or not low <= value <= high:
+        raise EditError("%s must be a whole number from %d to %d °C"
+                        % (name, low, high))
+    return int(value)
 
 
 def _text(args, name, limit):
@@ -77,6 +94,13 @@ def parse(args):
         fields["flow_k"] = _number(args, "flow_k")
         if not 0 <= fields["flow_k"] <= 2:
             raise EditError("flow_k must be between 0 and 2")
+    if args.get("extruder_temp") is not None:
+        fields["extruder_temp"] = _temp(args, "extruder_temp",
+                                        ops.MIN_EXTRUDER_TEMP,
+                                        ops.MAX_EXTRUDER_TEMP)
+    if args.get("bed_temp") is not None:
+        fields["bed_temp"] = _temp(args, "bed_temp", MIN_BED_TEMP,
+                                   MAX_BED_TEMP)
     if not fields:
         raise EditError("nothing to change: give at least one of %s"
                         % ", ".join(FIELDS))
@@ -115,8 +139,9 @@ def _weights(fields, spool, filament):
 
 
 async def _retarget(api, filament, fields):
-    """The id of the filament a spool should use after a material, color or
-    vendor change, or None when its present filament already fits."""
+    """The id of the filament a spool should use after a material, color,
+    vendor or temperature change, or None when its present filament already
+    fits."""
     vendor_name = fields.get("vendor") or \
         (filament.get("vendor") or {}).get("name") or DEFAULT_VENDOR
     material = fields.get("material") or filament.get("material")
@@ -125,14 +150,21 @@ async def _retarget(api, filament, fields):
                         "so one is needed")
     color = fields.get("color_hex",
                        str(filament.get("color_hex") or "").lower())
+    extruder = fields.get("extruder_temp")
+    bed = fields.get("bed_temp")
     if vendor_name == (filament.get("vendor") or {}).get("name") \
             and ops.same_material(material, filament.get("material")) \
-            and color == str(filament.get("color_hex") or "").lower():
+            and color == str(filament.get("color_hex") or "").lower() \
+            and (extruder is None or ops.same_temp(
+                filament.get("settings_extruder_temp"), extruder)) \
+            and (bed is None or ops.same_temp(
+                filament.get("settings_bed_temp"), bed)):
         return None
     vendor = await ops.get_or_create_vendor(api, vendor_name)
     target = await ops.find_or_create_filament_by(
         api, vendor["id"], material, color or None, current=filament,
-        weight=fields.get("initial_weight"))
+        weight=fields.get("initial_weight"), extruder_temp=extruder,
+        bed_temp=bed)
     return None if target["id"] == filament.get("id") else target["id"]
 
 
@@ -140,7 +172,7 @@ async def _edit_linked(api, spool_id, fields):
     spool = await api.request("GET", "/v1/spool/%d" % spool_id)
     filament = spool.get("filament") or {}
     patch = _weights(fields, spool, filament)
-    if any(name in fields for name in ("material", "color_hex", "vendor")):
+    if any(name in fields for name in FILAMENT_FIELDS):
         filament_id = await _retarget(api, filament, fields)
         if filament_id is not None:
             patch["filament_id"] = filament_id
@@ -169,7 +201,9 @@ async def _create(api, run_gcode, unit, bay, fields):
     vendor = await ops.get_or_create_vendor(
         api, fields.get("vendor") or DEFAULT_VENDOR)
     filament = await ops.find_or_create_filament_by(
-        api, vendor["id"], material, fields.get("color_hex"), weight=initial)
+        api, vendor["id"], material, fields.get("color_hex"), weight=initial,
+        extruder_temp=fields.get("extruder_temp"),
+        bed_temp=fields.get("bed_temp"))
     body = {"filament_id": filament["id"], "initial_weight": initial,
             "remaining_weight": remaining, "location": "%s-%d" % (unit, bay)}
     if "flow_k" in fields:

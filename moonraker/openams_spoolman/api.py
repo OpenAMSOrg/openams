@@ -98,6 +98,8 @@ class FakeSpoolman(SpoolmanAPI):
         self.fields = {"spool": [], "filament": []}
         self.calls = []
         self._ids = {"vendor": 0, "filament": 0, "spool": 0}
+        # False: an older Spoolman without GET /v1/material.
+        self.material_route = True
 
     async def request(self, method, path, query=None, body=None):
         if not self.online:
@@ -119,6 +121,12 @@ class FakeSpoolman(SpoolmanAPI):
             return self._filament(method, rest, query, body)
         if head == "spool":
             return self._spool(method, rest, query, body)
+        if head == "material" and method == "GET" and not rest \
+                and self.material_route:
+            # Spoolman's distinct filament materials, sorted as it sorts them
+            # (a Spoolman older than the route answers 404).
+            return sorted(set(f["material"] for f in self.filaments
+                              if f.get("material")))
         raise SpoolmanError(404, "unknown path %s" % path)
 
     def _field(self, method, rest, body):

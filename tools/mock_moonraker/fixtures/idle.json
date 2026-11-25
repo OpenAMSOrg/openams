@@ -563,6 +563,8 @@
         "schema_version": 1,
         "spoolman_online": true,
         "edit": true,
+        "edit_temps": true,
+        "materials": true,
         "stop": true,
         "queued_writes": 0,
         "bays": {

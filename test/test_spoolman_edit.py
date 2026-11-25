@@ -391,6 +391,132 @@ class CapabilityTest(Base):
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0][1], ["POST"])
 
+    async def test_the_status_says_temperatures_and_materials(self):
+        await self.setUp_bays([T.bay(index=0, ready=False)])
+        status = await self.h.component._handle_status(None)
+        self.assertIs(status["edit_temps"], True)
+        self.assertIs(status["materials"], True)
+
+    async def test_the_materials_endpoint_is_registered(self):
+        h = T.Harness()
+        entries = [e for e in h.server.endpoints
+                   if e[0] == "/server/openams_spoolman/materials"]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0][1], ["GET"])
+
+
+class TemperatureTest(Base):
+    """A filament's temperatures from the edit (C4 §9): the type a person
+    typed has none in Spoolman yet, and maybe none in the host's table."""
+
+    async def asyncSetUp(self):
+        await self.setUp_bays([T.bay(index=0, ready=True)])
+
+    async def test_a_typed_type_takes_its_table_temperature(self):
+        await self.edit(material="PET-CF17")
+        filament = self.spool()["filament"]
+        self.assertEqual(filament["material"], "PET-CF17")
+        self.assertIsNone(filament["settings_extruder_temp"])
+        self.assertEqual(filament["settings_bed_temp"],
+                         ops.MATERIAL_BED_TEMP["PET-CF"])
+        self.assertEqual(self.h.klippy_apis.gcode[-1],
+                         'OAMSM_SET_BAY_FILAMENT OAMS=oams1 BAY=0 '
+                         'MATERIAL="PET-CF17" TEMP=%d SOURCE=table REMAINING=100'
+                         % ops.MATERIAL_EXTRUDER_TEMP["PET-CF"])
+
+    async def test_the_temperatures_given_go_on_the_new_filament(self):
+        await self.edit(material="XYZ-9", extruder_temp=265, bed_temp=85)
+        filament = self.spool()["filament"]
+        self.assertEqual(filament["settings_extruder_temp"], 265)
+        self.assertEqual(filament["settings_bed_temp"], 85)
+        # The host heats to the spool's own temperature, not a table's.
+        self.assertIn('MATERIAL="XYZ-9" TEMP=265', self.h.klippy_apis.gcode[-1])
+
+    async def test_a_filament_with_other_temperatures_is_not_reused(self):
+        other = seed(self.api, material="XYZ-9", color=None, vendor="Generic",
+                     extruder=250, bed=70)["filament"]
+        await self.edit(material="XYZ-9", extruder_temp=265)
+        self.assertNotEqual(self.spool(1)["filament"]["id"], other["id"])
+        self.assertEqual(self.spool(1)["filament"]["settings_extruder_temp"],
+                         265)
+        # ... and one that holds them is.
+        self.assertEqual(other["settings_extruder_temp"], 250)   # untouched
+
+    async def test_a_filament_holding_the_temperatures_is_reused(self):
+        other = seed(self.api, material="XYZ-9", color=None, vendor="Generic",
+                     extruder=265, bed=85)["filament"]
+        await self.edit(material="xyz-9", extruder_temp=265, bed_temp=85)
+        self.assertEqual(self.spool(1)["filament"]["id"], other["id"])
+
+    async def test_the_limits(self):
+        for args, word in (({"extruder_temp": 149}, "extruder_temp"),
+                           ({"extruder_temp": 401}, "extruder_temp"),
+                           ({"extruder_temp": 250.5}, "extruder_temp"),
+                           ({"extruder_temp": "250"}, "extruder_temp"),
+                           ({"extruder_temp": True}, "extruder_temp"),
+                           ({"bed_temp": -1}, "bed_temp"),
+                           ({"bed_temp": 151}, "bed_temp")):
+            with self.subTest(args=args):
+                await self.refused(word, 400, material="XYZ-9", **args)
+        self.assertEqual(self.writes(), [])
+        await self.edit(material="XYZ-9", extruder_temp=150, bed_temp=0)
+        filament = self.spool()["filament"]
+        self.assertEqual((filament["settings_extruder_temp"],
+                          filament["settings_bed_temp"]), (150, 0))
+
+    async def test_a_key_the_component_does_not_know_is_ignored(self):
+        # The other direction of compatibility: an older component takes a
+        # newer display's edit the same way, dropping what it does not know.
+        result = await self.edit(material="PLA", future_field=1)
+        self.assertTrue(result["created"])
+
+
+class LinkedTemperatureTest(Base):
+    async def asyncSetUp(self):
+        await self.setUp_bays(lambda s: [linked_bay(s[0])],
+                              [{"material": "XYZ-9", "extruder": None,
+                                "bed": None, "name": "Mine"}])
+
+    async def test_a_temperature_alone_moves_the_spool_to_a_filament_with_it(self):
+        before = self.spool()["filament"]
+        await self.edit(extruder_temp=260)
+        after = self.spool()["filament"]
+        self.assertNotEqual(after["id"], before["id"])
+        self.assertEqual(after["settings_extruder_temp"], 260)
+        # Same material: the name and color carry over; the old one is kept.
+        self.assertEqual((after["name"], after["material"], after["color_hex"]),
+                         ("Mine", "XYZ-9", "ff0000"))
+        self.assertIsNone(before["settings_extruder_temp"])
+
+    async def test_the_temperature_it_already_holds_changes_nothing(self):
+        await self.edit(extruder_temp=260)
+        self.api.calls.clear()
+        await self.edit(extruder_temp=260)
+        self.assertEqual([c for c in self.writes() if c[1] == "/v1/filament"],
+                         [])
+
+
+class MaterialsEndpointTest(Base):
+    async def asyncSetUp(self):
+        await self.setUp_bays([T.bay(index=0, ready=True)],
+                              [{"material": "PET-CF17"}, {"material": "pla"},
+                               {"material": "Unobtanium"}])
+
+    async def test_the_list_with_the_host_temperatures(self):
+        result = await self.h.component._handle_materials(None)
+        self.assertEqual(result, {"materials": [
+            {"name": "PET-CF17",
+             "extruder_temp": ops.MATERIAL_EXTRUDER_TEMP["PET-CF"]},
+            {"name": "pla", "extruder_temp": ops.MATERIAL_EXTRUDER_TEMP["PLA"]},
+            {"name": "Unobtanium", "extruder_temp": None}]})
+
+    async def test_offline(self):
+        self.api.online = False
+        with self.assertRaises(T.ServerErrorStub) as ctx:
+            await self.h.component._handle_materials(None)
+        self.assertEqual(ctx.exception.status_code, 503)
+        self.assertIn("Spoolman is offline", str(ctx.exception))
+
 
 class PendingConfirmationTest(Base):
     async def link_by_tag(self):
